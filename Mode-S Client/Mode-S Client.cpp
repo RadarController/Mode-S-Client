@@ -79,6 +79,16 @@ static HWND hLblOverlaySize = nullptr;
 static HWND hOverlaySize = nullptr;
 static HWND hOverlayShadow = nullptr;
 
+
+// --- Platform status widgets ---
+static HWND gTikTokStatus = nullptr, gTikTokViewers = nullptr, gTikTokFollowers = nullptr;
+static HWND gTwitchStatus = nullptr, gTwitchViewers = nullptr, gTwitchFollowers = nullptr;
+static HWND gYouTubeStatus = nullptr, gYouTubeViewers = nullptr, gYouTubeFollowers = nullptr;
+
+// --- Platform state (UI only for now) ---
+static bool gTikTokLive = false, gTwitchLive = false, gYouTubeLive = false;
+static int  gTikTokViewerCount = 0, gTwitchViewerCount = 0, gYouTubeViewerCount = 0;
+static int  gTikTokFollowerCount = 0, gTwitchFollowerCount = 0, gYouTubeFollowerCount = 0;
 // Forward decl
 static void LayoutControls(HWND hwnd);
 
@@ -157,6 +167,23 @@ static void UpdateTikTokButtons(HWND hTikTokEdit, HWND hStartBtn, HWND hRestartB
     if (hRestartBtn) EnableWindow(hRestartBtn, enable);
 }
 
+
+static void UpdatePlatformStatusUI()
+{
+    auto set = [](HWND h, const std::wstring& s) { if (h) SetWindowTextW(h, s.c_str()); };
+
+    set(gTikTokStatus, gTikTokLive ? L"Status: LIVE" : L"Status: OFFLINE");
+    set(gTikTokViewers, L"Viewers: " + std::to_wstring(gTikTokViewerCount));
+    set(gTikTokFollowers, L"Followers: " + std::to_wstring(gTikTokFollowerCount));
+
+    set(gTwitchStatus, gTwitchLive ? L"Status: LIVE" : L"Status: OFFLINE");
+    set(gTwitchViewers, L"Viewers: " + std::to_wstring(gTwitchViewerCount));
+    set(gTwitchFollowers, L"Followers: " + std::to_wstring(gTwitchFollowerCount));
+
+    set(gYouTubeStatus, gYouTubeLive ? L"Status: LIVE" : L"Status: OFFLINE");
+    set(gYouTubeViewers, L"Viewers: " + std::to_wstring(gYouTubeViewerCount));
+    set(gYouTubeFollowers, L"Followers: " + std::to_wstring(gYouTubeFollowerCount));
+}
 static std::string ReadFileUtf8(const std::wstring& path) {
     FILE* f = nullptr;
     _wfopen_s(&f, path.c_str(), L"rb");
@@ -524,6 +551,13 @@ static void LayoutControls(HWND hwnd)
         MoveWindow(hStartTikTokBtn, x, y, bw, btnH, TRUE);
         MoveWindow(hRestartTikTokBtn, x + bw + gap, y, bw, btnH, TRUE);
         y += btnH + rowGap;
+
+        int infoX = x;
+        int infoY = y;
+        int infoW = w;
+        MoveWindow(gTikTokStatus, infoX, infoY + 0, infoW, 18, TRUE);
+        MoveWindow(gTikTokViewers, infoX, infoY + 20, infoW, 18, TRUE);
+        MoveWindow(gTikTokFollowers, infoX, infoY + 40, infoW, 18, TRUE);
     }
 
     // Twitch column
@@ -541,6 +575,15 @@ static void LayoutControls(HWND hwnd)
         int bw = (w - gap) / 2;
         MoveWindow(hStartTwitchBtn, x, y, bw, btnH, TRUE);
         MoveWindow(hRestartTwitchBtn, x + bw + gap, y, bw, btnH, TRUE);
+        y += btnH + rowGap;
+
+        int infoX = x;
+        int infoY = y;
+        int infoW = w;
+        MoveWindow(gTwitchStatus, infoX, infoY + 0, infoW, 18, TRUE);
+        MoveWindow(gTwitchViewers, infoX, infoY + 20, infoW, 18, TRUE);
+        MoveWindow(gTwitchFollowers, infoX, infoY + 40, infoW, 18, TRUE);
+
     }
 
     // YouTube column
@@ -558,6 +601,15 @@ static void LayoutControls(HWND hwnd)
         int bw = (w - gap) / 2;
         MoveWindow(hStartYouTubeBtn, x, y, bw, btnH, TRUE);
         MoveWindow(hRestartYouTubeBtn, x + bw + gap, y, bw, btnH, TRUE);
+        y += btnH + rowGap;
+
+        int infoX = x;
+        int infoY = y;
+        int infoW = w;
+        MoveWindow(gYouTubeStatus, infoX, infoY + 0, infoW, 18, TRUE);
+        MoveWindow(gYouTubeViewers, infoX, infoY + 20, infoW, 18, TRUE);
+        MoveWindow(gYouTubeFollowers, infoX, infoY + 40, infoW, 18, TRUE);
+
     }
 
     // Hint line
@@ -566,7 +618,7 @@ static void LayoutControls(HWND hwnd)
 
     // Overlay Style panel - under all three channels
     int overlayTop = hintY + 22;
-    int overlayH = 102;
+    int overlayH = 120;
 
     MoveWindow(hGroupOverlay, pad, overlayTop, W - pad * 2, overlayH, TRUE);
 
@@ -663,6 +715,20 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         hLblYouTube = CreateWindowW(L"STATIC", L"Handle / Channel", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
         hYouTube = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", ToW(config.youtube_handle).c_str(),
             WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL, 0, 0, 0, 0, hwnd, (HMENU)IDC_YOUTUBE_EDIT, nullptr, nullptr);
+        // Platform status labels (UI only for now)
+        gTikTokStatus = CreateWindowW(L"STATIC", L"Status: OFFLINE", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
+        gTikTokViewers = CreateWindowW(L"STATIC", L"Viewers: 0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
+        gTikTokFollowers = CreateWindowW(L"STATIC", L"Followers: 0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
+
+        gTwitchStatus = CreateWindowW(L"STATIC", L"Status: OFFLINE", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
+        gTwitchViewers = CreateWindowW(L"STATIC", L"Viewers: 0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
+        gTwitchFollowers = CreateWindowW(L"STATIC", L"Followers: 0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
+
+        gYouTubeStatus = CreateWindowW(L"STATIC", L"Status: OFFLINE", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
+        gYouTubeViewers = CreateWindowW(L"STATIC", L"Viewers: 0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
+        gYouTubeFollowers = CreateWindowW(L"STATIC", L"Followers: 0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
+
+
 
         // Buttons
         hGroupSettings = CreateWindowW(L"BUTTON", L"Settings", WS_CHILD | WS_VISIBLE | BS_GROUPBOX, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
@@ -720,10 +786,15 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             hLblTikTok,hLblTwitch,hLblYouTube,hHint,hGroupSettings,
             hTikTok,hTwitch,hYouTube,hTikTokCookies,
             hSave,hStartTikTokBtn,hRestartTikTokBtn,hStartTwitchBtn,hRestartTwitchBtn,hStartYouTubeBtn,hRestartYouTubeBtn,
+            gTikTokStatus,gTikTokViewers,gTikTokFollowers,
+            gTwitchStatus,gTwitchViewers,gTwitchFollowers,
+            gYouTubeStatus,gYouTubeViewers,gYouTubeFollowers,
             gLog,hClearLogBtn,hCopyLogBtn,
             hGroupOverlay,hLblOverlayFont,hOverlayFont,hLblOverlaySize,hOverlaySize,hOverlayShadow
         };
         for (HWND c : controls) if (c) SendMessageW(c, WM_SETFONT, (WPARAM)gFontUi, TRUE);
+        UpdatePlatformStatusUI();
+
 
         // Initial logs
         LogLine(L"Starting Mode-S Client overlay...");
@@ -919,6 +990,15 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     {
         HDC hdc = (HDC)wParam;
         HWND hCtl = (HWND)lParam;
+
+        // Status labels: green for LIVE, red for OFFLINE
+        if (hCtl == gTikTokStatus || hCtl == gTwitchStatus || hCtl == gYouTubeStatus)
+        {
+            bool live = (hCtl == gTikTokStatus) ? gTikTokLive : (hCtl == gTwitchStatus) ? gTwitchLive : gYouTubeLive;
+            SetBkMode(hdc, TRANSPARENT);
+            SetTextColor(hdc, live ? RGB(0, 200, 0) : RGB(220, 50, 50));
+            return (LRESULT)(gBrushBg ? gBrushBg : GetStockObject(NULL_BRUSH));
+        }
 
         // NOTE: Readonly EDIT controls are reported as STATIC for color messages.
         // gLog is ES_READONLY, so we must paint it OPAQUE to avoid text ghosting/overlap on scroll.
