@@ -2,25 +2,35 @@
 <html>
 <head>
     <meta charset="utf-8" />
+
+    <!-- Injected Google Font link (or empty) -->
+    %%GOOGLE_FONT_LINK%%
+
     <style>
+        :root {
+            --chat-font: %%FONT_STACK%%;
+            --chat-size: %%FONT_SIZE%%px;
+            --chat-shadow: %%TEXT_SHADOW%%;
+        }
+
         body {
             margin: 0;
             background: transparent;
-            font-family: sans-serif;
+            font-family: var(--chat-font);
         }
 
         #chat {
             padding: 12px;
-            font-size: 22px;
+            font-size: var(--chat-size);
             color: white;
-            text-shadow: 0 0 4px rgba(0,0,0,.8);
+            text-shadow: var(--chat-shadow);
         }
 
         #metrics {
             padding: 12px;
-            font-size: 22px;
+            font-size: var(--chat-size);
             color: white;
-            text-shadow: 0 0 4px rgba(0,0,0,.8);
+            text-shadow: var(--chat-shadow);
         }
 
         .msg {
@@ -43,34 +53,32 @@
     <div id="chat"></div>
 
     <script>
-    const metricsEl = document.getElementById('metrics');
-    const chatEl = document.getElementById('chat');
-    let lastLen = 0;
+        const metricsEl = document.getElementById('metrics');
+        const chatEl = document.getElementById('chat');
+        let lastLen = 0;
 
-    async function tick() {
-      try {
-        const m = await (await fetch('/api/metrics')).json();
-        metricsEl.textContent = `Viewers: ${m.total_viewers}  |  Followers: ${m.total_followers}`;
+        async function tick() {
+            try {
+                const m = await (await fetch('/api/metrics')).json();
+                metricsEl.textContent = `Viewers: ${m.total_viewers}  |  Followers: ${m.total_followers}`;
 
-        const chat = await (await fetch('/api/chat')).json();
-        if (chat.length !== lastLen) {
-          lastLen = chat.length;
-          chatEl.innerHTML = '';
-          const recent = chat.slice(-30);
-          for (const c of recent) {
-            const d = document.createElement('div');
-            d.className = 'msg';
-            d.innerHTML = `<span class="p">[${c.platform}]</span><span class="u">${c.user}</span>${c.message}`;
-            chatEl.appendChild(d);
-          }
-          window.scrollTo(0, document.body.scrollHeight);
+                const chat = await (await fetch('/api/chat')).json();
+                if (chat.length !== lastLen) {
+                    lastLen = chat.length;
+                    chatEl.innerHTML = '';
+                    const recent = chat.slice(-30);
+                    for (const c of recent) {
+                        const d = document.createElement('div');
+                        d.className = 'msg';
+                        d.innerHTML = `<span class="p">[${c.platform}]</span><span class="u">${c.user}</span>${c.message}`;
+                        chatEl.appendChild(d);
+                    }
+                    window.scrollTo(0, document.body.scrollHeight);
+                }
+            } catch (e) { }
         }
-      } catch(e) {}
-    }
-    setInterval(tick, 250);
+        setInterval(tick, 250);
         tick();
-
-        container.scrollTop = container.scrollHeight;
     </script>
 </body>
 </html>
