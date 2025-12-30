@@ -15,22 +15,62 @@
 #include "httplib.h"
 #include "json.hpp"
 
+#include "resource.h"
 #include "AppConfig.h"
 #include "AppState.h"
 #include "TikTokSidecar.h"
 #include "ObsWsClient.h"
 #include "TwitchIrcWsClient.h"
 
-#define IDC_TIKTOK_EDIT   1001
-#define IDC_TWITCH_EDIT   1002
-#define IDC_YOUTUBE_EDIT  1003
-#define IDC_SAVE_BTN      1004
-#define IDC_START_TIKTOK  1005
-#define IDC_RESTART_TIKTOK 1006
-#define IDC_START_TWITCH  1007
-#define IDC_RESTART_TWITCH 1008
+// --------------------------- Control IDs ------------------------------------
+#define IDC_TIKTOK_EDIT        1001
+#define IDC_TWITCH_EDIT        1002
+#define IDC_YOUTUBE_EDIT       1003
+#define IDC_SAVE_BTN           1004
+#define IDC_START_TIKTOK       1005
+#define IDC_RESTART_TIKTOK     1006
+#define IDC_START_TWITCH       1007
+#define IDC_RESTART_TWITCH     1008
+#define IDC_TIKTOK_COOKIES     1009
+#define IDC_START_YOUTUBE      1010
+#define IDC_RESTART_YOUTUBE    1011
+#define IDC_CLEAR_LOG          1012
+#define IDC_COPY_LOG           1013
 
-#define IDC_TIKTOK_COOKIES 1009
+// --------------------------- Theme (Material-ish dark) ----------------------
+static COLORREF gClrBg      = RGB(18, 18, 18);
+static COLORREF gClrPanel   = RGB(24, 24, 24);
+static COLORREF gClrEditBg  = RGB(32, 32, 32);
+static COLORREF gClrText    = RGB(230, 230, 230);
+static COLORREF gClrHint    = RGB(170, 170, 170);
+
+static HBRUSH gBrushBg    = nullptr;
+static HBRUSH gBrushPanel = nullptr;
+static HBRUSH gBrushEdit  = nullptr;
+static HFONT  gFontUi     = nullptr;
+
+// --------------------------- Globals (UI handles) ---------------------------
+static HWND gLog = nullptr;
+static HWND hGroupTikTok = nullptr, hGroupTwitch = nullptr, hGroupYouTube = nullptr;
+static HWND hLblTikTok = nullptr, hLblTwitch = nullptr, hLblYouTube = nullptr;
+static HWND hHint = nullptr;
+
+static HWND hTikTok = nullptr, hTwitch = nullptr, hYouTube = nullptr;
+static HWND hTikTokCookies = nullptr;
+
+static HWND hSave = nullptr;
+static HWND hStartTikTokBtn = nullptr, hRestartTikTokBtn = nullptr;
+static HWND hStartTwitchBtn = nullptr, hRestartTwitchBtn = nullptr;
+static HWND hStartYouTubeBtn = nullptr, hRestartYouTubeBtn = nullptr;
+
+static HWND hClearLogBtn = nullptr, hCopyLogBtn = nullptr;
+
+static std::atomic<bool> gRunning{ true };
+
+// Forward decl
+static void LayoutControls(HWND hwnd);
+
+// --------------------------- Helpers ----------------------------------------
 static std::wstring GetExeDir()
 {
     wchar_t path[MAX_PATH];
@@ -39,12 +79,6 @@ static std::wstring GetExeDir()
     auto pos = p.find_last_of(L"\\/");
     return (pos == std::wstring::npos) ? L"." : p.substr(0, pos);
 }
-
-static HWND hStartTikTokBtn = nullptr, hRestartTikTokBtn = nullptr;
-
-
-static HWND gLog = nullptr;
-static std::atomic<bool> gRunning{ true };
 
 static void LogLine(const std::wstring& s) {
     if (!gLog) return;
@@ -70,8 +104,62 @@ static std::string ToUtf8(const std::wstring& w) {
     return s;
 }
 
-// --- TikTok cookie modal (no resource file required) -------------------------
+static std::wstring GetWindowTextWString(HWND h) {
+    int len = GetWindowTextLengthW(h);
+    std::wstring w(len, L'\0');
+    GetWindowTextW(h, w.data(), len + 1);
+    return w;
+}
 
+static std::string Trim(const std::string& s)
+{
+    size_t a = 0;
+    while (a < s.size() && (s[a] == ' ' || s[a] == '\t' || s[a] == '\r' || s[a] == '\n')) a++;
+    size_t b = s.size();
+    while (b > a && (s[b - 1] == ' ' || s[b - 1] == '\t' || s[b - 1] == '\r' || s[b - 1] == '\n')) b--;
+    return s.substr(a, b - a);
+}
+
+static std::string SanitizeTikTok(const std::string& input)
+{
+    std::string s = Trim(input);
+    s.erase(std::remove(s.begin(), s.end(), '@'), s.end());
+    return Trim(s);
+}
+
+static std::string SanitizeTwitchLogin(std::string s)
+{
+    s = Trim(s);
+    if (!s.empty() && s[0] == '#') s.erase(s.begin());
+    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return (char)std::tolower(c); });
+    return s;
+}
+
+static void UpdateTikTokButtons(HWND hTikTokEdit, HWND hStartBtn, HWND hRestartBtn)
+{
+    if (!hTikTokEdit) return;
+    auto raw = ToUtf8(GetWindowTextWString(hTikTokEdit));
+    auto cleaned = SanitizeTikTok(raw);
+    BOOL enable = !cleaned.empty();
+    if (hStartBtn)   EnableWindow(hStartBtn, enable);
+    if (hRestartBtn) EnableWindow(hRestartBtn, enable);
+}
+
+static std::string ReadFileUtf8(const std::wstring& path) {
+    FILE* f = nullptr;
+    _wfopen_s(&f, path.c_str(), L"rb");
+    if (!f) return "";
+    fseek(f, 0, SEEK_END);
+    long sz = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    std::string data;
+    data.resize(sz > 0 ? (size_t)sz : 0);
+    if (sz > 0) fread(data.data(), 1, (size_t)sz, f);
+    fclose(f);
+    return data;
+}
+
+// --------------------------- TikTok cookie modal ----------------------------
 struct TikTokCookiesDraft {
     std::wstring sessionid;
     std::wstring sessionid_ss;
@@ -82,7 +170,6 @@ struct TikTokCookiesDraft {
 static LRESULT CALLBACK TikTokCookiesWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     auto* draft = reinterpret_cast<TikTokCookiesDraft*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
-
     static HWND hSession = nullptr, hSessionSS = nullptr, hTarget = nullptr;
 
     switch (msg)
@@ -129,7 +216,6 @@ static LRESULT CALLBACK TikTokCookiesWndProc(HWND hwnd, UINT msg, WPARAM wParam,
     {
         const int id = LOWORD(wParam);
         const int code = HIWORD(wParam);
-        // Only react to button clicks; EDIT controls send WM_COMMAND too (e.g. EN_SETFOCUS).
         if ((id == IDOK || id == IDCANCEL) && code == BN_CLICKED)
         {
             if (draft && id == IDOK)
@@ -173,6 +259,7 @@ static bool EditTikTokCookiesModal(HWND parent, TikTokCookiesDraft& draft)
         wc.hInstance = GetModuleHandleW(nullptr);
         wc.lpszClassName = kClass;
         wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+        wc.hIcon = LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCE(IDI_ICON1));
         RegisterClassW(&wc);
     }
 
@@ -196,7 +283,6 @@ static bool EditTikTokCookiesModal(HWND parent, TikTokCookiesDraft& draft)
     ShowWindow(dlg, SW_SHOW);
     UpdateWindow(dlg);
 
-    // Simple modal loop
     MSG msg{};
     while (IsWindow(dlg) && GetMessageW(&msg, nullptr, 0, 0))
     {
@@ -213,67 +299,14 @@ static bool EditTikTokCookiesModal(HWND parent, TikTokCookiesDraft& draft)
     return draft.accepted;
 }
 
-// ---------------------------------------------------------------------------
-
-static std::wstring GetWindowTextWString(HWND h) {
-    int len = GetWindowTextLengthW(h);
-    std::wstring w(len, L'\0');
-    GetWindowTextW(h, w.data(), len + 1);
-    return w;
-}
-
-static std::string Trim(const std::string& s)
-{
-    size_t a = 0;
-    while (a < s.size() && (s[a] == ' ' || s[a] == '\t' || s[a] == '\r' || s[a] == '\n')) a++;
-    size_t b = s.size();
-    while (b > a && (s[b - 1] == ' ' || s[b - 1] == '\t' || s[b - 1] == '\r' || s[b - 1] == '\n')) b--;
-    return s.substr(a, b - a);
-}
-
-static std::string SanitizeTikTok(const std::string& input)
-{
-    std::string s = Trim(input);
-    // remove all '@'
-    s.erase(std::remove(s.begin(), s.end(), '@'), s.end());
-    return Trim(s);
-}
-static void UpdateTikTokButtons(HWND hTikTokEdit, HWND hStartBtn, HWND hRestartBtn)
-{
-    if (!hTikTokEdit) return;
-
-    auto raw = ToUtf8(GetWindowTextWString(hTikTokEdit));
-    auto cleaned = SanitizeTikTok(raw);
-    BOOL enable = !cleaned.empty();
-
-    if (hStartBtn)   EnableWindow(hStartBtn, enable);
-    if (hRestartBtn) EnableWindow(hRestartBtn, enable);
-}
-
-static std::string ReadFileUtf8(const std::wstring& path) {
-    FILE* f = nullptr;
-    _wfopen_s(&f, path.c_str(), L"rb");
-    if (!f) return "";
-    fseek(f, 0, SEEK_END);
-    long sz = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    std::string data;
-    data.resize(sz > 0 ? (size_t)sz : 0);
-    if (sz > 0) fread(data.data(), 1, (size_t)sz, f);
-    fclose(f);
-    return data;
-}
-
+// --------------------------- Platform start helpers -------------------------
 static bool StartOrRestartTikTokSidecar(TikTokSidecar& tiktok,
     AppState& state,
     HWND hwndLog,
     HWND hTikTokEdit)
 {
-    // read + sanitize
     std::string raw = ToUtf8(GetWindowTextWString(hTikTokEdit));
     std::string cleaned = SanitizeTikTok(raw);
-
-    // write cleaned value back into textbox (so user sees what will be used)
     SetWindowTextW(hTikTokEdit, ToW(cleaned).c_str());
 
     if (cleaned.empty()) {
@@ -281,37 +314,23 @@ static bool StartOrRestartTikTokSidecar(TikTokSidecar& tiktok,
         return false;
     }
 
-    // stop existing sidecar if running (safe to call always)
     tiktok.stop();
-
-    // Make sure config.json gets updated too (optional — but nice)
-    // (We’ll save on Save button; start/restart doesn’t force-save.)
 
     std::wstring exeDir = GetExeDir();
     std::wstring sidecarPath = exeDir + L"\\sidecar\\tiktok_sidecar.py";
 
-    // Start sidecar. Python sidecar reads config.json, but we also want it to
-    // work immediately even before Save. Easiest: we write config.json first.
-    // If you prefer “must click Save”, remove this block.
+    LogLine((L"Starting python sidecar: " + sidecarPath));
 
-    LogLine((L"Starting python sidecar: " + sidecarPath).c_str());
-
-    _wputenv_s(
-        L"WHITELIST_AUTHENTICATED_SESSION_ID_HOST",
-        L"tiktok.eulerstream.com"
-    );
+    _wputenv_s(L"WHITELIST_AUTHENTICATED_SESSION_ID_HOST", L"tiktok.eulerstream.com");
 
     bool ok = tiktok.start(L"python", sidecarPath, [&](const nlohmann::json& j) {
         std::string type = j.value("type", "");
-        //        if (type.rfind("tiktok.", 0) == 0) LogLine(ToW(("SIDE CAR EVENT: " + type)).c_str());
-        //replaced with below
         if (type.rfind("tiktok.", 0) == 0) {
             std::string msg = j.value("message", "");
             std::string extra;
             if (!msg.empty()) extra = " | " + msg;
-            LogLine(ToW(("SIDE CAR EVENT: " + type + extra)).c_str());
+            LogLine(ToW(("SIDE CAR EVENT: " + type + extra)));
         }
-        //end
         if (type == "tiktok.chat") {
             ChatMessage c;
             c.platform = "TikTok";
@@ -324,7 +343,7 @@ static bool StartOrRestartTikTokSidecar(TikTokSidecar& tiktok,
         else if (type == "tiktok.viewers") {
             state.set_tiktok_viewers(j.value("viewers", 0));
         }
-        });
+    });
 
     if (ok) {
         if (hwndLog) LogLine(L"TikTok sidecar started/restarted.");
@@ -335,21 +354,6 @@ static bool StartOrRestartTikTokSidecar(TikTokSidecar& tiktok,
     return ok;
 }
 
-
-static std::string SanitizeTwitchLogin(std::string s)
-{
-    // trim spaces
-    while (!s.empty() && (s.front() == ' ' || s.front() == '\t')) s.erase(s.begin());
-    while (!s.empty() && (s.back() == ' ' || s.back() == '\t')) s.pop_back();
-
-    // remove leading '#'
-    if (!s.empty() && s[0] == '#') s.erase(s.begin());
-
-    // lowercase for consistency
-    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return (char)std::tolower(c); });
-    return s;
-}
-
 static bool StartOrRestartTwitchChat(TwitchIrcWsClient& twitch,
     AppState& state,
     HWND hwndLog,
@@ -357,7 +361,6 @@ static bool StartOrRestartTwitchChat(TwitchIrcWsClient& twitch,
 {
     std::string raw = ToUtf8(GetWindowTextWString(hTwitchEdit));
     std::string channel = SanitizeTwitchLogin(raw);
-
     SetWindowTextW(hTwitchEdit, ToW(channel).c_str());
 
     if (channel.empty()) {
@@ -365,22 +368,14 @@ static bool StartOrRestartTwitchChat(TwitchIrcWsClient& twitch,
         return false;
     }
 
-    // stop existing
     twitch.stop();
 
-    // Anonymous read-only login:
-    // PASS SCHMOOPIIE + NICK justinfanXXXX (Twitch-supported anonymous user)
-    // Channel to join is the streamer login.
     int suffix = 10000 + (GetTickCount() % 50000);
     std::string nick = "justinfan" + std::to_string(suffix);
 
     bool ok = twitch.start("SCHMOOPIIE", nick, channel,
         [&](const std::string& user, const std::string& message) {
-
-            // Show on the main log window (like TikTok)
             LogLine(ToW("TWITCH CHAT: " + user + " | " + message));
-
-            // Keep storing in AppState (if you use it later)
             ChatMessage c;
             c.platform = "Twitch";
             c.user = user;
@@ -399,12 +394,141 @@ static bool StartOrRestartTwitchChat(TwitchIrcWsClient& twitch,
     return ok;
 }
 
+// --------------------------- Clipboard helper -------------------------------
+static void CopyLogToClipboard(HWND hwndOwner)
+{
+    if (!gLog) return;
+    int len = GetWindowTextLengthW(gLog);
+    if (len <= 0) return;
 
+    std::wstring text;
+    text.resize((size_t)len);
+    GetWindowTextW(gLog, text.data(), len + 1);
+
+    if (!OpenClipboard(hwndOwner)) return;
+    EmptyClipboard();
+
+    size_t bytes = (text.size() + 1) * sizeof(wchar_t);
+    HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, bytes);
+    if (hMem) {
+        void* p = GlobalLock(hMem);
+        if (p) {
+            memcpy(p, text.c_str(), bytes);
+            GlobalUnlock(hMem);
+            SetClipboardData(CF_UNICODETEXT, hMem);
+        } else {
+            GlobalFree(hMem);
+        }
+    }
+    CloseClipboard();
+}
+
+// --------------------------- Layout -----------------------------------------
+static void LayoutControls(HWND hwnd)
+{
+    RECT rc{};
+    GetClientRect(hwnd, &rc);
+    int W = rc.right - rc.left;
+    int H = rc.bottom - rc.top;
+
+    const int pad = 16;
+    const int gap = 12;
+
+    const int topH = 190;
+    int colW = (W - pad * 2 - gap * 2) / 3;
+    if (colW < 280) colW = 280;
+
+    int x0 = pad;
+    int y0 = pad;
+
+    // Group boxes
+    MoveWindow(hGroupTikTok, x0, y0, colW, topH, TRUE);
+    MoveWindow(hGroupTwitch, x0 + (colW + gap), y0, colW, topH, TRUE);
+    MoveWindow(hGroupYouTube, x0 + 2 * (colW + gap), y0, colW, topH, TRUE);
+
+    const int innerPad = 14;
+    const int labelH = 18;
+    const int editH = 26;
+    const int btnH = 28;
+    const int rowGap = 10;
+
+    // TikTok column
+    {
+        int x = x0 + innerPad;
+        int y = y0 + 28;
+        int w = colW - innerPad * 2;
+
+        MoveWindow(hLblTikTok, x, y, w, labelH, TRUE);
+        y += labelH + 6;
+
+        int editW = w - 32 - 8;
+        MoveWindow(hTikTok, x, y, editW, editH, TRUE);
+        MoveWindow(hTikTokCookies, x + editW + 8, y, 32, editH, TRUE);
+        y += editH + rowGap;
+
+        int bw = (w - gap) / 2;
+        MoveWindow(hStartTikTokBtn, x, y, bw, btnH, TRUE);
+        MoveWindow(hRestartTikTokBtn, x + bw + gap, y, bw, btnH, TRUE);
+        y += btnH + rowGap;
+
+        MoveWindow(hSave, x, y, w, btnH, TRUE);
+    }
+
+    // Twitch column
+    {
+        int x = x0 + (colW + gap) + innerPad;
+        int y = y0 + 28;
+        int w = colW - innerPad * 2;
+
+        MoveWindow(hLblTwitch, x, y, w, labelH, TRUE);
+        y += labelH + 6;
+
+        MoveWindow(hTwitch, x, y, w, editH, TRUE);
+        y += editH + rowGap;
+
+        int bw = (w - gap) / 2;
+        MoveWindow(hStartTwitchBtn, x, y, bw, btnH, TRUE);
+        MoveWindow(hRestartTwitchBtn, x + bw + gap, y, bw, btnH, TRUE);
+    }
+
+    // YouTube column
+    {
+        int x = x0 + 2 * (colW + gap) + innerPad;
+        int y = y0 + 28;
+        int w = colW - innerPad * 2;
+
+        MoveWindow(hLblYouTube, x, y, w, labelH, TRUE);
+        y += labelH + 6;
+
+        MoveWindow(hYouTube, x, y, w, editH, TRUE);
+        y += editH + rowGap;
+
+        int bw = (w - gap) / 2;
+        MoveWindow(hStartYouTubeBtn, x, y, bw, btnH, TRUE);
+        MoveWindow(hRestartYouTubeBtn, x + bw + gap, y, bw, btnH, TRUE);
+    }
+
+    // Hint line
+    MoveWindow(hHint, pad, y0 + topH + 6, W - pad * 2, 18, TRUE);
+
+    // Log tools
+    int toolsY = y0 + topH + 30;
+    int toolH = 28;
+    int toolW = 80;
+
+    MoveWindow(hClearLogBtn, W - pad - toolW * 2 - gap, toolsY, toolW, toolH, TRUE);
+    MoveWindow(hCopyLogBtn,  W - pad - toolW,          toolsY, toolW, toolH, TRUE);
+
+    // Log area
+    int logY = toolsY + toolH + 10;
+    int logH = H - logY - pad;
+    if (logH < 140) logH = 140;
+    MoveWindow(gLog, pad, logY, W - pad * 2, logH, TRUE);
+}
+
+// --------------------------- Main Window ------------------------------------
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     static AppConfig config;
-
-    static HWND hTikTok = nullptr, hTwitch = nullptr, hYouTube = nullptr;
-    static HWND hSave = nullptr;
 
     static AppState state;
     static TikTokSidecar tiktok;
@@ -417,88 +541,104 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
     case WM_CREATE:
     {
-        // Log box
-        gLog = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
-            WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_READONLY | WS_VSCROLL,
-            10, 75, 760, 355, hwnd, nullptr, nullptr, nullptr);
+        if (!gBrushBg)    gBrushBg = CreateSolidBrush(gClrBg);
+        if (!gBrushPanel) gBrushPanel = CreateSolidBrush(gClrPanel);
+        if (!gBrushEdit)  gBrushEdit = CreateSolidBrush(gClrEditBg);
 
+        if (!gFontUi) {
+            LOGFONTW lf{};
+            lf.lfHeight = -16;
+            wcscpy_s(lf.lfFaceName, L"Segoe UI");
+            gFontUi = CreateFontIndirectW(&lf);
+        }
+
+        // Load config first (so edits start populated)
+        if (config.Load()) {
+            // ok
+        }
+
+        // Group boxes
+        hGroupTikTok  = CreateWindowW(L"BUTTON", L"TikTok",  WS_CHILD | WS_VISIBLE | BS_GROUPBOX, 0,0,0,0, hwnd, nullptr, nullptr, nullptr);
+        hGroupTwitch  = CreateWindowW(L"BUTTON", L"Twitch",  WS_CHILD | WS_VISIBLE | BS_GROUPBOX, 0,0,0,0, hwnd, nullptr, nullptr, nullptr);
+        hGroupYouTube = CreateWindowW(L"BUTTON", L"YouTube", WS_CHILD | WS_VISIBLE | BS_GROUPBOX, 0,0,0,0, hwnd, nullptr, nullptr, nullptr);
+
+        // Labels + edits
+        hLblTikTok = CreateWindowW(L"STATIC", L"Username (no @)", WS_CHILD | WS_VISIBLE, 0,0,0,0, hwnd, nullptr, nullptr, nullptr);
+        hTikTok = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", ToW(config.tiktok_unique_id).c_str(),
+            WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL, 0,0,0,0, hwnd, (HMENU)IDC_TIKTOK_EDIT, nullptr, nullptr);
+        hTikTokCookies = CreateWindowW(L"BUTTON", L"...", WS_CHILD | WS_VISIBLE, 0,0,0,0, hwnd, (HMENU)IDC_TIKTOK_COOKIES, nullptr, nullptr);
+
+        hLblTwitch = CreateWindowW(L"STATIC", L"Channel login", WS_CHILD | WS_VISIBLE, 0,0,0,0, hwnd, nullptr, nullptr, nullptr);
+        hTwitch = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", ToW(config.twitch_login).c_str(),
+            WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL, 0,0,0,0, hwnd, (HMENU)IDC_TWITCH_EDIT, nullptr, nullptr);
+
+        hLblYouTube = CreateWindowW(L"STATIC", L"Handle / Channel", WS_CHILD | WS_VISIBLE, 0,0,0,0, hwnd, nullptr, nullptr, nullptr);
+        hYouTube = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", ToW(config.youtube_handle).c_str(),
+            WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL, 0,0,0,0, hwnd, (HMENU)IDC_YOUTUBE_EDIT, nullptr, nullptr);
+
+        // Buttons
+        hSave = CreateWindowW(L"BUTTON", L"Save settings", WS_CHILD | WS_VISIBLE, 0,0,0,0, hwnd, (HMENU)IDC_SAVE_BTN, nullptr, nullptr);
+
+        hStartTikTokBtn = CreateWindowW(L"BUTTON", L"Start",   WS_CHILD | WS_VISIBLE, 0,0,0,0, hwnd, (HMENU)IDC_START_TIKTOK, nullptr, nullptr);
+        hRestartTikTokBtn = CreateWindowW(L"BUTTON", L"Restart", WS_CHILD | WS_VISIBLE, 0,0,0,0, hwnd, (HMENU)IDC_RESTART_TIKTOK, nullptr, nullptr);
+
+        hStartTwitchBtn = CreateWindowW(L"BUTTON", L"Start",   WS_CHILD | WS_VISIBLE, 0,0,0,0, hwnd, (HMENU)IDC_START_TWITCH, nullptr, nullptr);
+        hRestartTwitchBtn = CreateWindowW(L"BUTTON", L"Restart", WS_CHILD | WS_VISIBLE, 0,0,0,0, hwnd, (HMENU)IDC_RESTART_TWITCH, nullptr, nullptr);
+
+        hStartYouTubeBtn = CreateWindowW(L"BUTTON", L"Start",   WS_CHILD | WS_VISIBLE, 0,0,0,0, hwnd, (HMENU)IDC_START_YOUTUBE, nullptr, nullptr);
+        hRestartYouTubeBtn = CreateWindowW(L"BUTTON", L"Restart", WS_CHILD | WS_VISIBLE, 0,0,0,0, hwnd, (HMENU)IDC_RESTART_YOUTUBE, nullptr, nullptr);
+        EnableWindow(hStartYouTubeBtn, FALSE);
+        EnableWindow(hRestartYouTubeBtn, FALSE);
+
+        hHint = CreateWindowW(L"STATIC", L"", WS_CHILD | WS_VISIBLE, 0,0,0,0, hwnd, nullptr, nullptr, nullptr);
+
+        // Log + tools
+        gLog = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+            WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_READONLY | WS_VSCROLL, 0,0,0,0, hwnd, nullptr, nullptr, nullptr);
+
+        hClearLogBtn = CreateWindowW(L"BUTTON", L"Clear", WS_CHILD | WS_VISIBLE, 0,0,0,0, hwnd, (HMENU)IDC_CLEAR_LOG, nullptr, nullptr);
+        hCopyLogBtn  = CreateWindowW(L"BUTTON", L"Copy",  WS_CHILD | WS_VISIBLE, 0,0,0,0, hwnd, (HMENU)IDC_COPY_LOG, nullptr, nullptr);
+
+        // Apply font
+        HWND controls[] = {
+            hGroupTikTok,hGroupTwitch,hGroupYouTube,
+            hLblTikTok,hLblTwitch,hLblYouTube,hHint,
+            hTikTok,hTwitch,hYouTube,hTikTokCookies,
+            hSave,hStartTikTokBtn,hRestartTikTokBtn,hStartTwitchBtn,hRestartTwitchBtn,hStartYouTubeBtn,hRestartYouTubeBtn,
+            gLog,hClearLogBtn,hCopyLogBtn
+        };
+        for (HWND c : controls) if (c) SendMessageW(c, WM_SETFONT, (WPARAM)gFontUi, TRUE);
+
+        // Initial logs
         LogLine(L"Starting StreamHub (polling overlay)...");
         LogLine(L"Overlay: http://localhost:17845/overlay/chat.html");
         LogLine(L"Metrics: http://localhost:17845/api/metrics");
 
-        // Load saved config (if any)
-        if (config.Load()) {
+        if (config.tiktok_unique_id.empty() && config.twitch_login.empty() && config.youtube_handle.empty()) {
+            LogLine(L"No config.json found yet. Please enter channel details and click Save.");
+        } else {
             LogLine(L"Loaded config.json");
         }
-        else {
-            LogLine(L"No config.json found yet. Please enter channel details and click Save.");
-        }
 
-        // Labels + edit boxes
-        CreateWindowW(L"STATIC", L"TikTok (no @):", WS_CHILD | WS_VISIBLE,
-            10, 10, 140, 20, hwnd, nullptr, nullptr, nullptr);
+        SetWindowTextW(hHint, L"Tip: Save settings first. TikTok cookies are optional unless required by TikTok.");
 
-        hTikTok = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", ToW(config.tiktok_unique_id).c_str(),
-            WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
-            150, 8, 200, 24, hwnd, (HMENU)IDC_TIKTOK_EDIT, nullptr, nullptr);
-
-        // TikTok cookies (session) button
-        CreateWindowW(L"BUTTON", L"...", WS_CHILD | WS_VISIBLE,
-            352, 8, 24, 24, hwnd, (HMENU)IDC_TIKTOK_COOKIES, nullptr, nullptr);
-
-        // "..." button to edit TikTok cookie fields
-        CreateWindowW(L"BUTTON", L"...", WS_CHILD | WS_VISIBLE,
-            352, 8, 16, 24, hwnd, (HMENU)IDC_TIKTOK_COOKIES, nullptr, nullptr);
-
-        CreateWindowW(L"STATIC", L"Twitch login:", WS_CHILD | WS_VISIBLE,
-            370, 10, 90, 20, hwnd, nullptr, nullptr, nullptr);
-
-        hTwitch = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", ToW(config.twitch_login).c_str(),
-            WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
-            460, 8, 180, 24, hwnd, (HMENU)IDC_TWITCH_EDIT, nullptr, nullptr);
-
-        CreateWindowW(L"STATIC", L"YouTube handle:", WS_CHILD | WS_VISIBLE,
-            10, 42, 140, 20, hwnd, nullptr, nullptr, nullptr);
-
-        hYouTube = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", ToW(config.youtube_handle).c_str(),
-            WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
-            150, 40, 200, 24, hwnd, (HMENU)IDC_YOUTUBE_EDIT, nullptr, nullptr);
-
-        // Buttons
-        hSave = CreateWindowW(L"BUTTON", L"Save", WS_CHILD | WS_VISIBLE,
-            370, 40, 80, 24, hwnd, (HMENU)IDC_SAVE_BTN, nullptr, nullptr);
-
-        hStartTikTokBtn = CreateWindowW(L"BUTTON", L"Start TikTok", WS_CHILD | WS_VISIBLE,
-            460, 40, 110, 24, hwnd, (HMENU)IDC_START_TIKTOK, nullptr, nullptr);
-
-        hRestartTikTokBtn = CreateWindowW(L"BUTTON", L"Restart TikTok", WS_CHILD | WS_VISIBLE,
-            580, 40, 120, 24, hwnd, (HMENU)IDC_RESTART_TIKTOK, nullptr, nullptr);
-
-        // Twitch buttons
-        CreateWindowW(L"BUTTON", L"Start Twitch", WS_CHILD | WS_VISIBLE,
-            650, 8, 110, 24, hwnd, (HMENU)IDC_START_TWITCH, nullptr, nullptr);
-
-        CreateWindowW(L"BUTTON", L"Restart Twitch", WS_CHILD | WS_VISIBLE,
-            650, 40, 110, 24, hwnd, (HMENU)IDC_RESTART_TWITCH, nullptr, nullptr);
-
-        // Disable Start/Restart until TikTok field has something valid
         UpdateTikTokButtons(hTikTok, hStartTikTokBtn, hRestartTikTokBtn);
 
-        LogLine(L"TikTok is not started yet. Enter TikTok username then click Start or Restart.");
+        LayoutControls(hwnd);
 
-        // Start HTTP server in background thread (only once)
+        // Start HTTP server in background thread
         serverThread = std::thread([&]() {
             httplib::Server svr;
 
             svr.Get("/api/metrics", [&](const httplib::Request&, httplib::Response& res) {
                 auto j = state.metrics_json();
                 res.set_content(j.dump(2), "application/json; charset=utf-8");
-                });
+            });
 
             svr.Get("/api/chat", [&](const httplib::Request&, httplib::Response& res) {
                 auto j = state.chat_json();
                 res.set_content(j.dump(2), "application/json; charset=utf-8");
-                });
+            });
 
             svr.Get("/overlay/chat.html", [&](const httplib::Request&, httplib::Response& res) {
                 std::wstring htmlPath = GetExeDir() + L"\\assets\\overlay\\chat.html";
@@ -506,30 +646,28 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 if (html.empty()) {
                     res.status = 404;
                     res.set_content("chat.html not found (check Copy to Output Directory)", "text/plain");
-                }
-                else {
+                } else {
                     res.set_content(html, "text/html; charset=utf-8");
                 }
-                });
+            });
 
             svr.Get("/", [&](const httplib::Request&, httplib::Response& res) {
                 res.set_redirect("/overlay/chat.html");
-                });
-
-            svr.listen("127.0.0.1", 17845);
             });
 
-        // Metrics / OBS update loop (OBS is stub right now)
+            svr.listen("127.0.0.1", 17845);
+        });
+        serverThread.detach();
+
         metricsThread = std::thread([&]() {
             while (gRunning) {
                 auto m = state.get_metrics();
-
                 obs.set_text("TOTAL_VIEWER_COUNT", std::to_string(m.total_viewers()));
                 obs.set_text("TOTAL_FOLLOWER_COUNT", std::to_string(m.total_followers()));
-
                 Sleep(5000);
             }
-            });
+        });
+        metricsThread.detach();
 
         return 0;
     }
@@ -538,7 +676,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     {
         const int id = LOWORD(wParam);
 
-        // Enable/disable Start/Restart as user types TikTok username
         if (HIWORD(wParam) == EN_CHANGE && id == IDC_TIKTOK_EDIT) {
             UpdateTikTokButtons(hTikTok, hStartTikTokBtn, hRestartTikTokBtn);
             return 0;
@@ -554,9 +691,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             return 0;
         }
 
+        if (id == IDC_START_YOUTUBE || id == IDC_RESTART_YOUTUBE) {
+            LogLine(L"YouTube support is UI-ready but not implemented yet.");
+            return 0;
+        }
+
         if (id == IDC_TIKTOK_COOKIES) {
-            // Open modal to edit TikTok session cookies. Changes apply in-memory;
-            // user must click Save to persist them to config.json.
             TikTokCookiesDraft draft;
             draft.sessionid = ToW(config.tiktok_sessionid);
             draft.sessionid_ss = ToW(config.tiktok_sessionid_ss);
@@ -566,29 +706,38 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 config.tiktok_sessionid = ToUtf8(draft.sessionid);
                 config.tiktok_sessionid_ss = ToUtf8(draft.sessionid_ss);
                 config.tiktok_tt_target_idc = ToUtf8(draft.tt_target_idc);
-                LogLine(L"TikTok cookies updated (not saved yet). Click Save to persist.");
+                LogLine(L"TikTok cookies updated (not saved yet). Click Save settings to persist.");
             }
             return 0;
         }
 
         if (id == IDC_SAVE_BTN) {
-            // Save + sanitize TikTok (strip @, trim)
             config.tiktok_unique_id = SanitizeTikTok(ToUtf8(GetWindowTextWString(hTikTok)));
             SetWindowTextW(hTikTok, ToW(config.tiktok_unique_id).c_str());
 
             config.twitch_login = SanitizeTwitchLogin(ToUtf8(GetWindowTextWString(hTwitch)));
             SetWindowTextW(hTwitch, ToW(config.twitch_login).c_str());
+
             config.youtube_handle = ToUtf8(GetWindowTextWString(hYouTube));
 
             if (config.Save()) {
                 LogLine(L"Saved config.json.");
-            }
-            else {
+            } else {
                 LogLine(L"ERROR: Failed to save config.json");
             }
 
-            // Refresh button enabled/disabled state after sanitizing
             UpdateTikTokButtons(hTikTok, hStartTikTokBtn, hRestartTikTokBtn);
+            return 0;
+        }
+
+        if (id == IDC_CLEAR_LOG) {
+            if (gLog) SetWindowTextW(gLog, L"");
+            return 0;
+        }
+
+        if (id == IDC_COPY_LOG) {
+            CopyLogToClipboard(hwnd);
+            LogLine(L"Log copied to clipboard.");
             return 0;
         }
 
@@ -596,22 +745,45 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     }
 
     case WM_SIZE:
-    {
-        RECT rc; GetClientRect(hwnd, &rc);
-        if (gLog) MoveWindow(gLog, 10, 75, rc.right - 20, rc.bottom - 85, TRUE);
+        LayoutControls(hwnd);
         return 0;
+
+    case WM_ERASEBKGND:
+    {
+        RECT rc{};
+        GetClientRect(hwnd, &rc);
+        FillRect((HDC)wParam, &rc, gBrushBg ? gBrushBg : (HBRUSH)(COLOR_WINDOW + 1));
+        return 1;
+    }
+
+    case WM_CTLCOLORSTATIC:
+    {
+        HDC hdc = (HDC)wParam;
+        HWND hCtl = (HWND)lParam;
+        SetBkMode(hdc, TRANSPARENT);
+        SetTextColor(hdc, (hCtl == hHint) ? gClrHint : gClrText);
+        return (LRESULT)(gBrushBg ? gBrushBg : GetStockObject(BLACK_BRUSH));
+    }
+
+    case WM_CTLCOLOREDIT:
+    {
+        HDC hdc = (HDC)wParam;
+        SetBkMode(hdc, OPAQUE);
+        SetBkColor(hdc, gClrEditBg);
+        SetTextColor(hdc, gClrText);
+        return (LRESULT)(gBrushEdit ? gBrushEdit : GetStockObject(BLACK_BRUSH));
     }
 
     case WM_DESTROY:
         gRunning = false;
         tiktok.stop();
+        twitch.stop();
         PostQuitMessage(0);
         return 0;
     }
 
     return DefWindowProcW(hwnd, msg, wParam, lParam);
 }
-
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
     const wchar_t CLASS_NAME[] = L"StreamHubWindow";
@@ -620,17 +792,23 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
     wc.lpfnWndProc = WndProc;
     wc.hInstance = hInstance;
     wc.lpszClassName = CLASS_NAME;
+    wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    wc.hbrBackground = nullptr;
 
     RegisterClassW(&wc);
 
     HWND hwnd = CreateWindowExW(
-        0, CLASS_NAME, L"Mode-S Client (StreamHub)",
+        0, CLASS_NAME, L"RadarController Mode-S Client",
         WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT, 800, 500,
+        CW_USEDEFAULT, CW_USEDEFAULT, 1440, 810,
         nullptr, nullptr, hInstance, nullptr
     );
 
+    SendMessageW(hwnd, WM_SETICON, ICON_BIG, (LPARAM)LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCE(IDI_APP_ICON)));
+    SendMessageW(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCE(IDI_APP_ICON)));
+
     if (!hwnd) return 0;
+
     ShowWindow(hwnd, nCmdShow);
 
     MSG msg{};

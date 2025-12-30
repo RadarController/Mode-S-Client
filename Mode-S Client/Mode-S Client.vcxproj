@@ -154,7 +154,9 @@
     <ResourceCompile Include="Mode-S Client.rc" />
   </ItemGroup>
   <ItemGroup>
+    <Image Include="icon1.ico" />
     <Image Include="Mode-S Client.ico" />
+    <Image Include="radarcontrollermodesclient.ico" />
     <Image Include="small.ico" />
   </ItemGroup>
   <ItemGroup>
