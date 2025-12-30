@@ -1,3 +1,4 @@
+// Mode-S Client.cpp
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <winsock2.h>
@@ -134,12 +135,12 @@ struct HttpResult {
 };
 
 static HttpResult WinHttpRequest(const std::wstring& method,
-                                 const std::wstring& host,
-                                 INTERNET_PORT port,
-                                 const std::wstring& path,
-                                 const std::wstring& headers,
-                                 const std::string& body,
-                                 bool secure)
+    const std::wstring& host,
+    INTERNET_PORT port,
+    const std::wstring& path,
+    const std::wstring& headers,
+    const std::string& body,
+    bool secure)
 {
     HttpResult r;
     DWORD status = 0; DWORD statusSize = sizeof(status);
@@ -202,7 +203,7 @@ static std::string UrlEncode(const std::string& s)
     static const char* hex = "0123456789ABCDEF";
     std::string out;
     for (unsigned char c : s) {
-        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c=='-'||c=='_'||c=='.'||c=='~') out.push_back((char)c);
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~') out.push_back((char)c);
         else {
             out.push_back('%');
             out.push_back(hex[(c >> 4) & 0xF]);
@@ -266,17 +267,17 @@ static void UpdatePlatformStatusUI(const Metrics& m)
     auto set = [](HWND h, const std::wstring& s) { if (h) SetWindowTextW(h, s.c_str()); };
 
     // Pull latest values from AppState metrics (single source of truth for UI)
-    gTikTokViewerCount   = m.tiktok_viewers;
+    gTikTokViewerCount = m.tiktok_viewers;
     gTikTokFollowerCount = m.tiktok_followers;
-    gTikTokLive          = m.tiktok_live;
+    gTikTokLive = m.tiktok_live;
 
-    gTwitchViewerCount   = m.twitch_viewers;
+    gTwitchViewerCount = m.twitch_viewers;
     gTwitchFollowerCount = m.twitch_followers;
-    gTwitchLive          = m.twitch_live;
+    gTwitchLive = m.twitch_live;
 
-    gYouTubeViewerCount   = m.youtube_viewers;
+    gYouTubeViewerCount = m.youtube_viewers;
     gYouTubeFollowerCount = m.youtube_followers;
-    gYouTubeLive          = m.youtube_live;
+    gYouTubeLive = m.youtube_live;
     set(gTikTokStatus, gTikTokLive ? L"Status: LIVE" : L"Status: OFFLINE");
     set(gTikTokViewers, L"Viewers: " + std::to_wstring(gTikTokViewerCount));
     set(gTikTokFollowers, L"Followers: " + std::to_wstring(gTikTokFollowerCount));
@@ -300,20 +301,21 @@ static bool TryFetchMetricsFromApi(Metrics& out)
     try {
         auto j = nlohmann::json::parse(r.body);
 
-        out.ts_ms           = j.value("ts_ms", 0LL);
-        out.twitch_viewers   = j.value("twitch_viewers", 0);
-        out.youtube_viewers  = j.value("youtube_viewers", 0);
-        out.tiktok_viewers   = j.value("tiktok_viewers", 0);
+        out.ts_ms = j.value("ts_ms", 0LL);
+        out.twitch_viewers = j.value("twitch_viewers", 0);
+        out.youtube_viewers = j.value("youtube_viewers", 0);
+        out.tiktok_viewers = j.value("tiktok_viewers", 0);
 
         out.twitch_followers = j.value("twitch_followers", 0);
-        out.youtube_followers= j.value("youtube_followers", 0);
+        out.youtube_followers = j.value("youtube_followers", 0);
         out.tiktok_followers = j.value("tiktok_followers", 0);
 
-        out.twitch_live      = j.value("twitch_live", false);
-        out.youtube_live     = j.value("youtube_live", false);
-        out.tiktok_live      = j.value("tiktok_live", false);
+        out.twitch_live = j.value("twitch_live", false);
+        out.youtube_live = j.value("youtube_live", false);
+        out.tiktok_live = j.value("tiktok_live", false);
         return true;
-    } catch (...) {
+    }
+    catch (...) {
         return false;
     }
 }
@@ -344,8 +346,6 @@ static void ReplaceAll(std::string& s, const std::string& from, const std::strin
 
 static std::string UrlEncodeGoogleFontFamily(std::string family)
 {
-    // Good enough for common Google font family names like "Inter", "Roboto Slab", etc.
-    // Spaces become '+'. (If you later support weight/ital etc you can expand this.)
     for (char& c : family) {
         if (c == ' ') c = '+';
     }
@@ -425,7 +425,7 @@ static LRESULT CALLBACK TikTokCookiesWndProc(HWND hwnd, UINT msg, WPARAM wParam,
         return 0;
     }
 
-case WM_COMMAND:
+    case WM_COMMAND:
     {
         const int id = LOWORD(wParam);
         const int code = HIWORD(wParam);
@@ -637,7 +637,6 @@ static bool EditTwitchSettingsModal(HWND parent, TwitchSettingsDraft& draft)
         &draft);
 
     if (!dlg) {
-        // If dialog fails to create, re-enable parent and surface an error
         EnableWindow(parent, TRUE);
         return false;
     }
@@ -664,6 +663,7 @@ static bool EditTwitchSettingsModal(HWND parent, TwitchSettingsDraft& draft)
 // --------------------------- Platform start helpers -------------------------
 static bool StartOrRestartTikTokSidecar(TikTokSidecar& tiktok,
     AppState& state,
+    HWND hwndMain,
     HWND hwndLog,
     HWND hTikTokEdit)
 {
@@ -693,7 +693,25 @@ static bool StartOrRestartTikTokSidecar(TikTokSidecar& tiktok,
             if (!msg.empty()) extra = " | " + msg;
             LogLine(ToW(("TIKTOK: " + type + extra)));
         }
-        if (type == "tiktok.chat") {
+
+        if (type == "tiktok.connected") {
+            // If we can connect, we are live.
+            state.set_tiktok_live(true);
+            if (hwndMain) PostMessageW(hwndMain, WM_APP + 41, 0, 0);
+        }
+        else if (type == "tiktok.disconnected" || type == "tiktok.offline") {
+            // Ensure we never show stale "live" state / viewers.
+            state.set_tiktok_live(false);
+            state.set_tiktok_viewers(0);
+            if (hwndMain) PostMessageW(hwndMain, WM_APP + 41, 0, 0);
+        }
+        else if (type == "tiktok.error") {
+            // Treat fatal sidecar errors as offline from the UI/metrics perspective.
+            state.set_tiktok_live(false);
+            state.set_tiktok_viewers(0);
+            if (hwndMain) PostMessageW(hwndMain, WM_APP + 41, 0, 0);
+        }
+        else if (type == "tiktok.chat") {
             ChatMessage c;
             c.platform = "TikTok";
             c.user = j.value("user", "unknown");
@@ -702,8 +720,26 @@ static bool StartOrRestartTikTokSidecar(TikTokSidecar& tiktok,
             c.ts_ms = (std::int64_t)(ts * 1000.0);
             state.add_chat(std::move(c));
         }
+        // NEW: primary stats event from the updated sidecar
+        else if (type == "tiktok.stats") {
+            bool live = j.value("live", false);
+            int viewers = j.value("viewers", 0);
+
+            state.set_tiktok_live(live);
+            state.set_tiktok_viewers(viewers);
+
+            // Followers is optional in the sidecar payload; only apply if present
+            if (j.contains("followers")) {
+                state.set_tiktok_followers(j.value("followers", 0));
+            }
+
+            // Refresh UI (which pulls /api/metrics and updates widgets)
+            if (hwndMain) PostMessageW(hwndMain, WM_APP + 41, 0, 0);
+        }
+        // Backward compatibility (if any old sidecar emits this)
         else if (type == "tiktok.viewers") {
             state.set_tiktok_viewers(j.value("viewers", 0));
+            if (hwndMain) PostMessageW(hwndMain, WM_APP + 41, 0, 0);
         }
         });
 
@@ -934,7 +970,6 @@ static void LayoutControls(HWND hwnd)
     MoveWindow(hSave, pad + savePad, saveY, (W - pad * 2) - savePad * 2, 28, TRUE);
 
     // Log tools (below Settings block)
-
     int toolsY = settingsTop + settingsH + 10;
 
     int toolH = 28;
@@ -979,9 +1014,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         }
 
         // Load config first (so edits start populated)
-        if (config.Load()) {
-            // ok
-        }
+        (void)config.Load();
 
         // Group boxes
         hGroupTikTok = CreateWindowW(L"BUTTON", L"TikTok", WS_CHILD | WS_VISIBLE | BS_GROUPBOX, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
@@ -1002,7 +1035,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         hLblYouTube = CreateWindowW(L"STATIC", L"Handle / Channel", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
         hYouTube = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", ToW(config.youtube_handle).c_str(),
             WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL, 0, 0, 0, 0, hwnd, (HMENU)IDC_YOUTUBE_EDIT, nullptr, nullptr);
-        // Platform status labels (UI only for now)
+
+        // Platform status labels
         gTikTokStatus = CreateWindowW(L"STATIC", L"Status: OFFLINE", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
         gTikTokViewers = CreateWindowW(L"STATIC", L"Viewers: 0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
         gTikTokFollowers = CreateWindowW(L"STATIC", L"Followers: 0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
@@ -1016,11 +1050,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         gYouTubeViewers = CreateWindowW(L"STATIC", L"Viewers: 0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
         gYouTubeFollowers = CreateWindowW(L"STATIC", L"Followers: 0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
 
-
-
         // Buttons
         hGroupSettings = CreateWindowW(L"BUTTON", L"Settings", WS_CHILD | WS_VISIBLE | BS_GROUPBOX, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
-
         hSave = CreateWindowW(L"BUTTON", L"Save settings", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_SAVE_BTN, nullptr, nullptr);
 
         hStartTikTokBtn = CreateWindowW(L"BUTTON", L"Start", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_START_TIKTOK, nullptr, nullptr);
@@ -1066,7 +1097,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_READONLY | WS_VSCROLL, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
         LogLine(L"APP: UI log initialized");
 
-
         hClearLogBtn = CreateWindowW(L"BUTTON", L"Clear", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_CLEAR_LOG, nullptr, nullptr);
         hCopyLogBtn = CreateWindowW(L"BUTTON", L"Copy", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_COPY_LOG, nullptr, nullptr);
 
@@ -1077,18 +1107,18 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             hTikTok,hTwitch,hYouTube,hTikTokCookies,
             hSave,hStartTikTokBtn,hRestartTikTokBtn,hStartTwitchBtn,hRestartTwitchBtn,hStartYouTubeBtn,hRestartYouTubeBtn,
             gTikTokStatus,gTikTokViewers,gTikTokFollowers,
-            gTwitchStatus,gTwitchViewers,gTwitchFollowers,
+            gTwitchStatus,gTwitchViewers,gTwitchFollowers,gTwitchHelix,
             gYouTubeStatus,gYouTubeViewers,gYouTubeFollowers,
             gLog,hClearLogBtn,hCopyLogBtn,
             hGroupOverlay,hLblOverlayFont,hOverlayFont,hLblOverlaySize,hOverlaySize,hOverlayShadow
         };
         for (HWND c : controls) if (c) SendMessageW(c, WM_SETFONT, (WPARAM)gFontUi, TRUE);
+
         {
             Metrics m{};
             if (TryFetchMetricsFromApi(m)) UpdatePlatformStatusUI(m);
             else UpdatePlatformStatusUI(state.get_metrics());
         }
-
 
         // Initial logs
         LogLine(L"Starting Mode-S Client overlay...");
@@ -1105,7 +1135,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         SetWindowTextW(hHint, L"Tip: Save settings first. TikTok cookies are optional unless required by TikTok.");
 
         UpdateTikTokButtons(hTikTok, hStartTikTokBtn, hRestartTikTokBtn);
-
         LayoutControls(hwnd);
 
         // Start HTTP server in background thread
@@ -1131,17 +1160,13 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                     return;
                 }
 
-                // Build injected values from config
                 std::string fontFamily = Trim(config.overlay_font_family);
                 std::string fontStack = "sans-serif";
                 std::string googleLink = "";
 
                 if (!fontFamily.empty()) {
-                    // Use the chosen font, but still fall back to sans-serif
-                    fontStack = "'" + fontFamily + "', sans-serif";
-
-                    // Google fonts CSS URL
-                    std::string enc = UrlEncodeGoogleFontFamily(fontFamily);
+                    fontStack = "'" + fontFamily + "', sans-serif;";
+                        std::string enc = UrlEncodeGoogleFontFamily(fontFamily);
                     std::string url = "https://fonts.googleapis.com/css2?family=" + enc + "&display=swap";
                     googleLink = "<link rel=\"stylesheet\" href=\"" + url + "\">";
                 }
@@ -1175,6 +1200,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             }
             });
         metricsThread.detach();
+
         LogLine(L"TWITCH: starting Helix poller thread");
 
         twitchHelixThread = StartTwitchHelixPoller(
@@ -1189,9 +1215,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                     gTwitchHelixStatus = s;
                     PostMessageW(hwnd, WM_APP + 41, 0, 0);
                 },
-                /*set_live*/     [&](bool live) { gTwitchLive = live; },
-                /*set_viewers*/  [&](int v) { gTwitchViewerCount = v; },
-                /*set_followers*/[&](int f) { gTwitchFollowerCount = f; }
+            /*set_live*/     [&](bool live) { gTwitchLive = live; },
+            /*set_viewers*/  [&](int v) { gTwitchViewerCount = v; },
+            /*set_followers*/[&](int f) { gTwitchFollowerCount = f; }
             }
         );
         twitchHelixThread.detach();
@@ -1211,17 +1237,15 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         );
         tiktokFollowersThread.detach();
 
-
         return 0;
     }
     case WM_APP + 41: // refresh platform metrics UI
-        {
-            Metrics m{};
-            if (TryFetchMetricsFromApi(m)) UpdatePlatformStatusUI(m);
-            else UpdatePlatformStatusUI(state.get_metrics());
-        }
-        return 0;
-
+    {
+        Metrics m{};
+        if (TryFetchMetricsFromApi(m)) UpdatePlatformStatusUI(m);
+        else UpdatePlatformStatusUI(state.get_metrics());
+    }
+    return 0;
 
     case WM_COMMAND:
     {
@@ -1233,7 +1257,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         }
 
         if (id == IDC_START_TIKTOK || id == IDC_RESTART_TIKTOK) {
-            StartOrRestartTikTokSidecar(tiktok, state, gLog, hTikTok);
+            StartOrRestartTikTokSidecar(tiktok, state, hwnd, gLog, hTikTok);
             return 0;
         }
 
@@ -1298,10 +1322,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
             config.overlay_text_shadow = (SendMessageW(hOverlayShadow, BM_GETCHECK, 0, 0) == BST_CHECKED);
 
-            // reflect clamped size back into the box
             SetWindowTextW(hOverlaySize, std::to_wstring(config.overlay_font_size).c_str());
 
-            // Persist everything
             if (config.Save()) {
                 LogLine(L"Saved config.json.");
             }
@@ -1311,7 +1333,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
             UpdateTikTokButtons(hTikTok, hStartTikTokBtn, hRestartTikTokBtn);
             return 0;
-
         }
 
         if (id == IDC_CLEAR_LOG) {
@@ -1340,13 +1361,11 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         return 1;
     }
 
-
     case WM_CTLCOLORSTATIC:
     {
         HDC hdc = (HDC)wParam;
         HWND hCtl = (HWND)lParam;
 
-        // Status labels: green for LIVE, red for OFFLINE
         if (hCtl == gTikTokStatus || hCtl == gTwitchStatus || hCtl == gYouTubeStatus)
         {
             bool live = (hCtl == gTikTokStatus) ? gTikTokLive : (hCtl == gTwitchStatus) ? gTwitchLive : gYouTubeLive;
@@ -1355,8 +1374,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             return (LRESULT)(gBrushBg ? gBrushBg : GetStockObject(NULL_BRUSH));
         }
 
-        // NOTE: Readonly EDIT controls are reported as STATIC for color messages.
-        // gLog is ES_READONLY, so we must paint it OPAQUE to avoid text ghosting/overlap on scroll.
         if (hCtl == gLog)
         {
             SetTextColor(hdc, gClrText);
@@ -1365,7 +1382,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             return (LRESULT)(gBrushEdit ? gBrushEdit : GetStockObject(BLACK_BRUSH));
         }
 
-        // Normal labels
         SetBkMode(hdc, TRANSPARENT);
         SetTextColor(hdc, (hCtl == hHint) ? gClrHint : gClrText);
         return (LRESULT)(gBrushBg ? gBrushBg : GetStockObject(BLACK_BRUSH));
@@ -1376,8 +1392,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         HDC hdc = (HDC)wParam;
         HWND hCtl = (HWND)lParam;
 
-        // Keep input boxes "normal" (white) so they're readable.
-        // (gLog is ES_READONLY so it is handled in WM_CTLCOLORSTATIC above.)
         (void)hCtl;
         SetTextColor(hdc, RGB(0, 0, 0));
         SetBkMode(hdc, OPAQUE);
@@ -1388,7 +1402,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     case WM_DESTROY:
         gRunning = false;
         tiktok.stop();
-        twitch.stop();        PostQuitMessage(0);
+        twitch.stop();
+        PostQuitMessage(0);
         return 0;
     }
 
