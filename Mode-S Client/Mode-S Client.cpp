@@ -3,6 +3,7 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
+#include <wininet.h>
 #include <winhttp.h>
 #pragma comment(lib, "winhttp.lib")
 
@@ -20,6 +21,7 @@
 #include "resource.h"
 #include "AppConfig.h"
 #include "TwitchHelixService.h"
+#include "TikTokFollowersService.h"
 #include "AppState.h"
 #include "TikTokSidecar.h"
 #include "ObsWsClient.h"
@@ -287,6 +289,33 @@ static void UpdatePlatformStatusUI(const Metrics& m)
     set(gYouTubeStatus, gYouTubeLive ? L"Status: LIVE" : L"Status: OFFLINE");
     set(gYouTubeViewers, L"Viewers: " + std::to_wstring(gYouTubeViewerCount));
     set(gYouTubeFollowers, L"Followers: " + std::to_wstring(gYouTubeFollowerCount));
+}
+
+// Pull metrics through the local HTTP endpoint so the UI reflects exactly what overlays/OBS see.
+static bool TryFetchMetricsFromApi(Metrics& out)
+{
+    HttpResult r = WinHttpRequest(L"GET", L"127.0.0.1", 17845, L"/api/metrics", L"", "", false);
+    if (r.status != 200 || r.body.empty()) return false;
+
+    try {
+        auto j = nlohmann::json::parse(r.body);
+
+        out.ts_ms           = j.value("ts_ms", 0LL);
+        out.twitch_viewers   = j.value("twitch_viewers", 0);
+        out.youtube_viewers  = j.value("youtube_viewers", 0);
+        out.tiktok_viewers   = j.value("tiktok_viewers", 0);
+
+        out.twitch_followers = j.value("twitch_followers", 0);
+        out.youtube_followers= j.value("youtube_followers", 0);
+        out.tiktok_followers = j.value("tiktok_followers", 0);
+
+        out.twitch_live      = j.value("twitch_live", false);
+        out.youtube_live     = j.value("youtube_live", false);
+        out.tiktok_live      = j.value("tiktok_live", false);
+        return true;
+    } catch (...) {
+        return false;
+    }
 }
 static std::string ReadFileUtf8(const std::wstring& path) {
     FILE* f = nullptr;
@@ -931,6 +960,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     static std::thread serverThread;
     static std::thread metricsThread;
     static std::thread twitchHelixThread;
+    static std::thread tiktokFollowersThread;
     static ObsWsClient obs;
 
     switch (msg) {
@@ -1053,7 +1083,11 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             hGroupOverlay,hLblOverlayFont,hOverlayFont,hLblOverlaySize,hOverlaySize,hOverlayShadow
         };
         for (HWND c : controls) if (c) SendMessageW(c, WM_SETFONT, (WPARAM)gFontUi, TRUE);
-        UpdatePlatformStatusUI(state.get_metrics());
+        {
+            Metrics m{};
+            if (TryFetchMetricsFromApi(m)) UpdatePlatformStatusUI(m);
+            else UpdatePlatformStatusUI(state.get_metrics());
+        }
 
 
         // Initial logs
@@ -1143,31 +1177,49 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         metricsThread.detach();
         LogLine(L"TWITCH: starting Helix poller thread");
 
-LogLine(L"TWITCH: starting Helix poller thread");
-twitchHelixThread = StartTwitchHelixPoller(
-    hwnd,
-    config,
-    state,
-    gRunning,
-    (UINT)(WM_APP + 41),
-    TwitchHelixUiCallbacks{
-        /*log*/        [](const std::wstring& s) { LogLine(s); },
-        /*set_status*/ [&](const std::wstring& s) {
-            gTwitchHelixStatus = s;
-            PostMessageW(hwnd, WM_APP + 41, 0, 0);
-        },
-        /*set_live*/   [&](bool live) { gTwitchLive = live; },
-        /*set_viewers*/[&](int v) { gTwitchViewerCount = v; },
-        /*set_followers*/[&](int f) { gTwitchFollowerCount = f; }
-    }
-);
-twitchHelixThread.detach();
+        twitchHelixThread = StartTwitchHelixPoller(
+            hwnd,
+            config,
+            state,
+            gRunning,
+            (UINT)(WM_APP + 41),
+            TwitchHelixUiCallbacks{
+                /*log*/          [](const std::wstring& s) { LogLine(s); },
+                /*set_status*/   [&](const std::wstring& s) {
+                    gTwitchHelixStatus = s;
+                    PostMessageW(hwnd, WM_APP + 41, 0, 0);
+                },
+                /*set_live*/     [&](bool live) { gTwitchLive = live; },
+                /*set_viewers*/  [&](int v) { gTwitchViewerCount = v; },
+                /*set_followers*/[&](int f) { gTwitchFollowerCount = f; }
+            }
+        );
+        twitchHelixThread.detach();
+
+        LogLine(L"TIKTOK: starting followers poller thread");
+        tiktokFollowersThread = StartTikTokFollowersPoller(
+            hwnd,
+            config,
+            state,
+            gRunning,
+            (UINT)(WM_APP + 41),
+            TikTokFollowersUiCallbacks{
+                /*log*/           [](const std::wstring& s) { LogLine(s); },
+                /*set_status*/    [](const std::wstring& /*s*/) { /* optional */ },
+                /*set_followers*/ [&](int f) { gTikTokFollowerCount = f; }
+            }
+        );
+        tiktokFollowersThread.detach();
 
 
         return 0;
     }
     case WM_APP + 41: // refresh platform metrics UI
-        UpdatePlatformStatusUI(state.get_metrics());
+        {
+            Metrics m{};
+            if (TryFetchMetricsFromApi(m)) UpdatePlatformStatusUI(m);
+            else UpdatePlatformStatusUI(state.get_metrics());
+        }
         return 0;
 
 
