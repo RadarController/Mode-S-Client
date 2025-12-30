@@ -64,9 +64,21 @@ def emit_stats(live: bool, viewers: int, followers: Optional[int] = None, room_i
 
 def load_config() -> Dict[str, Any]:
     """
-    Prefer Debug\\config.json (parent of this script's folder), fallback to CWD config.json.
+    Prefer config.json next to the executable,
+    then Debug\\config.json (dev),
+    then current working directory.
     """
-    # 1) Debug\config.json when script is Debug\sidecar\tiktok_sidecar.py
+
+    # 1) config.json next to the executable (production)
+    try:
+        exe_dir = Path(sys.executable).resolve().parent
+        p0 = exe_dir / "config.json"
+        if p0.exists():
+            return json.loads(p0.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+
+    # 2) Debug\config.json (when running from Debug\sidecar\tiktok_sidecar.py)
     try:
         p1 = Path(__file__).resolve().parent.parent / "config.json"
         if p1.exists():
@@ -74,7 +86,7 @@ def load_config() -> Dict[str, Any]:
     except Exception:
         pass
 
-    # 2) current working dir
+    # 3) current working directory (fallback)
     try:
         p2 = Path("config.json")
         if p2.exists():
@@ -83,7 +95,6 @@ def load_config() -> Dict[str, Any]:
         pass
 
     return {}
-
 
 def is_signer_failure(text: str) -> bool:
     t = (text or "").lower()

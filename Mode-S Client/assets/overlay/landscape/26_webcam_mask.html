@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Webcam Mask</title>
+
+<style>
+  :root{
+    --radius: 16px;   /* must match panel radius */
+  }
+
+  html, body {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    background: transparent;
+  }
+
+  /* Black = hide, Transparent = show */
+  .mask {
+    width: 100%;
+    height: 100%;
+    background: black;
+
+    /* This cuts the visible area */
+    clip-path: inset(
+      0px                 /* top */
+      0px                 /* right */
+      0px                 /* bottom */
+      0px                 /* left */
+      round
+      0px 0px var(--radius) var(--radius)  /* TL TR BR BL */
+    );
+  }
+</style>
+</head>
+
+<body>
+  <div class="mask"></div>
+</body>
+</html>

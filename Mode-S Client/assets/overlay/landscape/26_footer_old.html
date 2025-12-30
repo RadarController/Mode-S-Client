@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Footer</title>
+  <style>
+    :root{
+      --blue:#1e6dff;
+      --bg: rgba(10,14,18,.68);
+      --text:#e9eef7;
+      --muted: rgba(233,238,247,.80);
+    }
+    html,body{height:100%;margin:0;background:transparent;font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif;}
+    .bar{
+      height:100%;
+      display:flex; align-items:center; justify-content:center;
+      padding: 0 18px;
+      background: linear-gradient(90deg, rgba(10,14,18,.55), rgba(30,109,255,.35), rgba(10,14,18,.55));
+      border-top: 1px solid rgba(255,255,255,.10);
+      box-sizing:border-box;
+      overflow:hidden;
+    }
+    .chip{
+      display:flex; align-items:center; gap:10px;
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: rgba(10,14,18,.55);
+      border: 1px solid rgba(255,255,255,.12);
+      color: var(--text);
+      font-size: clamp(12px, 1.6vw, 16px);
+      white-space:nowrap;
+      transform: translateY(0);
+      animation: fadeSwap 12s infinite;
+    }
+    .icon{
+      width:10px;height:10px;border-radius:3px;background:rgba(30,109,255,.9);
+      box-shadow: 0 0 0 2px rgba(255,255,255,.12) inset;
+    }
+    .muted{color:var(--muted)}
+    @keyframes fadeSwap{
+      0%,8%{opacity:0; transform:translateY(8px)}
+      12%,40%{opacity:1; transform:translateY(0)}
+      44%,100%{opacity:0; transform:translateY(-8px)}
+    }
+  </style>
+</head>
+<body>
+  <div class="bar">
+    <div class="chip" id="chip">
+      <span class="icon"></span>
+      <span class="muted" id="text">streamingatc.live</span>
+    </div>
+  </div>
+
+  <script>
+    // Edit these:
+    const items = [
+      "streamingatc.live",
+      "twitch.tv/radarcontroller",
+      "tiktok.com/@radarcontroller",
+      "youtube.com/@radarcontroller",
+      "Schedule: Wed / Sun"
+    ];
+
+    let i = 0;
+    const el = document.getElementById("text");
+
+    setInterval(() => {
+      i = (i + 1) % items.length;
+      el.textContent = items[i];
+    }, 6000);
+  </script>
+</body>
+</html>

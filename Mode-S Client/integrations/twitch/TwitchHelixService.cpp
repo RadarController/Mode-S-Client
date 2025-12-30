@@ -9,6 +9,8 @@
 #include <sstream>
 #include <utility>
 #include <cstdint>
+#include <fstream>
+#include <filesystem>
 
 #include "json.hpp"
 #include "AppConfig.h"
@@ -132,6 +134,37 @@ namespace {
         if (f) f(v);
     }
 
+    // Fallback: if AppConfig fields are empty (e.g., mapping mismatch), try reading the JSON directly.
+    static bool TryReadTwitchFromConfigJson(std::string& login, std::string& cid, std::string& secret)
+    {
+        try {
+            const auto path = std::filesystem::absolute("config.json");
+            std::ifstream in(path, std::ios::binary);
+            if (!in) return false;
+            std::string s((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+            if (s.empty()) return false;
+            auto j = json::parse(s);
+
+            // Prefer nested object if present.
+            if (j.contains("twitch") && j["twitch"].is_object()) {
+                const auto& t = j["twitch"];
+                if (login.empty())  login  = t.value("login", "");
+                if (cid.empty())    cid    = t.value("client_id", "");
+                if (secret.empty()) secret = t.value("client_secret", "");
+            }
+
+            // Back-compat with flat keys.
+            if (login.empty())  login  = j.value("twitch_login", "");
+            if (cid.empty())    cid    = j.value("twitch_client_id", "");
+            if (secret.empty()) secret = j.value("twitch_client_secret", "");
+
+            return !(login.empty() || cid.empty() || secret.empty());
+        }
+        catch (...) {
+            return false;
+        }
+    }
+
 } // namespace
 
 std::thread StartTwitchHelixPoller(
@@ -172,9 +205,14 @@ std::thread StartTwitchHelixPoller(
                 firstLoop = false;
             }
 
-            const std::string login = config.twitch_login;
-            const std::string cid = config.twitch_client_id;
-            const std::string secret = config.twitch_client_secret;
+            std::string login = config.twitch_login;
+            std::string cid = config.twitch_client_id;
+            std::string secret = config.twitch_client_secret;
+
+            // If AppConfig hasn't been populated (or uses different JSON keys), try reading config.json directly.
+            if (login.empty() || cid.empty() || secret.empty()) {
+                (void)TryReadTwitchFromConfigJson(login, cid, secret);
+            }
 
             if (login.empty() || cid.empty() || secret.empty()) {
                 SafeCall(cb.log, L"TWITCH: skipped (missing login/client_id/client_secret)");

@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Webcam Panel</title>
+
+  <style>
+    :root{
+      --blue:#1e6dff;
+      --panel: rgba(18,22,28,.78);
+      --stroke: rgba(255,255,255,.12);
+      --text: rgba(233,238,247,.92);
+      --radius: 16px;
+    }
+
+    html,body{
+      height:100%;
+      margin:0;
+      background:transparent;
+      font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif;
+    }
+
+    .panel{
+      position:relative;
+      width:100%;
+      height:100%;
+      border-radius: var(--radius);
+      box-sizing:border-box;
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      box-shadow: 0 18px 50px rgba(0,0,0,.35);
+      pointer-events:none;
+    }
+
+    .panel::before{
+      content:"";
+      position:absolute;
+      inset:0;
+      border-radius: var(--radius);
+      border:1px solid var(--stroke);
+      background: var(--panel);
+    }
+
+    .header{
+      position:absolute;
+      top:0; left:0; right:0;
+      height:44px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      padding: 0 14px;
+      border-bottom:1px solid rgba(255,255,255,.08);
+      box-sizing:border-box;
+    }
+
+    .title{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      font-weight:650;
+      letter-spacing:.08em;
+      text-transform:uppercase;
+      font-size:12px;
+      color:var(--text);
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+
+    .badge{
+      width:8px;height:8px;border-radius:50%;
+      background: rgba(30,109,255,.95);
+      box-shadow: 0 0 0 3px rgba(30,109,255,.18);
+      flex:0 0 auto;
+    }
+
+    .right{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      flex:0 0 auto;
+    }
+
+    .live{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      padding:6px 10px;
+      border-radius:999px;
+      background: rgba(10,14,18,.35);
+      border: 1px solid rgba(255,255,255,.12);
+      color: var(--text);
+      font-size:11px;
+      font-weight:650;
+      letter-spacing:.10em;
+      text-transform:uppercase;
+    }
+
+    .liveDot{
+      width:8px;height:8px;border-radius:50%;
+      background: rgba(30,109,255,.95);
+      box-shadow: 0 0 0 0 rgba(30,109,255,.45);
+      animation: pulse 1.35s ease-out infinite;
+    }
+
+    @keyframes pulse{
+      0%   { box-shadow: 0 0 0 0 rgba(30,109,255,.45); transform: scale(1); }
+      60%  { box-shadow: 0 0 0 10px rgba(30,109,255,0); transform: scale(1.05); }
+      100% { box-shadow: 0 0 0 0 rgba(30,109,255,0); transform: scale(1); }
+    }
+
+    .dots{
+      display:flex;
+      gap:6px;
+      opacity:.7;
+    }
+    .dots span{
+      width:4px;height:4px;border-radius:50%;
+      background:rgba(233,238,247,.75)
+    }
+
+    /* Transparent area where the webcam shows through */
+    .window{
+      position:absolute;
+      top:44px; left:0; right:0; bottom:0;
+      border-bottom-left-radius: var(--radius);
+      border-bottom-right-radius: var(--radius);
+      background: transparent;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="panel">
+    <div class="header">
+      <div class="title">
+        <span class="badge"></span>
+        RADARCONTROLLER
+      </div>
+
+      <div class="right">
+        <div class="live" aria-label="Live indicator">
+          <span class="liveDot"></span>
+          LIVE
+        </div>
+        <div class="dots" aria-hidden="true">
+          <span></span><span></span><span></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="window"></div>
+  </div>
+</body>
+</html>

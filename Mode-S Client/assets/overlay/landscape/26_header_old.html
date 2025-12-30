@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Header</title>
+  <style>
+    :root{
+      --blue:#1e6dff;         /* keep your brand blue */
+      --bg: rgba(10,14,18,.72);
+      --text:#e9eef7;
+      --muted: rgba(233,238,247,.78);
+    }
+    html,body{height:100%;margin:0;background:transparent;font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif;}
+    .bar{
+      height:100%;
+      display:flex; align-items:center; justify-content:space-between;
+      padding: 0 18px;
+      background: linear-gradient(90deg, rgba(30,109,255,.92), rgba(30,109,255,.55));
+      border-bottom: 1px solid rgba(255,255,255,.10);
+      box-sizing:border-box;
+    }
+    .left{
+      display:flex; align-items:baseline; gap:12px; min-width:0;
+    }
+    .title{
+      color:var(--text);
+      font-weight:650;
+      letter-spacing:.08em;
+      text-transform:uppercase;
+      font-size: clamp(14px, 2.2vw, 22px);
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      max-width: 70vw;
+    }
+    .pill{
+      padding:6px 10px;
+      border-radius:999px;
+      background: rgba(10,14,18,.40);
+      border: 1px solid rgba(255,255,255,.14);
+      color: var(--muted);
+      font-size: clamp(11px, 1.5vw, 14px);
+      white-space:nowrap;
+    }
+    .stats{
+      display:flex; align-items:center; gap:14px;
+      color:var(--text);
+      font-size: clamp(12px, 1.6vw, 16px);
+      white-space:nowrap;
+    }
+    .stat{
+      display:flex; align-items:center; gap:8px;
+      padding:6px 10px;
+      border-radius:10px;
+      background: rgba(10,14,18,.35);
+      border: 1px solid rgba(255,255,255,.12);
+    }
+    .dot{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.65);}
+    .label{opacity:.9}
+  </style>
+</head>
+<body>
+  <div class="bar">
+    <div class="left">
+      <div class="pill">VATSIM ATC · LIVE</div>
+       <div class="title">THE SUNDAY SOCIAL</div>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><span class="dot"></span><span class="label">1.4k</span></div>
+      <div class="stat"><span class="dot"></span><span class="label">35</span></div>
+      <div class="stat"><span class="dot"></span><span class="label">13,894</span></div>
+    </div>
+  </div>
+</body>
+</html>

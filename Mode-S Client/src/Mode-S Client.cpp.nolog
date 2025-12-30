@@ -21,12 +21,12 @@
 
 #include "resource.h"
 #include "AppConfig.h"
-#include "TwitchHelixService.h"
-#include "TikTokFollowersService.h"
 #include "AppState.h"
-#include "TikTokSidecar.h"
-#include "ObsWsClient.h"
-#include "TwitchIrcWsClient.h"
+#include "twitch/TwitchHelixService.h"
+#include "twitch/TwitchIrcWsClient.h"
+#include "tiktok/TikTokFollowersService.h"
+#include "tiktok/TikTokSidecar.h"
+#include "obs/ObsWsClient.h"
 
 // --------------------------- Control IDs ------------------------------------
 #define IDC_TIKTOK_EDIT        1001

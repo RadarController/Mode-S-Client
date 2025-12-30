@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Chat Panel</title>
+  <style>
+    :root{
+      --blue:#1e6dff;
+      --panel: rgba(18,22,28,.78);
+      --stroke: rgba(255,255,255,.12);
+      --text: rgba(233,238,247,.92);
+      --muted: rgba(233,238,247,.62);
+      --radius: 16px;
+    }
+    html,body{height:100%;margin:0;background:transparent;font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif;}
+    .panel{
+      height:100%; width:100%;
+      background: var(--panel);
+      border: 1px solid var(--stroke);
+      border-radius: var(--radius);
+      box-sizing:border-box;
+      overflow:hidden;
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      box-shadow: 0 18px 50px rgba(0,0,0,.35);
+      display:flex; flex-direction:column;
+    }
+    .header{
+      display:flex; align-items:center; justify-content:space-between;
+      padding: 12px 14px;
+      border-bottom: 1px solid rgba(255,255,255,.08);
+    }
+    .title{
+      font-weight:650;
+      letter-spacing:.08em;
+      text-transform:uppercase;
+      font-size: 13px;
+      color: var(--text);
+      display:flex; align-items:center; gap:10px;
+    }
+    .badge{
+      width:8px;height:8px;border-radius:50%;
+      background: rgba(30,109,255,.95);
+      box-shadow: 0 0 0 3px rgba(30,109,255,.18);
+    }
+    .dots{display:flex; gap:6px; opacity:.7}
+    .dots span{width:4px;height:4px;border-radius:50%;background:rgba(233,238,247,.75)}
+    .body{
+      padding: 12px 14px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.35;
+      flex:1;
+    }
+    .hint{
+      margin-top:10px;
+      padding:10px 12px;
+      border-radius: 12px;
+      border: 1px dashed rgba(255,255,255,.16);
+      background: rgba(0,0,0,.12);
+    }
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:12px;color:rgba(233,238,247,.72)}
+  </style>
+</head>
+<body>
+  <div class="panel">
+    <div class="header">
+      <div class="title"><span class="badge"></span> CHAT</div>
+      <div class="dots"><span></span><span></span><span></span></div>
+    </div>
+    <div class="body">
+    </div>
+  </div>
+</body>
+</html>

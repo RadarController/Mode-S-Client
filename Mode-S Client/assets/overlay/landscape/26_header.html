@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Glass Header (Dynamic Smooth)</title>
+
+<style>
+  :root{
+    --blue:#1e6dff;
+    --panel: rgba(18,22,28,.72);
+    --stroke: rgba(255,255,255,.12);
+    --text: rgba(233,238,247,.92);
+    --muted: rgba(233,238,247,.70);
+  }
+  html,body{width:100%;height:100%;margin:0;background:transparent;font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif;overflow:hidden;}
+  .bar{
+    width:100%;height:100%;
+    display:flex;align-items:center;justify-content:space-between;
+    padding:0 18px;box-sizing:border-box;
+    background:var(--panel);
+    backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--stroke);
+    pointer-events:none;
+  }
+  .left{display:flex;align-items:center;gap:12px;min-width:0;}
+  .badge{width:8px;height:8px;border-radius:50%;background:rgba(30,109,255,.95);box-shadow:0 0 0 3px rgba(30,109,255,.18);flex:0 0 auto;}
+  .title{font-weight:650;letter-spacing:.08em;text-transform:uppercase;font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:55vw;}
+  .sub{font-size:12px;color:var(--muted);white-space:nowrap;}
+  .right{display:flex;align-items:center;gap:14px;flex:0 0 auto;}
+  .stat{
+    display:flex;align-items:center;gap:8px;
+    padding:6px 10px;border-radius:12px;
+    background:rgba(10,14,18,.35);
+    border:1px solid rgba(255,255,255,.12);
+    font-size:11px;font-weight:600;color:var(--text);
+    white-space:nowrap;min-width:92px;justify-content:center;
+  }
+  .dot{width:6px;height:6px;border-radius:50%;background:rgba(30,109,255,.9);}
+  .label{color:var(--muted);font-weight:650;letter-spacing:.08em;text-transform:uppercase;font-size:10px;margin-right:2px;}
+  .bump{animation:bump .22s ease-out;}
+  @keyframes bump{0%{transform:translateY(0)}45%{transform:translateY(-1px)}100%{transform:translateY(0)}}
+</style>
+</head>
+
+<body>
+<div class="bar">
+  <div class="left">
+    <span class="badge"></span>
+    <div class="title">MANCHESTER ATC STREAM</div>
+    <div class="sub">MANCHESTER TMA</div>
+  </div>
+
+  <div class="right">
+    <div class="stat"><span class="dot"></span><span class="label">VIEWERS</span><span id="viewers">0</span></div>
+    <div class="stat"><span class="dot"></span><span class="label">FOLLOWERS</span><span id="followers">0</span></div>
+    <div class="stat"><span class="dot"></span><span class="label">AIRCRAFT</span><span id="aircraft">0</span></div>
+  </div>
+</div>
+
+<script>
+  // ===============================
+  // Mode-S Client /api/metrics
+  // ===============================
+  const METRICS_URL = "/api/metrics"; // use absolute URL if loading as file://
+  const POLL_MS = 1000;
+
+  const elViewers   = document.getElementById("viewers");
+  const elFollowers = document.getElementById("followers");
+
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  function toNum(v){
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  }
+  function fmt(n){
+    return Math.round(n).toLocaleString();
+  }
+
+  function makeAnimator(el){
+    return {
+      el,
+      current: 0,
+      target: 0,
+      lastText: "",
+      set(n){
+        this.target = Math.max(0, toNum(n));
+      },
+      tick(){
+        const d = this.target - this.current;
+        if (Math.abs(d) < 0.05) this.current = this.target;
+        else this.current += d * 0.2;
+
+        const txt = fmt(this.current);
+        if (txt !== this.lastText){
+          this.el.textContent = txt;
+          this.lastText = txt;
+        }
+      },
+      bump(prev){
+        if (prev !== this.target){
+          this.el.classList.remove("bump");
+          void this.el.offsetWidth;
+          this.el.classList.add("bump");
+        }
+      }
+    };
+  }
+
+  const animViewers   = makeAnimator(elViewers);
+  const animFollowers = makeAnimator(elFollowers);
+
+  (function raf(){
+    animViewers.tick();
+    animFollowers.tick();
+    requestAnimationFrame(raf);
+  })();
+
+  async function poll(){
+    while (true){
+      try{
+        const r = await fetch(METRICS_URL, { cache: "no-store" });
+        if (!r.ok) throw new Error("http");
+
+        const j = await r.json();
+
+        // === DIRECT MAPPING TO YOUR JSON ===
+        {
+          const p = animViewers.target;
+          animViewers.set(j.total_viewers);
+          animViewers.bump(p);
+        }
+        {
+          const p = animFollowers.target;
+          animFollowers.set(j.total_followers);
+          animFollowers.bump(p);
+        }
+
+      } catch (e){
+        // keep last values if endpoint is briefly unavailable
+      }
+      await sleep(POLL_MS);
+    }
+  }
+
+  poll();
+</script>
+
+</body>
+</html>

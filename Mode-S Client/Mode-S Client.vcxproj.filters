@@ -28,18 +28,15 @@
     <Filter Include="sidecar">
       <UniqueIdentifier>{e70ac4a4-b7cb-4948-95c0-c7a3ec1148ef}</UniqueIdentifier>
     </Filter>
+    <Filter Include="assets%255coverlay\landscape">
+      <UniqueIdentifier>{584b570a-5cc9-40f1-b49d-672a3d767fc8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="assets%255coverlay\common">
+      <UniqueIdentifier>{44a65eb7-c4d7-43c4-81ab-33c80fe9971e}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="framework.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="targetver.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Resource.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Mode-S Client.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\external\httplib.h">
@@ -48,64 +45,76 @@
     <ClInclude Include="..\external\json.hpp">
       <Filter>external</Filter>
     </ClInclude>
-    <ClInclude Include="AppState.h">
-      <Filter>src</Filter>
+    <ClInclude Include="integrations\obs\ObsWsClient.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="TikTokSidecar.h">
-      <Filter>src</Filter>
+    <ClInclude Include="integrations\tiktok\TikTokFollowersService.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="ObsWsClient.h">
-      <Filter>src</Filter>
+    <ClInclude Include="integrations\tiktok\TikTokSidecar.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="AppConfig.h">
-      <Filter>src</Filter>
+    <ClInclude Include="integrations\twitch\TwitchHelixService.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="TwitchIrcWsClient.h">
-      <Filter>src</Filter>
+    <ClInclude Include="integrations\twitch\TwitchIrcWsClient.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\AppConfig.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\AppState.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Mode-S Client.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ui\Resource.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Mode-S Client.cpp">
+    <ClCompile Include="integrations\obs\ObsWsClient.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="AppState.cpp">
-      <Filter>src</Filter>
+    <ClCompile Include="integrations\tiktok\TikTokFollowersService.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="TikTokSidecar.cpp">
-      <Filter>src</Filter>
+    <ClCompile Include="integrations\tiktok\TikTokSidecar.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="ObsWsClient.cpp">
-      <Filter>src</Filter>
+    <ClCompile Include="integrations\twitch\TwitchHelixService.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="TwitchIrcWsClient.cpp">
-      <Filter>src</Filter>
+    <ClCompile Include="integrations\twitch\TwitchIrcWsClient.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\AppState.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Mode-S Client.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="Mode-S Client.rc">
+    <ResourceCompile Include="ui\Mode-S Client.rc">
       <Filter>Resource Files</Filter>
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
-    <Image Include="small.ico">
-      <Filter>Resource Files</Filter>
-    </Image>
-    <Image Include="Mode-S Client.ico">
-      <Filter>Resource Files</Filter>
-    </Image>
-    <Image Include="icon1.ico">
-      <Filter>Resource Files</Filter>
-    </Image>
-    <Image Include="radarcontrollermodesclient.ico">
+    <Image Include="assets\icons\radarcontrollermodesclient.ico">
       <Filter>Resource Files</Filter>
     </Image>
   </ItemGroup>
   <ItemGroup>
-    <CopyFileToFolders Include="chat.html">
-      <Filter>assets%255coverlay</Filter>
-    </CopyFileToFolders>
-    <CopyFileToFolders Include="tiktok_sidecar.py">
+    <None Include="scripts\sidecar\tiktok_sidecar.py">
       <Filter>sidecar</Filter>
-    </CopyFileToFolders>
+    </None>
+    <None Include="assets\overlay\Landscape\26_header.html">
+      <Filter>assets%255coverlay\landscape</Filter>
+    </None>
+    <None Include="assets\overlay\Common\chat.html">
+      <Filter>assets%255coverlay\common</Filter>
+    </None>
   </ItemGroup>
 </Project>

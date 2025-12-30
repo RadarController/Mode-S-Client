@@ -70,19 +70,38 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <OutDir>$(ProjectDir)0_release\</OutDir>
+    <IntDir>$(ProjectDir)0_debug\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <OutDir>$(ProjectDir)0_release\</OutDir>
+    <IntDir>$(ProjectDir)0_debug\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <OutDir>$(ProjectDir)0_release\</OutDir>
+    <IntDir>$(ProjectDir)0_debug\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <OutDir>$(ProjectDir)0_release\</OutDir>
+    <IntDir>$(ProjectDir)0_debug\</IntDir>
+  </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ProjectDir)external</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)external;$(ProjectDir)src;$(ProjectDir)integrations;$(ProjectDir)assets;$(ProjectDir)core;$(ProjectDir)helpers;$(ProjectDir)scripts;$(ProjectDir)ui</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
+    <ResourceCompile>
+      <AdditionalIncludeDirectories>$(ProjectDir)assets</AdditionalIncludeDirectories>
+    </ResourceCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
@@ -92,13 +111,22 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ProjectDir)external</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)external;$(ProjectDir)src;$(ProjectDir)integrations;$(ProjectDir)assets;$(ProjectDir)core;$(ProjectDir)helpers;$(ProjectDir)scripts;$(ProjectDir)ui</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
+    <ResourceCompile>
+      <AdditionalIncludeDirectories>$(ProjectDir)assets</AdditionalIncludeDirectories>
+    </ResourceCompile>
+    <PostBuildEvent>
+      <Command>if not exist "$(TargetDir)sidecar" mkdir "$(TargetDir)sidecar"
+xcopy /E /I /Y "$(ProjectDir)scripts\sidecar\*" "$(TargetDir)sidecar\"
+if not exist "$(TargetDir)assets" mkdir "$(TargetDir)assets"
+xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
@@ -106,13 +134,16 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ProjectDir)external</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)external;$(ProjectDir)src;$(ProjectDir)integrations;$(ProjectDir)assets;$(ProjectDir)core;$(ProjectDir)helpers;$(ProjectDir)scripts;$(ProjectDir)ui</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
+    <ResourceCompile>
+      <AdditionalIncludeDirectories>$(ProjectDir)assets</AdditionalIncludeDirectories>
+    </ResourceCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -122,69 +153,64 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ProjectDir)external</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)external;$(ProjectDir)src;$(ProjectDir)integrations;$(ProjectDir)assets;$(ProjectDir)core;$(ProjectDir)helpers;$(ProjectDir)scripts;$(ProjectDir)ui</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
+    <ResourceCompile>
+      <AdditionalIncludeDirectories>$(ProjectDir)assets</AdditionalIncludeDirectories>
+    </ResourceCompile>
+    <PostBuildEvent>
+      <Command>if not exist "$(TargetDir)sidecar" mkdir "$(TargetDir)sidecar"
+xcopy /E /I /Y "$(ProjectDir)scripts\sidecar\*" "$(TargetDir)sidecar\"
+if not exist "$(TargetDir)assets" mkdir "$(TargetDir)assets"
+xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="..\external\httplib.h" />
     <ClInclude Include="..\external\json.hpp" />
-    <ClInclude Include="AppConfig.h" />
-    <ClInclude Include="AppState.h" />
-    <ClInclude Include="framework.h" />
-    <ClInclude Include="Mode-S Client.h" />
-    <ClInclude Include="ObsWsClient.h" />
-    <ClInclude Include="Resource.h" />
+    <ClInclude Include="integrations\obs\ObsWsClient.h" />
+    <ClInclude Include="integrations\tiktok\TikTokFollowersService.h" />
+    <ClInclude Include="integrations\tiktok\TikTokSidecar.h" />
+    <ClInclude Include="integrations\twitch\TwitchHelixService.h" />
+    <ClInclude Include="integrations\twitch\TwitchIrcWsClient.h" />
+    <ClInclude Include="src\AppConfig.h" />
+    <ClInclude Include="src\AppState.h" />
+    <ClInclude Include="src\Mode-S Client.h" />
     <ClInclude Include="targetver.h" />
-    <ClInclude Include="TikTokFollowersService.h" />
-    <ClInclude Include="TikTokSidecar.h" />
-    <ClInclude Include="TwitchHelixService.h" />
-    <ClInclude Include="TwitchIrcWsClient.h" />
+    <ClInclude Include="ui\Resource.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="AppState.cpp" />
-    <ClCompile Include="Mode-S Client.cpp" />
-    <ClCompile Include="ObsWsClient.cpp" />
-    <ClCompile Include="TikTokFollowersService.cpp" />
-    <ClCompile Include="TikTokSidecar.cpp" />
-    <ClCompile Include="TwitchHelixService.cpp" />
-    <ClCompile Include="TwitchIrcWsClient.cpp" />
+    <ClCompile Include="integrations\obs\ObsWsClient.cpp" />
+    <ClCompile Include="integrations\tiktok\TikTokFollowersService.cpp" />
+    <ClCompile Include="integrations\tiktok\TikTokSidecar.cpp" />
+    <ClCompile Include="integrations\twitch\TwitchHelixService.cpp" />
+    <ClCompile Include="integrations\twitch\TwitchIrcWsClient.cpp" />
+    <ClCompile Include="src\AppState.cpp" />
+    <ClCompile Include="src\Mode-S Client.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="Mode-S Client.rc" />
-  </ItemGroup>
-  <ItemGroup>
-    <Image Include="icon1.ico" />
-    <Image Include="Mode-S Client.ico" />
-    <Image Include="radarcontrollermodesclient.ico" />
-    <Image Include="small.ico" />
-  </ItemGroup>
-  <ItemGroup>
-    <CopyFileToFolders Include="chat.html">
-      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</DeploymentContent>
-      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</DeploymentContent>
-      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</DeploymentContent>
-      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</DeploymentContent>
-      <DestinationFolders Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(OutDir)assets\overlay\</DestinationFolders>
-      <DestinationFolders Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(OutDir)assets\overlay\</DestinationFolders>
-      <DestinationFolders Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(OutDir)assets\overlay\</DestinationFolders>
-      <DestinationFolders Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(OutDir)assets\overlay\</DestinationFolders>
-    </CopyFileToFolders>
-    <CopyFileToFolders Include="tiktok_sidecar.py">
-      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</DeploymentContent>
+    <None Include="assets\overlay\Common\chat.html" />
+    <None Include="assets\overlay\Landscape\26_header.html" />
+    <None Include="scripts\sidecar\tiktok_sidecar.py">
+      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</DeploymentContent>
       <FileType>Document</FileType>
-      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</DeploymentContent>
-      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</DeploymentContent>
-      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</DeploymentContent>
-      <DestinationFolders Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(OutDir)sidecar\</DestinationFolders>
-      <DestinationFolders Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(OutDir)sidecar\</DestinationFolders>
-      <DestinationFolders Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(OutDir)sidecar\</DestinationFolders>
-      <DestinationFolders Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(OutDir)sidecar\</DestinationFolders>
-    </CopyFileToFolders>
+      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</DeploymentContent>
+      <DestinationFolders Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(OutDir)</DestinationFolders>
+      <DestinationFolders Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(OutDir)</DestinationFolders>
+      <RootFolder Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">sidecar</RootFolder>
+      <RootFolder Condition="'$(Configuration)|$(Platform)'=='Release|x64'">sidecar</RootFolder>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="assets\icons\radarcontrollermodesclient.ico" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="ui\Mode-S Client.rc" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

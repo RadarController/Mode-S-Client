@@ -1,8 +1,10 @@
+// Mode-S Client.cpp
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
+#include <wininet.h>
 #include <winhttp.h>
 #pragma comment(lib, "winhttp.lib")
 
@@ -11,6 +13,8 @@
 #include <atomic>
 #include <filesystem>
 #include <sstream>
+#include <fstream>
+#include <iterator>
 #include <algorithm>
 #include <ctime>
 
@@ -20,9 +24,11 @@
 #include "resource.h"
 #include "AppConfig.h"
 #include "AppState.h"
-#include "TikTokSidecar.h"
-#include "ObsWsClient.h"
-#include "TwitchIrcWsClient.h"
+#include "twitch/TwitchHelixService.h"
+#include "twitch/TwitchIrcWsClient.h"
+#include "tiktok/TikTokFollowersService.h"
+#include "tiktok/TikTokSidecar.h"
+#include "obs/ObsWsClient.h"
 
 // --------------------------- Control IDs ------------------------------------
 #define IDC_TIKTOK_EDIT        1001
@@ -131,12 +137,12 @@ struct HttpResult {
 };
 
 static HttpResult WinHttpRequest(const std::wstring& method,
-                                 const std::wstring& host,
-                                 INTERNET_PORT port,
-                                 const std::wstring& path,
-                                 const std::wstring& headers,
-                                 const std::string& body,
-                                 bool secure)
+    const std::wstring& host,
+    INTERNET_PORT port,
+    const std::wstring& path,
+    const std::wstring& headers,
+    const std::string& body,
+    bool secure)
 {
     HttpResult r;
     DWORD status = 0; DWORD statusSize = sizeof(status);
@@ -199,7 +205,7 @@ static std::string UrlEncode(const std::string& s)
     static const char* hex = "0123456789ABCDEF";
     std::string out;
     for (unsigned char c : s) {
-        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c=='-'||c=='_'||c=='.'||c=='~') out.push_back((char)c);
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~') out.push_back((char)c);
         else {
             out.push_back('%');
             out.push_back(hex[(c >> 4) & 0xF]);
@@ -215,6 +221,95 @@ static std::string ToUtf8(const std::wstring& w) {
     WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), s.data(), len, nullptr, nullptr);
     return s;
 }
+
+static std::wstring WideFromUtf8(const std::string& s) {
+    if (s.empty()) return L"";
+    int len = MultiByteToWideChar(CP_UTF8, 0, s.data(), (int)s.size(), nullptr, 0);
+    if (len <= 0) return L"";
+    std::wstring w(len, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, s.data(), (int)s.size(), w.data(), len);
+    return w;
+}
+
+static void LogConfigDiagnostics() {
+    namespace fs = std::filesystem;
+
+    try {
+        std::wstring cwd = fs::current_path().wstring();
+        LogLine(L"CONFIG: ---- diagnostics ----");
+        LogLine((L"CONFIG: current_path = " + cwd));
+    }
+    catch (...) {
+        LogLine(L"CONFIG: current_path = <error>");
+    }
+
+    std::wstring rel = L"config.json";
+    std::wstring abs;
+    try {
+        abs = fs::absolute(rel).wstring();
+        LogLine((L"CONFIG: absolute(\"config.json\") = " + abs));
+    }
+    catch (...) {
+        LogLine(L"CONFIG: absolute(\"config.json\") = <error>");
+    }
+
+    try {
+        std::wstring exeDir = GetExeDir();
+        LogLine((L"CONFIG: exe_dir = " + exeDir));
+    }
+    catch (...) {
+        LogLine(L"CONFIG: exe_dir = <error>");
+    }
+
+    bool exists = false;
+    try {
+        exists = fs::exists(rel);
+        LogLine(std::wstring(L"CONFIG: exists(\"config.json\") = ") + (exists ? L"true" : L"false"));
+    }
+    catch (...) {
+        LogLine(L"CONFIG: exists(\"config.json\") = <error>");
+    }
+
+    if (!exists) {
+        LogLine(L"CONFIG: config.json not found in current working directory.");
+        LogLine(L"CONFIG: ---------------------");
+        return;
+    }
+
+    try {
+        // WARNING: This prints the full config.json (including secrets) to the UI log.
+        std::ifstream f("config.json", std::ios::binary);
+        if (!f) {
+            LogLine(L"CONFIG: failed to open config.json for reading.");
+            LogLine(L"CONFIG: ---------------------");
+            return;
+        }
+        std::string raw((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        LogLine((L"CONFIG: config.json bytes = " + std::to_wstring(raw.size())));
+        if (raw.empty()) {
+            LogLine(L"CONFIG: config.json read returned empty string.");
+            LogLine(L"CONFIG: ---------------------");
+            return;
+        }
+
+        // Avoid freezing the UI if the file is huge.
+        const size_t kMax = 16384; // 16 KB
+        if (raw.size() > kMax) {
+            LogLine(L"CONFIG: NOTE: config.json is large; truncating output to first 16 KB.");
+            raw.resize(kMax);
+        }
+
+        LogLine(L"CONFIG: config.json contents begin >>>");
+        LogLine(WideFromUtf8(raw));
+        LogLine(L"CONFIG: config.json contents end <<<");
+    }
+    catch (...) {
+        LogLine(L"CONFIG: exception while reading/printing config.json");
+    }
+
+    LogLine(L"CONFIG: ---------------------");
+}
+
 
 static std::wstring GetWindowTextWString(HWND h) {
     int len = GetWindowTextLengthW(h);
@@ -263,17 +358,17 @@ static void UpdatePlatformStatusUI(const Metrics& m)
     auto set = [](HWND h, const std::wstring& s) { if (h) SetWindowTextW(h, s.c_str()); };
 
     // Pull latest values from AppState metrics (single source of truth for UI)
-    gTikTokViewerCount   = m.tiktok_viewers;
+    gTikTokViewerCount = m.tiktok_viewers;
     gTikTokFollowerCount = m.tiktok_followers;
-    gTikTokLive          = m.tiktok_live;
+    gTikTokLive = m.tiktok_live;
 
-    gTwitchViewerCount   = m.twitch_viewers;
+    gTwitchViewerCount = m.twitch_viewers;
     gTwitchFollowerCount = m.twitch_followers;
-    gTwitchLive          = m.twitch_live;
+    gTwitchLive = m.twitch_live;
 
-    gYouTubeViewerCount   = m.youtube_viewers;
+    gYouTubeViewerCount = m.youtube_viewers;
     gYouTubeFollowerCount = m.youtube_followers;
-    gYouTubeLive          = m.youtube_live;
+    gYouTubeLive = m.youtube_live;
     set(gTikTokStatus, gTikTokLive ? L"Status: LIVE" : L"Status: OFFLINE");
     set(gTikTokViewers, L"Viewers: " + std::to_wstring(gTikTokViewerCount));
     set(gTikTokFollowers, L"Followers: " + std::to_wstring(gTikTokFollowerCount));
@@ -286,6 +381,34 @@ static void UpdatePlatformStatusUI(const Metrics& m)
     set(gYouTubeStatus, gYouTubeLive ? L"Status: LIVE" : L"Status: OFFLINE");
     set(gYouTubeViewers, L"Viewers: " + std::to_wstring(gYouTubeViewerCount));
     set(gYouTubeFollowers, L"Followers: " + std::to_wstring(gYouTubeFollowerCount));
+}
+
+// Pull metrics through the local HTTP endpoint so the UI reflects exactly what overlays/OBS see.
+static bool TryFetchMetricsFromApi(Metrics& out)
+{
+    HttpResult r = WinHttpRequest(L"GET", L"127.0.0.1", 17845, L"/api/metrics", L"", "", false);
+    if (r.status != 200 || r.body.empty()) return false;
+
+    try {
+        auto j = nlohmann::json::parse(r.body);
+
+        out.ts_ms = j.value("ts_ms", 0LL);
+        out.twitch_viewers = j.value("twitch_viewers", 0);
+        out.youtube_viewers = j.value("youtube_viewers", 0);
+        out.tiktok_viewers = j.value("tiktok_viewers", 0);
+
+        out.twitch_followers = j.value("twitch_followers", 0);
+        out.youtube_followers = j.value("youtube_followers", 0);
+        out.tiktok_followers = j.value("tiktok_followers", 0);
+
+        out.twitch_live = j.value("twitch_live", false);
+        out.youtube_live = j.value("youtube_live", false);
+        out.tiktok_live = j.value("tiktok_live", false);
+        return true;
+    }
+    catch (...) {
+        return false;
+    }
 }
 static std::string ReadFileUtf8(const std::wstring& path) {
     FILE* f = nullptr;
@@ -314,8 +437,6 @@ static void ReplaceAll(std::string& s, const std::string& from, const std::strin
 
 static std::string UrlEncodeGoogleFontFamily(std::string family)
 {
-    // Good enough for common Google font family names like "Inter", "Roboto Slab", etc.
-    // Spaces become '+'. (If you later support weight/ital etc you can expand this.)
     for (char& c : family) {
         if (c == ' ') c = '+';
     }
@@ -395,7 +516,7 @@ static LRESULT CALLBACK TikTokCookiesWndProc(HWND hwnd, UINT msg, WPARAM wParam,
         return 0;
     }
 
-case WM_COMMAND:
+    case WM_COMMAND:
     {
         const int id = LOWORD(wParam);
         const int code = HIWORD(wParam);
@@ -607,7 +728,6 @@ static bool EditTwitchSettingsModal(HWND parent, TwitchSettingsDraft& draft)
         &draft);
 
     if (!dlg) {
-        // If dialog fails to create, re-enable parent and surface an error
         EnableWindow(parent, TRUE);
         return false;
     }
@@ -634,6 +754,7 @@ static bool EditTwitchSettingsModal(HWND parent, TwitchSettingsDraft& draft)
 // --------------------------- Platform start helpers -------------------------
 static bool StartOrRestartTikTokSidecar(TikTokSidecar& tiktok,
     AppState& state,
+    HWND hwndMain,
     HWND hwndLog,
     HWND hTikTokEdit)
 {
@@ -663,7 +784,25 @@ static bool StartOrRestartTikTokSidecar(TikTokSidecar& tiktok,
             if (!msg.empty()) extra = " | " + msg;
             LogLine(ToW(("TIKTOK: " + type + extra)));
         }
-        if (type == "tiktok.chat") {
+
+        if (type == "tiktok.connected") {
+            // If we can connect, we are live.
+            state.set_tiktok_live(true);
+            if (hwndMain) PostMessageW(hwndMain, WM_APP + 41, 0, 0);
+        }
+        else if (type == "tiktok.disconnected" || type == "tiktok.offline") {
+            // Ensure we never show stale "live" state / viewers.
+            state.set_tiktok_live(false);
+            state.set_tiktok_viewers(0);
+            if (hwndMain) PostMessageW(hwndMain, WM_APP + 41, 0, 0);
+        }
+        else if (type == "tiktok.error") {
+            // Treat fatal sidecar errors as offline from the UI/metrics perspective.
+            state.set_tiktok_live(false);
+            state.set_tiktok_viewers(0);
+            if (hwndMain) PostMessageW(hwndMain, WM_APP + 41, 0, 0);
+        }
+        else if (type == "tiktok.chat") {
             ChatMessage c;
             c.platform = "TikTok";
             c.user = j.value("user", "unknown");
@@ -672,8 +811,26 @@ static bool StartOrRestartTikTokSidecar(TikTokSidecar& tiktok,
             c.ts_ms = (std::int64_t)(ts * 1000.0);
             state.add_chat(std::move(c));
         }
+        // NEW: primary stats event from the updated sidecar
+        else if (type == "tiktok.stats") {
+            bool live = j.value("live", false);
+            int viewers = j.value("viewers", 0);
+
+            state.set_tiktok_live(live);
+            state.set_tiktok_viewers(viewers);
+
+            // Followers is optional in the sidecar payload; only apply if present
+            if (j.contains("followers")) {
+                state.set_tiktok_followers(j.value("followers", 0));
+            }
+
+            // Refresh UI (which pulls /api/metrics and updates widgets)
+            if (hwndMain) PostMessageW(hwndMain, WM_APP + 41, 0, 0);
+        }
+        // Backward compatibility (if any old sidecar emits this)
         else if (type == "tiktok.viewers") {
             state.set_tiktok_viewers(j.value("viewers", 0));
+            if (hwndMain) PostMessageW(hwndMain, WM_APP + 41, 0, 0);
         }
         });
 
@@ -904,7 +1061,6 @@ static void LayoutControls(HWND hwnd)
     MoveWindow(hSave, pad + savePad, saveY, (W - pad * 2) - savePad * 2, 28, TRUE);
 
     // Log tools (below Settings block)
-
     int toolsY = settingsTop + settingsH + 10;
 
     int toolH = 28;
@@ -930,6 +1086,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     static std::thread serverThread;
     static std::thread metricsThread;
     static std::thread twitchHelixThread;
+    static std::thread tiktokFollowersThread;
     static ObsWsClient obs;
 
     switch (msg) {
@@ -948,9 +1105,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         }
 
         // Load config first (so edits start populated)
-        if (config.Load()) {
-            // ok
-        }
+        (void)config.Load();
 
         // Group boxes
         hGroupTikTok = CreateWindowW(L"BUTTON", L"TikTok", WS_CHILD | WS_VISIBLE | BS_GROUPBOX, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
@@ -971,7 +1126,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         hLblYouTube = CreateWindowW(L"STATIC", L"Handle / Channel", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
         hYouTube = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", ToW(config.youtube_handle).c_str(),
             WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL, 0, 0, 0, 0, hwnd, (HMENU)IDC_YOUTUBE_EDIT, nullptr, nullptr);
-        // Platform status labels (UI only for now)
+
+        // Platform status labels
         gTikTokStatus = CreateWindowW(L"STATIC", L"Status: OFFLINE", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
         gTikTokViewers = CreateWindowW(L"STATIC", L"Viewers: 0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
         gTikTokFollowers = CreateWindowW(L"STATIC", L"Followers: 0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
@@ -985,11 +1141,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         gYouTubeViewers = CreateWindowW(L"STATIC", L"Viewers: 0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
         gYouTubeFollowers = CreateWindowW(L"STATIC", L"Followers: 0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
 
-
-
         // Buttons
         hGroupSettings = CreateWindowW(L"BUTTON", L"Settings", WS_CHILD | WS_VISIBLE | BS_GROUPBOX, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
-
         hSave = CreateWindowW(L"BUTTON", L"Save settings", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_SAVE_BTN, nullptr, nullptr);
 
         hStartTikTokBtn = CreateWindowW(L"BUTTON", L"Start", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_START_TIKTOK, nullptr, nullptr);
@@ -1034,7 +1187,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         gLog = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
             WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_READONLY | WS_VSCROLL, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
         LogLine(L"APP: UI log initialized");
-
+        LogConfigDiagnostics();
 
         hClearLogBtn = CreateWindowW(L"BUTTON", L"Clear", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_CLEAR_LOG, nullptr, nullptr);
         hCopyLogBtn = CreateWindowW(L"BUTTON", L"Copy", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_COPY_LOG, nullptr, nullptr);
@@ -1046,14 +1199,18 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             hTikTok,hTwitch,hYouTube,hTikTokCookies,
             hSave,hStartTikTokBtn,hRestartTikTokBtn,hStartTwitchBtn,hRestartTwitchBtn,hStartYouTubeBtn,hRestartYouTubeBtn,
             gTikTokStatus,gTikTokViewers,gTikTokFollowers,
-            gTwitchStatus,gTwitchViewers,gTwitchFollowers,
+            gTwitchStatus,gTwitchViewers,gTwitchFollowers,gTwitchHelix,
             gYouTubeStatus,gYouTubeViewers,gYouTubeFollowers,
             gLog,hClearLogBtn,hCopyLogBtn,
             hGroupOverlay,hLblOverlayFont,hOverlayFont,hLblOverlaySize,hOverlaySize,hOverlayShadow
         };
         for (HWND c : controls) if (c) SendMessageW(c, WM_SETFONT, (WPARAM)gFontUi, TRUE);
-        UpdatePlatformStatusUI(state.get_metrics());
 
+        {
+            Metrics m{};
+            if (TryFetchMetricsFromApi(m)) UpdatePlatformStatusUI(m);
+            else UpdatePlatformStatusUI(state.get_metrics());
+        }
 
         // Initial logs
         LogLine(L"Starting Mode-S Client overlay...");
@@ -1070,7 +1227,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         SetWindowTextW(hHint, L"Tip: Save settings first. TikTok cookies are optional unless required by TikTok.");
 
         UpdateTikTokButtons(hTikTok, hStartTikTokBtn, hRestartTikTokBtn);
-
         LayoutControls(hwnd);
 
         // Start HTTP server in background thread
@@ -1096,17 +1252,13 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                     return;
                 }
 
-                // Build injected values from config
                 std::string fontFamily = Trim(config.overlay_font_family);
                 std::string fontStack = "sans-serif";
                 std::string googleLink = "";
 
                 if (!fontFamily.empty()) {
-                    // Use the chosen font, but still fall back to sans-serif
-                    fontStack = "'" + fontFamily + "', sans-serif";
-
-                    // Google fonts CSS URL
-                    std::string enc = UrlEncodeGoogleFontFamily(fontFamily);
+                    fontStack = "'" + fontFamily + "', sans-serif;";
+                        std::string enc = UrlEncodeGoogleFontFamily(fontFamily);
                     std::string url = "https://fonts.googleapis.com/css2?family=" + enc + "&display=swap";
                     googleLink = "<link rel=\"stylesheet\" href=\"" + url + "\">";
                 }
@@ -1140,159 +1292,52 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             }
             });
         metricsThread.detach();
+
         LogLine(L"TWITCH: starting Helix poller thread");
 
-twitchHelixThread = std::thread([&]() {
-    LogLine(L"TWITCH: helix poller thread started");
-    bool firstLoop = true;
-    std::string token;
-    std::string broadcaster_id;
-    std::int64_t token_expiry_ms = 0;
-
-    auto log_http = [&](const char* what, const HttpResult& r) {
-        std::string msg = std::string("TWITCH HELIX ") + what + ": HTTP " + std::to_string(r.status);
-        if (r.winerr) msg += " winerr=" + std::to_string((unsigned)r.winerr);
-        if (!r.body.empty()) {
-            std::string body = r.body;
-            if (body.size() > 800) body.resize(800);
-            msg += " body=" + body;
-        }
-        LogLine(ToW(msg));
-    };
-
-    auto set_status = [&](const std::wstring& s) {
-        gTwitchHelixStatus = s;
-        PostMessageW(hwnd, WM_APP + 41, 0, 0); // refresh UI
-    };
-
-    while (gRunning) {
-        if (firstLoop) { LogLine(L"TWITCH: poll loop entered"); firstLoop = false; }
-        const std::string login = config.twitch_login;
-        const std::string cid = config.twitch_client_id;
-        const std::string secret = config.twitch_client_secret;
-
-        if (login.empty() || cid.empty() || secret.empty()) {
-            LogLine(L"TWITCH: skipped (missing login/client_id/client_secret)");
-
-            set_status(L"Helix: missing login/client id/secret");
-            Sleep(1500);
-            continue;
-        }
-
-        const std::int64_t now = (std::int64_t)GetTickCount64();
-        if (token.empty() || now + 30000 > token_expiry_ms) {
-            std::string path = "/oauth2/token?client_id=" + UrlEncode(cid) + "&client_secret=" + UrlEncode(secret) + "&grant_type=client_credentials";
-            HttpResult r = WinHttpRequest(L"POST", L"id.twitch.tv", 443, ToW(path), L"", "", true);
-            if (r.status != 200) {
-                set_status(L"Helix: token error (see log)");
-                log_http("token", r);
-                Sleep(5000);
-                continue;
+        twitchHelixThread = StartTwitchHelixPoller(
+            hwnd,
+            config,
+            state,
+            gRunning,
+            (UINT)(WM_APP + 41),
+            TwitchHelixUiCallbacks{
+                /*log*/          [](const std::wstring& s) { LogLine(s); },
+                /*set_status*/   [&](const std::wstring& s) {
+                    gTwitchHelixStatus = s;
+                    PostMessageW(hwnd, WM_APP + 41, 0, 0);
+                },
+            /*set_live*/     [&](bool live) { gTwitchLive = live; },
+            /*set_viewers*/  [&](int v) { gTwitchViewerCount = v; },
+            /*set_followers*/[&](int f) { gTwitchFollowerCount = f; }
             }
-            try {
-                auto j = nlohmann::json::parse(r.body);
-                token = j.value("access_token", "");
-                int expires = j.value("expires_in", 0);
-                token_expiry_ms = now + (std::int64_t)expires * 1000;
-                set_status(L"Helix: token OK");
-            } catch (...) {
-                set_status(L"Helix: token parse error (see log)");
-                log_http("token-parse", r);
-                Sleep(5000);
-                continue;
-            }
-        }
+        );
+        twitchHelixThread.detach();
 
-        // Resolve broadcaster id if needed
-        if (broadcaster_id.empty()) {
-            std::wstring hdr = L"Client-Id: " + ToW(cid) + L"\r\nAuthorization: Bearer " + ToW(token) + L"\r\n";
-            std::string path = "/helix/users?login=" + UrlEncode(login);
-            HttpResult r = WinHttpRequest(L"GET", L"api.twitch.tv", 443, ToW(path), hdr, "", true);
-            if (r.status != 200) {
-                set_status(L"Helix: users error (see log)");
-                log_http("users", r);
-                Sleep(5000);
-                continue;
+        LogLine(L"TIKTOK: starting followers poller thread");
+        tiktokFollowersThread = StartTikTokFollowersPoller(
+            hwnd,
+            config,
+            state,
+            gRunning,
+            (UINT)(WM_APP + 41),
+            TikTokFollowersUiCallbacks{
+                /*log*/           [](const std::wstring& s) { LogLine(s); },
+                /*set_status*/    [](const std::wstring& /*s*/) { /* optional */ },
+                /*set_followers*/ [&](int f) { gTikTokFollowerCount = f; }
             }
-            try {
-                auto j = nlohmann::json::parse(r.body);
-                if (j.contains("data") && j["data"].is_array() && !j["data"].empty()) {
-                    broadcaster_id = j["data"][0].value("id", "");
-                }
-                if (broadcaster_id.empty()) {
-                    set_status(L"Helix: user id not found");
-                    log_http("users-empty", r);
-                    Sleep(5000);
-                    continue;
-                }
-                set_status(L"Helix: users OK");
-            } catch (...) {
-                set_status(L"Helix: users parse error (see log)");
-                log_http("users-parse", r);
-                Sleep(5000);
-                continue;
-            }
-        }
-
-        // Stream status + viewers
-        {
-            std::wstring hdr = L"Client-Id: " + ToW(cid) + L"\r\nAuthorization: Bearer " + ToW(token) + L"\r\n";
-            std::string path = "/helix/streams?user_login=" + UrlEncode(login);
-            HttpResult r = WinHttpRequest(L"GET", L"api.twitch.tv", 443, ToW(path), hdr, "", true);
-            if (r.status != 200) {
-                set_status(L"Helix: streams error (see log)");
-                log_http("streams", r);
-            } else {
-                try {
-                    auto j = nlohmann::json::parse(r.body);
-                    bool live = j.contains("data") && j["data"].is_array() && !j["data"].empty();
-                    int viewers = 0;
-                    if (live) viewers = j["data"][0].value("viewer_count", 0);
-                    state.set_twitch_viewers(viewers);
-                    gTwitchViewerCount = viewers;
-                    gTwitchLive = live;
-                } catch (...) {
-                    set_status(L"Helix: streams parse error (see log)");
-                    log_http("streams-parse", r);
-                }
-            }
-        }
-
-        // Followers total
-        {
-            std::wstring hdr = L"Client-Id: " + ToW(cid) + L"\r\nAuthorization: Bearer " + ToW(token) + L"\r\n";
-            std::string path = "/helix/channels/followers?broadcaster_id=" + UrlEncode(broadcaster_id);
-            HttpResult r = WinHttpRequest(L"GET", L"api.twitch.tv", 443, ToW(path), hdr, "", true);
-            if (r.status != 200) {
-                set_status(L"Helix: followers error (see log)");
-                log_http("followers", r);
-            } else {
-                try {
-                    auto j = nlohmann::json::parse(r.body);
-                    int total = j.value("total", 0);
-                    state.set_twitch_followers(total);
-                    gTwitchFollowerCount = total;
-                    set_status(L"Helix: OK");
-                } catch (...) {
-                    set_status(L"Helix: followers parse error (see log)");
-                    log_http("followers-parse", r);
-                }
-            }
-        }
-
-        PostMessageW(hwnd, WM_APP + 41, 0, 0); // refresh UI
-        Sleep(15000);
-    }
-});
-twitchHelixThread.detach();
-
+        );
+        tiktokFollowersThread.detach();
 
         return 0;
     }
     case WM_APP + 41: // refresh platform metrics UI
-        UpdatePlatformStatusUI(state.get_metrics());
-        return 0;
-
+    {
+        Metrics m{};
+        if (TryFetchMetricsFromApi(m)) UpdatePlatformStatusUI(m);
+        else UpdatePlatformStatusUI(state.get_metrics());
+    }
+    return 0;
 
     case WM_COMMAND:
     {
@@ -1304,7 +1349,7 @@ twitchHelixThread.detach();
         }
 
         if (id == IDC_START_TIKTOK || id == IDC_RESTART_TIKTOK) {
-            StartOrRestartTikTokSidecar(tiktok, state, gLog, hTikTok);
+            StartOrRestartTikTokSidecar(tiktok, state, hwnd, gLog, hTikTok);
             return 0;
         }
 
@@ -1369,10 +1414,8 @@ twitchHelixThread.detach();
 
             config.overlay_text_shadow = (SendMessageW(hOverlayShadow, BM_GETCHECK, 0, 0) == BST_CHECKED);
 
-            // reflect clamped size back into the box
             SetWindowTextW(hOverlaySize, std::to_wstring(config.overlay_font_size).c_str());
 
-            // Persist everything
             if (config.Save()) {
                 LogLine(L"Saved config.json.");
             }
@@ -1382,7 +1425,6 @@ twitchHelixThread.detach();
 
             UpdateTikTokButtons(hTikTok, hStartTikTokBtn, hRestartTikTokBtn);
             return 0;
-
         }
 
         if (id == IDC_CLEAR_LOG) {
@@ -1411,13 +1453,11 @@ twitchHelixThread.detach();
         return 1;
     }
 
-
     case WM_CTLCOLORSTATIC:
     {
         HDC hdc = (HDC)wParam;
         HWND hCtl = (HWND)lParam;
 
-        // Status labels: green for LIVE, red for OFFLINE
         if (hCtl == gTikTokStatus || hCtl == gTwitchStatus || hCtl == gYouTubeStatus)
         {
             bool live = (hCtl == gTikTokStatus) ? gTikTokLive : (hCtl == gTwitchStatus) ? gTwitchLive : gYouTubeLive;
@@ -1426,8 +1466,6 @@ twitchHelixThread.detach();
             return (LRESULT)(gBrushBg ? gBrushBg : GetStockObject(NULL_BRUSH));
         }
 
-        // NOTE: Readonly EDIT controls are reported as STATIC for color messages.
-        // gLog is ES_READONLY, so we must paint it OPAQUE to avoid text ghosting/overlap on scroll.
         if (hCtl == gLog)
         {
             SetTextColor(hdc, gClrText);
@@ -1436,7 +1474,6 @@ twitchHelixThread.detach();
             return (LRESULT)(gBrushEdit ? gBrushEdit : GetStockObject(BLACK_BRUSH));
         }
 
-        // Normal labels
         SetBkMode(hdc, TRANSPARENT);
         SetTextColor(hdc, (hCtl == hHint) ? gClrHint : gClrText);
         return (LRESULT)(gBrushBg ? gBrushBg : GetStockObject(BLACK_BRUSH));
@@ -1447,8 +1484,6 @@ twitchHelixThread.detach();
         HDC hdc = (HDC)wParam;
         HWND hCtl = (HWND)lParam;
 
-        // Keep input boxes "normal" (white) so they're readable.
-        // (gLog is ES_READONLY so it is handled in WM_CTLCOLORSTATIC above.)
         (void)hCtl;
         SetTextColor(hdc, RGB(0, 0, 0));
         SetBkMode(hdc, OPAQUE);
@@ -1459,7 +1494,8 @@ twitchHelixThread.detach();
     case WM_DESTROY:
         gRunning = false;
         tiktok.stop();
-        twitch.stop();        PostQuitMessage(0);
+        twitch.stop();
+        PostQuitMessage(0);
         return 0;
     }
 
