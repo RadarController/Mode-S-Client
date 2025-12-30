@@ -173,6 +173,7 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
   <ItemGroup>
     <ClInclude Include="..\external\httplib.h" />
     <ClInclude Include="..\external\json.hpp" />
+    <ClInclude Include="integrations\euroscope\EuroScopeIngestService.h" />
     <ClInclude Include="integrations\obs\ObsWsClient.h" />
     <ClInclude Include="integrations\tiktok\TikTokFollowersService.h" />
     <ClInclude Include="integrations\tiktok\TikTokSidecar.h" />
@@ -185,6 +186,7 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClInclude Include="ui\Resource.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="integrations\euroscope\EuroScopeIngestService.cpp" />
     <ClCompile Include="integrations\obs\ObsWsClient.cpp" />
     <ClCompile Include="integrations\tiktok\TikTokFollowersService.cpp" />
     <ClCompile Include="integrations\tiktok\TikTokSidecar.cpp" />

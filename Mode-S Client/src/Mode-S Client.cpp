@@ -27,6 +27,7 @@
 #include "twitch/TwitchHelixService.h"
 #include "twitch/TwitchIrcWsClient.h"
 #include "tiktok/TikTokFollowersService.h"
+#include "euroscope/EuroScopeIngestService.h"
 #include "tiktok/TikTokSidecar.h"
 #include "obs/ObsWsClient.h"
 
@@ -998,6 +999,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     static std::thread metricsThread;
     static std::thread twitchHelixThread;
     static std::thread tiktokFollowersThread;
+    static EuroScopeIngestService euroscope;
     static ObsWsClient obs;
 
     switch (msg) {
@@ -1157,7 +1159,27 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
             svr.Get("/api/metrics", [&](const httplib::Request&, httplib::Response& res) {
                 auto j = state.metrics_json();
+
+                const uint64_t now_ms = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()
+                ).count();
+
+                // Merge EuroScope ingest snapshot into the metrics payload
+                j.update(euroscope.Metrics(now_ms));
+
                 res.set_content(j.dump(2), "application/json; charset=utf-8");
+                });
+
+            // EuroScope plugin ingest endpoint (expects JSON with ts_ms)
+            svr.Post("/api/euroscope", [&](const httplib::Request& req, httplib::Response& res) {
+                std::string err;
+                if (!euroscope.Ingest(req.body, err)) {
+                    res.status = 400;
+                    res.set_content(std::string(R"({"ok":false,"error":")") + err + R"("})",
+                        "application/json; charset=utf-8");
+                    return;
+                }
+                res.set_content(R"({"ok":true})", "application/json; charset=utf-8");
                 });
 
             svr.Get("/api/chat", [&](const httplib::Request&, httplib::Response& res) {

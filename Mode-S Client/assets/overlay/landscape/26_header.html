@@ -54,7 +54,7 @@
   <div class="right">
     <div class="stat"><span class="dot"></span><span class="label">VIEWERS</span><span id="viewers">0</span></div>
     <div class="stat"><span class="dot"></span><span class="label">FOLLOWERS</span><span id="followers">0</span></div>
-    <div class="stat"><span class="dot"></span><span class="label">AIRCRAFT</span><span id="aircraft">0</span></div>
+    <div class="stat"><span class="dot"></span><span class="label">AIRCRAFT</span><span id="aircraft">— / —</span></div>
   </div>
 </div>
 
@@ -62,11 +62,12 @@
   // ===============================
   // Mode-S Client /api/metrics
   // ===============================
-  const METRICS_URL = "/api/metrics"; // use absolute URL if loading as file://
+  const METRICS_URL = "/api/metrics";
   const POLL_MS = 1000;
 
   const elViewers   = document.getElementById("viewers");
   const elFollowers = document.getElementById("followers");
+  const elAircraft  = document.getElementById("aircraft");
 
   const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -84,9 +85,7 @@
       current: 0,
       target: 0,
       lastText: "",
-      set(n){
-        this.target = Math.max(0, toNum(n));
-      },
+      set(n){ this.target = Math.max(0, toNum(n)); },
       tick(){
         const d = this.target - this.current;
         if (Math.abs(d) < 0.05) this.current = this.target;
@@ -108,12 +107,59 @@
     };
   }
 
+  function makePairAnimator(el){
+    return {
+      el,
+      aCur: 0, aTgt: 0,
+      bCur: 0, bTgt: 0,
+      lastText: "",
+      connected: false,
+      set(a, b, connected){
+        this.connected = connected;
+        if (!connected) return;
+        this.aTgt = Math.max(0, toNum(a));
+        this.bTgt = Math.max(0, toNum(b));
+      },
+      tick(){
+        if (!this.connected){
+          if (this.lastText !== "— / —"){
+            this.el.textContent = "— / —";
+            this.lastText = "— / —";
+          }
+          return;
+        }
+
+        let dA = this.aTgt - this.aCur;
+        let dB = this.bTgt - this.bCur;
+
+        this.aCur += Math.abs(dA) < 0.05 ? dA : dA * 0.2;
+        this.bCur += Math.abs(dB) < 0.05 ? dB : dB * 0.2;
+
+        const txt = `${fmt(this.aCur)} / ${fmt(this.bCur)}`;
+        if (txt !== this.lastText){
+          this.el.textContent = txt;
+          this.lastText = txt;
+        }
+      },
+      bump(prevA, prevB){
+        if (!this.connected) return;
+        if (prevA !== this.aTgt || prevB !== this.bTgt){
+          this.el.classList.remove("bump");
+          void this.el.offsetWidth;
+          this.el.classList.add("bump");
+        }
+      }
+    };
+  }
+
   const animViewers   = makeAnimator(elViewers);
   const animFollowers = makeAnimator(elFollowers);
+  const animAircraft  = makePairAnimator(elAircraft);
 
   (function raf(){
     animViewers.tick();
     animFollowers.tick();
+    animAircraft.tick();
     requestAnimationFrame(raf);
   })();
 
@@ -125,7 +171,6 @@
 
         const j = await r.json();
 
-        // === DIRECT MAPPING TO YOUR JSON ===
         {
           const p = animViewers.target;
           animViewers.set(j.total_viewers);
@@ -137,8 +182,20 @@
           animFollowers.bump(p);
         }
 
+        {
+          const prevA = animAircraft.aTgt;
+          const prevB = animAircraft.bTgt;
+
+          const connected = j.euroscope_connected === true;
+          const a = j?.euroscope?.assumed_now ?? 0;
+          const b = j?.euroscope?.handled_session ?? 0;
+
+          animAircraft.set(a, b, connected);
+          animAircraft.bump(prevA, prevB);
+        }
+
       } catch (e){
-        // keep last values if endpoint is briefly unavailable
+        // keep last values if temporarily unavailable
       }
       await sleep(POLL_MS);
     }

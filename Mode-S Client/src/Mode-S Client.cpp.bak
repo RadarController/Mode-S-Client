@@ -14,7 +14,7 @@
 #include <filesystem>
 #include <sstream>
 #include <fstream>
-#include <iterator>
+#include <cctype>
 #include <algorithm>
 #include <ctime>
 
@@ -221,95 +221,6 @@ static std::string ToUtf8(const std::wstring& w) {
     WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), s.data(), len, nullptr, nullptr);
     return s;
 }
-
-static std::wstring WideFromUtf8(const std::string& s) {
-    if (s.empty()) return L"";
-    int len = MultiByteToWideChar(CP_UTF8, 0, s.data(), (int)s.size(), nullptr, 0);
-    if (len <= 0) return L"";
-    std::wstring w(len, L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, s.data(), (int)s.size(), w.data(), len);
-    return w;
-}
-
-static void LogConfigDiagnostics() {
-    namespace fs = std::filesystem;
-
-    try {
-        std::wstring cwd = fs::current_path().wstring();
-        LogLine(L"CONFIG: ---- diagnostics ----");
-        LogLine((L"CONFIG: current_path = " + cwd));
-    }
-    catch (...) {
-        LogLine(L"CONFIG: current_path = <error>");
-    }
-
-    std::wstring rel = L"config.json";
-    std::wstring abs;
-    try {
-        abs = fs::absolute(rel).wstring();
-        LogLine((L"CONFIG: absolute(\"config.json\") = " + abs));
-    }
-    catch (...) {
-        LogLine(L"CONFIG: absolute(\"config.json\") = <error>");
-    }
-
-    try {
-        std::wstring exeDir = GetExeDir();
-        LogLine((L"CONFIG: exe_dir = " + exeDir));
-    }
-    catch (...) {
-        LogLine(L"CONFIG: exe_dir = <error>");
-    }
-
-    bool exists = false;
-    try {
-        exists = fs::exists(rel);
-        LogLine(std::wstring(L"CONFIG: exists(\"config.json\") = ") + (exists ? L"true" : L"false"));
-    }
-    catch (...) {
-        LogLine(L"CONFIG: exists(\"config.json\") = <error>");
-    }
-
-    if (!exists) {
-        LogLine(L"CONFIG: config.json not found in current working directory.");
-        LogLine(L"CONFIG: ---------------------");
-        return;
-    }
-
-    try {
-        // WARNING: This prints the full config.json (including secrets) to the UI log.
-        std::ifstream f("config.json", std::ios::binary);
-        if (!f) {
-            LogLine(L"CONFIG: failed to open config.json for reading.");
-            LogLine(L"CONFIG: ---------------------");
-            return;
-        }
-        std::string raw((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
-        LogLine((L"CONFIG: config.json bytes = " + std::to_wstring(raw.size())));
-        if (raw.empty()) {
-            LogLine(L"CONFIG: config.json read returned empty string.");
-            LogLine(L"CONFIG: ---------------------");
-            return;
-        }
-
-        // Avoid freezing the UI if the file is huge.
-        const size_t kMax = 16384; // 16 KB
-        if (raw.size() > kMax) {
-            LogLine(L"CONFIG: NOTE: config.json is large; truncating output to first 16 KB.");
-            raw.resize(kMax);
-        }
-
-        LogLine(L"CONFIG: config.json contents begin >>>");
-        LogLine(WideFromUtf8(raw));
-        LogLine(L"CONFIG: config.json contents end <<<");
-    }
-    catch (...) {
-        LogLine(L"CONFIG: exception while reading/printing config.json");
-    }
-
-    LogLine(L"CONFIG: ---------------------");
-}
-
 
 static std::wstring GetWindowTextWString(HWND h) {
     int len = GetWindowTextLengthW(h);
@@ -1107,6 +1018,18 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         // Load config first (so edits start populated)
         (void)config.Load();
 
+        // Log what AppConfig actually loaded (helps diagnose mismatched JSON keys vs. AppConfig mapping).
+        {
+            std::wstring snap = L"CONFIG: AppConfig snapshot ";
+            snap += L"twitch_login='";
+            snap += ToW(config.twitch_login);
+            snap += L"' twitch_client_id='";
+            snap += ToW(config.twitch_client_id);
+            snap += L"' twitch_client_secret_len=";
+            snap += std::to_wstring(config.twitch_client_secret.size());
+            LogLine(snap.c_str());
+        }
+
         // Group boxes
         hGroupTikTok = CreateWindowW(L"BUTTON", L"TikTok", WS_CHILD | WS_VISIBLE | BS_GROUPBOX, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
         hGroupTwitch = CreateWindowW(L"BUTTON", L"Twitch", WS_CHILD | WS_VISIBLE | BS_GROUPBOX, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
@@ -1187,7 +1110,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         gLog = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
             WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_READONLY | WS_VSCROLL, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
         LogLine(L"APP: UI log initialized");
-        LogConfigDiagnostics();
 
         hClearLogBtn = CreateWindowW(L"BUTTON", L"Clear", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_CLEAR_LOG, nullptr, nullptr);
         hCopyLogBtn = CreateWindowW(L"BUTTON", L"Copy", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_COPY_LOG, nullptr, nullptr);
@@ -1243,8 +1165,43 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 res.set_content(j.dump(2), "application/json; charset=utf-8");
                 });
 
+
+            // ---------------- Overlay hosting ----------------
+            // Serve overlays from: <exe_dir>\assets\overlay\...
+            const auto overlayRoot = std::filesystem::path(GetExeDir()) / L"assets" / L"overlay";
+
+            auto content_type_for = [](const std::string& path) -> const char* {
+                auto dot = path.find_last_of('.');
+                std::string ext = (dot == std::string::npos) ? "" : path.substr(dot + 1);
+                for (auto& c : ext) c = (char)tolower((unsigned char)c);
+
+                if (ext == "html" || ext == "htm") return "text/html; charset=utf-8";
+                if (ext == "css")  return "text/css; charset=utf-8";
+                if (ext == "js")   return "application/javascript; charset=utf-8";
+                if (ext == "json") return "application/json; charset=utf-8";
+                if (ext == "svg")  return "image/svg+xml";
+                if (ext == "png")  return "image/png";
+                if (ext == "jpg" || ext == "jpeg") return "image/jpeg";
+                if (ext == "gif")  return "image/gif";
+                if (ext == "webp") return "image/webp";
+                if (ext == "woff2") return "font/woff2";
+                if (ext == "woff")  return "font/woff";
+                if (ext == "ttf")   return "font/ttf";
+                if (ext == "otf")   return "font/otf";
+                return "application/octet-stream";
+                };
+
+            auto read_file_binary = [](const std::filesystem::path& path) -> std::string {
+                std::ifstream f(path, std::ios::binary);
+                if (!f) return {};
+                std::ostringstream ss;
+                ss << f.rdbuf();
+                return ss.str();
+                };
+
+            // Keep the chat overlay as a special case so we can inject font/shadow settings.
             svr.Get("/overlay/chat.html", [&](const httplib::Request&, httplib::Response& res) {
-                std::wstring htmlPath = GetExeDir() + L"\\assets\\overlay\\chat.html";
+                std::wstring htmlPath = GetExeDir() + L"\\assets\\overlay\\common\\chat.html";
                 auto html = ReadFileUtf8(htmlPath);
                 if (html.empty()) {
                     res.status = 404;
@@ -1258,7 +1215,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
                 if (!fontFamily.empty()) {
                     fontStack = "'" + fontFamily + "', sans-serif;";
-                        std::string enc = UrlEncodeGoogleFontFamily(fontFamily);
+                    std::string enc = UrlEncodeGoogleFontFamily(fontFamily);
                     std::string url = "https://fonts.googleapis.com/css2?family=" + enc + "&display=swap";
                     googleLink = "<link rel=\"stylesheet\" href=\"" + url + "\">";
                 }
@@ -1275,8 +1232,67 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 res.set_content(html, "text/html; charset=utf-8");
                 });
 
-            svr.Get("/", [&](const httplib::Request&, httplib::Response& res) {
+            // /overlay or /overlay/ -> default (keep current behaviour: chat)
+            svr.Get("/overlay", [&](const httplib::Request&, httplib::Response& res) {
                 res.set_redirect("/overlay/chat.html");
+                });
+            svr.Get("/overlay/", [&](const httplib::Request&, httplib::Response& res) {
+                res.set_redirect("/overlay/chat.html");
+                });
+
+            // Serve /overlay/<anything> from <exe_dir>\assets\overlay\<anything>
+            // Supports subfolders, e.g. /overlay/headers/26_header.html
+            svr.Get(R"(/overlay/(.*))", [&](const httplib::Request& req, httplib::Response& res) {
+                std::string relUtf8 = req.matches.size() >= 2 ? req.matches[1].str() : "";
+                if (relUtf8.empty()) {
+                    res.set_redirect("/overlay/chat.html");
+                    return;
+                }
+
+                // Ensure chat.html uses the templated handler above
+                if (relUtf8 == "chat.html") {
+                    res.set_redirect("/overlay/chat.html");
+                    return;
+                }
+
+                // Basic traversal guard
+                if (relUtf8.find("..") != std::string::npos || relUtf8.find(':') != std::string::npos || relUtf8.find('\\') != std::string::npos) {
+                    res.status = 400;
+                    res.set_content("Bad path", "text/plain; charset=utf-8");
+                    return;
+                }
+
+                // Map URL path -> filesystem path
+                std::wstring relW(relUtf8.begin(), relUtf8.end());
+                auto fullPath = overlayRoot / relW;
+
+                // Stronger guard: canonicalize and ensure file stays under overlayRoot
+                std::error_code ec;
+                auto canonRoot = std::filesystem::weakly_canonical(overlayRoot, ec);
+                auto canonFile = std::filesystem::weakly_canonical(fullPath, ec);
+                if (!ec) {
+                    auto rootStr = canonRoot.wstring();
+                    auto fileStr = canonFile.wstring();
+                    if (fileStr.rfind(rootStr, 0) != 0) {
+                        res.status = 403;
+                        res.set_content("Forbidden", "text/plain; charset=utf-8");
+                        return;
+                    }
+                }
+
+                auto bytes = read_file_binary(fullPath);
+                if (bytes.empty()) {
+                    res.status = 404;
+                    res.set_content("Not found", "text/plain; charset=utf-8");
+                    return;
+                }
+
+                res.set_content(std::move(bytes), content_type_for(relUtf8));
+                });
+
+            // Root -> overlay
+            svr.Get("/", [&](const httplib::Request&, httplib::Response& res) {
+                res.set_redirect("/overlay/");
                 });
 
             svr.listen("127.0.0.1", 17845);

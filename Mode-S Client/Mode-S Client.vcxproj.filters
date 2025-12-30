@@ -72,6 +72,9 @@
     <ClInclude Include="ui\Resource.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="integrations\euroscope\EuroScopeIngestService.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="integrations\obs\ObsWsClient.cpp">
@@ -93,6 +96,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="src\Mode-S Client.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="integrations\euroscope\EuroScopeIngestService.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
