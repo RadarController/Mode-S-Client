@@ -1,0 +1,105 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
+    </Filter>
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="external">
+      <UniqueIdentifier>{224f0f56-4dca-468c-a28c-1b8656896ecc}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src">
+      <UniqueIdentifier>{f41e0f62-1d01-4b4f-86ad-a7edf92928a8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="assets">
+      <UniqueIdentifier>{894651a9-639b-4c7f-90f8-45cbe717f7bd}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="assets%255coverlay">
+      <UniqueIdentifier>{7df615b3-361e-43c3-80ee-d952aaf72522}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="sidecar">
+      <UniqueIdentifier>{e70ac4a4-b7cb-4948-95c0-c7a3ec1148ef}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="framework.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="targetver.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Resource.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Mode-S Client.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\external\httplib.h">
+      <Filter>external</Filter>
+    </ClInclude>
+    <ClInclude Include="..\external\json.hpp">
+      <Filter>external</Filter>
+    </ClInclude>
+    <ClInclude Include="AppState.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="TikTokSidecar.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="ObsWsClient.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="AppConfig.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="TwitchIrcWsClient.h">
+      <Filter>src</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Mode-S Client.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="AppState.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="TikTokSidecar.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="ObsWsClient.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="TwitchIrcWsClient.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="Mode-S Client.rc">
+      <Filter>Resource Files</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="small.ico">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="Mode-S Client.ico">
+      <Filter>Resource Files</Filter>
+    </Image>
+  </ItemGroup>
+  <ItemGroup>
+    <CopyFileToFolders Include="chat.html">
+      <Filter>assets%255coverlay</Filter>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="tiktok_sidecar.py">
+      <Filter>sidecar</Filter>
+    </CopyFileToFolders>
+  </ItemGroup>
+</Project>

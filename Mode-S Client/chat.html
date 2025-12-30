@@ -1,0 +1,76 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <style>
+        body {
+            margin: 0;
+            background: transparent;
+            font-family: sans-serif;
+        }
+
+        #chat {
+            padding: 12px;
+            font-size: 22px;
+            color: white;
+            text-shadow: 0 0 4px rgba(0,0,0,.8);
+        }
+
+        #metrics {
+            padding: 12px;
+            font-size: 22px;
+            color: white;
+            text-shadow: 0 0 4px rgba(0,0,0,.8);
+        }
+
+        .msg {
+            margin-bottom: 8px;
+        }
+
+        .p {
+            opacity: .85;
+            margin-right: 8px;
+        }
+
+        .u {
+            font-weight: 700;
+            margin-right: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div id="metrics"></div>
+    <div id="chat"></div>
+
+    <script>
+    const metricsEl = document.getElementById('metrics');
+    const chatEl = document.getElementById('chat');
+    let lastLen = 0;
+
+    async function tick() {
+      try {
+        const m = await (await fetch('/api/metrics')).json();
+        metricsEl.textContent = `Viewers: ${m.total_viewers}  |  Followers: ${m.total_followers}`;
+
+        const chat = await (await fetch('/api/chat')).json();
+        if (chat.length !== lastLen) {
+          lastLen = chat.length;
+          chatEl.innerHTML = '';
+          const recent = chat.slice(-30);
+          for (const c of recent) {
+            const d = document.createElement('div');
+            d.className = 'msg';
+            d.innerHTML = `<span class="p">[${c.platform}]</span><span class="u">${c.user}</span>${c.message}`;
+            chatEl.appendChild(d);
+          }
+          window.scrollTo(0, document.body.scrollHeight);
+        }
+      } catch(e) {}
+    }
+    setInterval(tick, 250);
+        tick();
+
+        container.scrollTop = container.scrollHeight;
+    </script>
+</body>
+</html>
