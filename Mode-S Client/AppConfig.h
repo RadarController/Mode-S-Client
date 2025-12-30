@@ -6,6 +6,10 @@
 
 struct AppConfig
 {
+    std::string overlay_font_family = "Inter";  // or "" for system default
+    int         overlay_font_size = 22;
+    bool        overlay_text_shadow = true;
+
     std::string tiktok_unique_id;  // no '@'
     std::string twitch_login;      // login (lowercase is safest)
     std::string youtube_handle;    // with '@'
@@ -51,6 +55,9 @@ struct AppConfig
             tiktok_sessionid = j.value("tiktok_sessionid", tiktok_sessionid);
             tiktok_sessionid_ss = j.value("tiktok_sessionid_ss", tiktok_sessionid_ss);
             tiktok_tt_target_idc = j.value("tiktok_tt_target_idc", tiktok_tt_target_idc);
+            overlay_font_family = j.value("overlay_font_family", overlay_font_family);
+            overlay_font_size = j.value("overlay_font_size", overlay_font_size);
+            overlay_text_shadow = j.value("overlay_text_shadow", overlay_text_shadow);
             return true;
         }
         catch (...) {
@@ -98,6 +105,9 @@ struct AppConfig
         j["tiktok_sessionid"] = tiktok_sessionid;
         j["tiktok_sessionid_ss"] = tiktok_sessionid_ss;
         j["tiktok_tt_target_idc"] = tiktok_tt_target_idc;
+        j["overlay_font_family"] = overlay_font_family;
+        j["overlay_font_size"] = overlay_font_size;
+        j["overlay_text_shadow"] = overlay_text_shadow;
 
         // 3) Write back
         FILE* f = nullptr;
