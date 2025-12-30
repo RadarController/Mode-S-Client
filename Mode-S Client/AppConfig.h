@@ -9,6 +9,9 @@ struct AppConfig
     std::string tiktok_unique_id;  // no '@'
     std::string twitch_login;      // login (lowercase is safest)
     std::string youtube_handle;    // with '@'
+    std::string tiktok_sessionid;
+    std::string tiktok_sessionid_ss;
+    std::string tiktok_tt_target_idc;
 
     static std::wstring GetExeDir()
     {
@@ -45,6 +48,9 @@ struct AppConfig
             tiktok_unique_id = j.value("tiktok_unique_id", tiktok_unique_id);
             twitch_login = j.value("twitch_login", twitch_login);
             youtube_handle = j.value("youtube_handle", youtube_handle);
+            tiktok_sessionid = j.value("tiktok_sessionid", tiktok_sessionid);
+            tiktok_sessionid_ss = j.value("tiktok_sessionid_ss", tiktok_sessionid_ss);
+            tiktok_tt_target_idc = j.value("tiktok_tt_target_idc", tiktok_tt_target_idc);
             return true;
         }
         catch (...) {
@@ -54,12 +60,46 @@ struct AppConfig
 
     bool Save() const
     {
-        auto j = nlohmann::json{
-            {"tiktok_unique_id", tiktok_unique_id},
-            {"twitch_login", twitch_login},
-            {"youtube_handle", youtube_handle}
-        };
         const auto path = ConfigPath();
+
+        // 1) Start with existing JSON (so we preserve keys we don't explicitly manage)
+        nlohmann::json j = nlohmann::json::object();
+
+        {
+            FILE* rf = nullptr;
+            _wfopen_s(&rf, path.c_str(), L"rb");
+            if (rf) {
+                fseek(rf, 0, SEEK_END);
+                long sz = ftell(rf);
+                fseek(rf, 0, SEEK_SET);
+
+                std::string data;
+                data.resize(sz > 0 ? (size_t)sz : 0);
+                if (sz > 0) fread(data.data(), 1, (size_t)sz, rf);
+                fclose(rf);
+
+                try {
+                    if (!data.empty()) {
+                        auto parsed = nlohmann::json::parse(data);
+                        if (parsed.is_object()) j = std::move(parsed);
+                    }
+                }
+                catch (...) {
+                    // If config.json is malformed, fall back to empty object
+                    j = nlohmann::json::object();
+                }
+            }
+        }
+
+        // 2) Update only the fields this app is changing
+        j["tiktok_unique_id"] = tiktok_unique_id;
+        j["twitch_login"] = twitch_login;
+        j["youtube_handle"] = youtube_handle;
+        j["tiktok_sessionid"] = tiktok_sessionid;
+        j["tiktok_sessionid_ss"] = tiktok_sessionid_ss;
+        j["tiktok_tt_target_idc"] = tiktok_tt_target_idc;
+
+        // 3) Write back
         FILE* f = nullptr;
         _wfopen_s(&f, path.c_str(), L"wb");
         if (!f) return false;

@@ -6,6 +6,7 @@ import traceback
 
 from TikTokLive import TikTokLiveClient
 from TikTokLive.events import CommentEvent, ConnectEvent, DisconnectEvent
+from TikTokLive.client.errors import UserOfflineError
 
 print('{"type":"tiktok.boot","ts":0}', flush=True)
 
@@ -58,7 +59,6 @@ def main():
             emit({"type": "tiktok.disconnected", "ts": time.time()})
 
         async def on_comment(event: CommentEvent):
-            # v6.6.5 docs show event.user.nickname and event.comment :contentReference[oaicite:1]{index=1}
             user = getattr(getattr(event, "user", None), "nickname", None) or "unknown"
             msg = getattr(event, "comment", "") or ""
             emit({"type": "tiktok.chat", "ts": time.time(), "user": str(user), "message": str(msg)})
@@ -68,6 +68,14 @@ def main():
 
         emit({"type": "tiktok.info", "ts": time.time(), "message": "Starting client.run()"})
         client.run()
+
+    except UserOfflineError:
+        emit({
+            "type": "tiktok.error",
+            "ts": time.time(),
+            "message": "ERROR: Channel offline",
+            "unique_id": unique_id
+        })
 
     except Exception:
         emit({"type": "tiktok.error", "ts": time.time(), "message": traceback.format_exc()})

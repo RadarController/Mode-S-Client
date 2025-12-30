@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <sstream>
 #include <algorithm>
+#include <ctime>
 
 #include "httplib.h"
 #include "json.hpp"
@@ -17,8 +18,8 @@
 #include "AppConfig.h"
 #include "AppState.h"
 #include "TikTokSidecar.h"
-#include "TwitchIrcWsClient.h"
 #include "ObsWsClient.h"
+#include "TwitchIrcWsClient.h"
 
 #define IDC_TIKTOK_EDIT   1001
 #define IDC_TWITCH_EDIT   1002
@@ -26,7 +27,10 @@
 #define IDC_SAVE_BTN      1004
 #define IDC_START_TIKTOK  1005
 #define IDC_RESTART_TIKTOK 1006
+#define IDC_START_TWITCH  1007
+#define IDC_RESTART_TWITCH 1008
 
+#define IDC_TIKTOK_COOKIES 1009
 static std::wstring GetExeDir()
 {
     wchar_t path[MAX_PATH];
@@ -65,6 +69,151 @@ static std::string ToUtf8(const std::wstring& w) {
     WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), s.data(), len, nullptr, nullptr);
     return s;
 }
+
+// --- TikTok cookie modal (no resource file required) -------------------------
+
+struct TikTokCookiesDraft {
+    std::wstring sessionid;
+    std::wstring sessionid_ss;
+    std::wstring tt_target_idc;
+    bool accepted = false;
+};
+
+static LRESULT CALLBACK TikTokCookiesWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+    auto* draft = reinterpret_cast<TikTokCookiesDraft*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+
+    static HWND hSession = nullptr, hSessionSS = nullptr, hTarget = nullptr;
+
+    switch (msg)
+    {
+    case WM_CREATE:
+    {
+        auto* cs = reinterpret_cast<CREATESTRUCTW*>(lParam);
+        draft = reinterpret_cast<TikTokCookiesDraft*>(cs->lpCreateParams);
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(draft));
+
+        CreateWindowW(L"STATIC", L"tiktok_sessionid:", WS_CHILD | WS_VISIBLE,
+            12, 14, 120, 18, hwnd, nullptr, nullptr, nullptr);
+        hSession = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", draft->sessionid.c_str(),
+            WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | ES_PASSWORD,
+            140, 10, 320, 24, hwnd, (HMENU)101, nullptr, nullptr);
+
+        CreateWindowW(L"STATIC", L"tiktok_sessionid_ss:", WS_CHILD | WS_VISIBLE,
+            12, 46, 120, 18, hwnd, nullptr, nullptr, nullptr);
+        hSessionSS = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", draft->sessionid_ss.c_str(),
+            WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | ES_PASSWORD,
+            140, 42, 320, 24, hwnd, (HMENU)102, nullptr, nullptr);
+
+        CreateWindowW(L"STATIC", L"tiktok_tt_target_idc:", WS_CHILD | WS_VISIBLE,
+            12, 78, 120, 18, hwnd, nullptr, nullptr, nullptr);
+        hTarget = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", draft->tt_target_idc.c_str(),
+            WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+            140, 74, 160, 24, hwnd, (HMENU)103, nullptr, nullptr);
+
+        CreateWindowW(L"STATIC",
+            L"Tip: Paste these from your TikTok cookies (sessionid, sessionid_ss, tt_target_idc).",
+            WS_CHILD | WS_VISIBLE,
+            12, 106, 448, 18, hwnd, nullptr, nullptr, nullptr);
+
+        CreateWindowW(L"BUTTON", L"OK", WS_CHILD | WS_VISIBLE,
+            280, 134, 80, 26, hwnd, (HMENU)IDOK, nullptr, nullptr);
+
+        CreateWindowW(L"BUTTON", L"Cancel", WS_CHILD | WS_VISIBLE,
+            380, 134, 80, 26, hwnd, (HMENU)IDCANCEL, nullptr, nullptr);
+
+        return 0;
+    }
+
+    case WM_COMMAND:
+    {
+        const int id = LOWORD(wParam);
+        const int code = HIWORD(wParam);
+        // Only react to button clicks; EDIT controls send WM_COMMAND too (e.g. EN_SETFOCUS).
+        if ((id == IDOK || id == IDCANCEL) && code == BN_CLICKED)
+        {
+            if (draft && id == IDOK)
+            {
+                wchar_t buf[512]{};
+
+                GetWindowTextW(hSession, buf, (int)_countof(buf));
+                draft->sessionid = buf;
+
+                GetWindowTextW(hSessionSS, buf, (int)_countof(buf));
+                draft->sessionid_ss = buf;
+
+                GetWindowTextW(hTarget, buf, (int)_countof(buf));
+                draft->tt_target_idc = buf;
+
+                draft->accepted = true;
+            }
+            DestroyWindow(hwnd);
+            return 0;
+        }
+        break;
+    }
+
+    case WM_CLOSE:
+        DestroyWindow(hwnd);
+        return 0;
+    }
+
+    return DefWindowProcW(hwnd, msg, wParam, lParam);
+}
+
+static bool EditTikTokCookiesModal(HWND parent, TikTokCookiesDraft& draft)
+{
+    const wchar_t* kClass = L"StreamHub_TikTokCookiesDlg";
+
+    static std::atomic<bool> registered{ false };
+    if (!registered.exchange(true))
+    {
+        WNDCLASSW wc{};
+        wc.lpfnWndProc = TikTokCookiesWndProc;
+        wc.hInstance = GetModuleHandleW(nullptr);
+        wc.lpszClassName = kClass;
+        wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+        RegisterClassW(&wc);
+    }
+
+    RECT pr{};
+    GetWindowRect(parent, &pr);
+
+    const int w = 480, h = 200;
+    const int x = pr.left + ((pr.right - pr.left) - w) / 2;
+    const int y = pr.top + ((pr.bottom - pr.top) - h) / 2;
+
+    EnableWindow(parent, FALSE);
+
+    HWND dlg = CreateWindowExW(
+        WS_EX_DLGMODALFRAME,
+        kClass, L"TikTok Session Cookies",
+        WS_CAPTION | WS_SYSMENU,
+        x, y, w, h,
+        parent, nullptr, GetModuleHandleW(nullptr),
+        &draft);
+
+    ShowWindow(dlg, SW_SHOW);
+    UpdateWindow(dlg);
+
+    // Simple modal loop
+    MSG msg{};
+    while (IsWindow(dlg) && GetMessageW(&msg, nullptr, 0, 0))
+    {
+        if (!IsDialogMessageW(dlg, &msg))
+        {
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+    }
+
+    EnableWindow(parent, TRUE);
+    SetForegroundWindow(parent);
+
+    return draft.accepted;
+}
+
+// ---------------------------------------------------------------------------
 
 static std::wstring GetWindowTextWString(HWND h) {
     int len = GetWindowTextLengthW(h);
@@ -154,15 +303,15 @@ static bool StartOrRestartTikTokSidecar(TikTokSidecar& tiktok,
 
     bool ok = tiktok.start(L"python", sidecarPath, [&](const nlohmann::json& j) {
         std::string type = j.value("type", "");
-//        if (type.rfind("tiktok.", 0) == 0) LogLine(ToW(("SIDE CAR EVENT: " + type)).c_str());
-//replaced with below
+        //        if (type.rfind("tiktok.", 0) == 0) LogLine(ToW(("SIDE CAR EVENT: " + type)).c_str());
+        //replaced with below
         if (type.rfind("tiktok.", 0) == 0) {
             std::string msg = j.value("message", "");
             std::string extra;
             if (!msg.empty()) extra = " | " + msg;
             LogLine(ToW(("SIDE CAR EVENT: " + type + extra)).c_str());
         }
-//end
+        //end
         if (type == "tiktok.chat") {
             ChatMessage c;
             c.platform = "TikTok";
@@ -186,6 +335,71 @@ static bool StartOrRestartTikTokSidecar(TikTokSidecar& tiktok,
     return ok;
 }
 
+
+static std::string SanitizeTwitchLogin(std::string s)
+{
+    // trim spaces
+    while (!s.empty() && (s.front() == ' ' || s.front() == '\t')) s.erase(s.begin());
+    while (!s.empty() && (s.back() == ' ' || s.back() == '\t')) s.pop_back();
+
+    // remove leading '#'
+    if (!s.empty() && s[0] == '#') s.erase(s.begin());
+
+    // lowercase for consistency
+    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return (char)std::tolower(c); });
+    return s;
+}
+
+static bool StartOrRestartTwitchChat(TwitchIrcWsClient& twitch,
+    AppState& state,
+    HWND hwndLog,
+    HWND hTwitchEdit)
+{
+    std::string raw = ToUtf8(GetWindowTextWString(hTwitchEdit));
+    std::string channel = SanitizeTwitchLogin(raw);
+
+    SetWindowTextW(hTwitchEdit, ToW(channel).c_str());
+
+    if (channel.empty()) {
+        if (hwndLog) LogLine(L"Twitch login is empty. Enter it first.");
+        return false;
+    }
+
+    // stop existing
+    twitch.stop();
+
+    // Anonymous read-only login:
+    // PASS SCHMOOPIIE + NICK justinfanXXXX (Twitch-supported anonymous user)
+    // Channel to join is the streamer login.
+    int suffix = 10000 + (GetTickCount() % 50000);
+    std::string nick = "justinfan" + std::to_string(suffix);
+
+    bool ok = twitch.start("SCHMOOPIIE", nick, channel,
+        [&](const std::string& user, const std::string& message) {
+
+            // Show on the main log window (like TikTok)
+            LogLine(ToW("TWITCH CHAT: " + user + " | " + message));
+
+            // Keep storing in AppState (if you use it later)
+            ChatMessage c;
+            c.platform = "Twitch";
+            c.user = user;
+            c.message = message;
+            c.ts_ms = (std::int64_t)(time(nullptr) * 1000);
+            state.add_chat(std::move(c));
+        });
+
+    if (ok) {
+        if (hwndLog) LogLine(L"Twitch chat started/restarted.");
+    }
+    else {
+        if (hwndLog) LogLine(L"ERROR: Could not start Twitch chat.");
+    }
+
+    return ok;
+}
+
+
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     static AppConfig config;
 
@@ -194,7 +408,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
     static AppState state;
     static TikTokSidecar tiktok;
-    static TwitchItcWsClient g_twitch;
+    static TwitchIrcWsClient twitch;
     static std::thread serverThread;
     static std::thread metricsThread;
     static ObsWsClient obs;
@@ -228,6 +442,14 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
             150, 8, 200, 24, hwnd, (HMENU)IDC_TIKTOK_EDIT, nullptr, nullptr);
 
+        // TikTok cookies (session) button
+        CreateWindowW(L"BUTTON", L"...", WS_CHILD | WS_VISIBLE,
+            352, 8, 24, 24, hwnd, (HMENU)IDC_TIKTOK_COOKIES, nullptr, nullptr);
+
+        // "..." button to edit TikTok cookie fields
+        CreateWindowW(L"BUTTON", L"...", WS_CHILD | WS_VISIBLE,
+            352, 8, 16, 24, hwnd, (HMENU)IDC_TIKTOK_COOKIES, nullptr, nullptr);
+
         CreateWindowW(L"STATIC", L"Twitch login:", WS_CHILD | WS_VISIBLE,
             370, 10, 90, 20, hwnd, nullptr, nullptr, nullptr);
 
@@ -251,6 +473,13 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
         hRestartTikTokBtn = CreateWindowW(L"BUTTON", L"Restart TikTok", WS_CHILD | WS_VISIBLE,
             580, 40, 120, 24, hwnd, (HMENU)IDC_RESTART_TIKTOK, nullptr, nullptr);
+
+        // Twitch buttons
+        CreateWindowW(L"BUTTON", L"Start Twitch", WS_CHILD | WS_VISIBLE,
+            650, 8, 110, 24, hwnd, (HMENU)IDC_START_TWITCH, nullptr, nullptr);
+
+        CreateWindowW(L"BUTTON", L"Restart Twitch", WS_CHILD | WS_VISIBLE,
+            650, 40, 110, 24, hwnd, (HMENU)IDC_RESTART_TWITCH, nullptr, nullptr);
 
         // Disable Start/Restart until TikTok field has something valid
         UpdateTikTokButtons(hTikTok, hStartTikTokBtn, hRestartTikTokBtn);
@@ -320,12 +549,35 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             return 0;
         }
 
+        if (id == IDC_START_TWITCH || id == IDC_RESTART_TWITCH) {
+            StartOrRestartTwitchChat(twitch, state, gLog, hTwitch);
+            return 0;
+        }
+
+        if (id == IDC_TIKTOK_COOKIES) {
+            // Open modal to edit TikTok session cookies. Changes apply in-memory;
+            // user must click Save to persist them to config.json.
+            TikTokCookiesDraft draft;
+            draft.sessionid = ToW(config.tiktok_sessionid);
+            draft.sessionid_ss = ToW(config.tiktok_sessionid_ss);
+            draft.tt_target_idc = ToW(config.tiktok_tt_target_idc);
+
+            if (EditTikTokCookiesModal(hwnd, draft) && draft.accepted) {
+                config.tiktok_sessionid = ToUtf8(draft.sessionid);
+                config.tiktok_sessionid_ss = ToUtf8(draft.sessionid_ss);
+                config.tiktok_tt_target_idc = ToUtf8(draft.tt_target_idc);
+                LogLine(L"TikTok cookies updated (not saved yet). Click Save to persist.");
+            }
+            return 0;
+        }
+
         if (id == IDC_SAVE_BTN) {
             // Save + sanitize TikTok (strip @, trim)
             config.tiktok_unique_id = SanitizeTikTok(ToUtf8(GetWindowTextWString(hTikTok)));
             SetWindowTextW(hTikTok, ToW(config.tiktok_unique_id).c_str());
 
-            config.twitch_login = ToUtf8(GetWindowTextWString(hTwitch));
+            config.twitch_login = SanitizeTwitchLogin(ToUtf8(GetWindowTextWString(hTwitch)));
+            SetWindowTextW(hTwitch, ToW(config.twitch_login).c_str());
             config.youtube_handle = ToUtf8(GetWindowTextWString(hYouTube));
 
             if (config.Save()) {

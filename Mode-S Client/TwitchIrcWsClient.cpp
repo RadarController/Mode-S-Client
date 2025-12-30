@@ -133,6 +133,12 @@ void TwitchIrcWsClient::worker(std::string oauth, std::string nick, std::string 
             std::string line = TrimCRLF(recvBuf.substr(pos, eol - pos + 1));
             pos = eol + 1;
 
+            // Keep debugger output if you like
+            {
+                std::wstring w = L"[TWITCH RAW] " + ToW(line) + L"\n";
+                OutputDebugStringW(w.c_str());
+            }
+
             if (line.rfind("PING", 0) == 0) {
                 // Respond with PONG
                 std::string payload = line.substr(4);
