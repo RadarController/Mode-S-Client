@@ -18,119 +18,119 @@ using nlohmann::json;
 
 namespace {
 
-struct HttpResult {
-    DWORD status = 0;
-    DWORD winerr = 0;
-    std::string body;
-};
+    struct HttpResult {
+        DWORD status = 0;
+        DWORD winerr = 0;
+        std::string body;
+    };
 
-static std::wstring ToW(const std::string& s) {
-    if (s.empty()) return L"";
-    int len = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
-    std::wstring out(len, L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), out.data(), len);
-    return out;
-}
-
-static std::string UrlEncode(const std::string& s)
-{
-    static const char* hex = "0123456789ABCDEF";
-    std::string out;
-    out.reserve(s.size() * 3);
-    for (unsigned char c : s) {
-        if ((c >= 'a' && c <= 'z') ||
-            (c >= 'A' && c <= 'Z') ||
-            (c >= '0' && c <= '9') ||
-            c == '-' || c == '_' || c == '.' || c == '~')
-        {
-            out.push_back((char)c);
-        }
-        else {
-            out.push_back('%');
-            out.push_back(hex[(c >> 4) & 0xF]);
-            out.push_back(hex[c & 0xF]);
-        }
+    static std::wstring ToW(const std::string& s) {
+        if (s.empty()) return L"";
+        int len = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
+        std::wstring out(len, L'\0');
+        MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), out.data(), len);
+        return out;
     }
-    return out;
-}
 
-static HttpResult WinHttpRequest(const std::wstring& method,
-                                 const std::wstring& host,
-                                 INTERNET_PORT port,
-                                 const std::wstring& path,
-                                 const std::wstring& headers,
-                                 const std::string& body,
-                                 bool secure)
-{
-    HttpResult r;
-    DWORD status = 0; DWORD statusSize = sizeof(status);
-    std::string out;
-
-    HINTERNET hSession = WinHttpOpen(L"Mode-S Client/1.0",
-        WINHTTP_ACCESS_TYPE_NO_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
-    if (!hSession) { r.winerr = GetLastError(); return r; }
-
-    HINTERNET hConnect = WinHttpConnect(hSession, host.c_str(), port, 0);
-    if (!hConnect) { r.winerr = GetLastError(); WinHttpCloseHandle(hSession); return r; }
-
-    DWORD flags = secure ? WINHTTP_FLAG_SECURE : 0;
-    HINTERNET hRequest = WinHttpOpenRequest(hConnect, method.c_str(), path.c_str(),
-        nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, flags);
-    if (!hRequest) { r.winerr = GetLastError(); WinHttpCloseHandle(hConnect); WinHttpCloseHandle(hSession); return r; }
-
-    // Reasonable timeouts so the UI doesn't hang on shutdown.
-    WinHttpSetTimeouts(hRequest, 8000, 8000, 8000, 12000);
-
-    BOOL ok = WinHttpSendRequest(hRequest,
-        headers.empty() ? WINHTTP_NO_ADDITIONAL_HEADERS : headers.c_str(),
-        headers.empty() ? 0 : (DWORD)headers.size(),
-        body.empty() ? WINHTTP_NO_REQUEST_DATA : (LPVOID)body.data(),
-        body.empty() ? 0 : (DWORD)body.size(),
-        body.empty() ? 0 : (DWORD)body.size(),
-        0);
-
-    if (!ok) { r.winerr = GetLastError(); goto done; }
-
-    ok = WinHttpReceiveResponse(hRequest, nullptr);
-    if (!ok) { r.winerr = GetLastError(); goto done; }
-
-    if (WinHttpQueryHeaders(hRequest, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
-        WINHTTP_HEADER_NAME_BY_INDEX, &status, &statusSize, WINHTTP_NO_HEADER_INDEX))
+    static std::string UrlEncode(const std::string& s)
     {
-        r.status = status;
+        static const char* hex = "0123456789ABCDEF";
+        std::string out;
+        out.reserve(s.size() * 3);
+        for (unsigned char c : s) {
+            if ((c >= 'a' && c <= 'z') ||
+                (c >= 'A' && c <= 'Z') ||
+                (c >= '0' && c <= '9') ||
+                c == '-' || c == '_' || c == '.' || c == '~')
+            {
+                out.push_back((char)c);
+            }
+            else {
+                out.push_back('%');
+                out.push_back(hex[(c >> 4) & 0xF]);
+                out.push_back(hex[c & 0xF]);
+            }
+        }
+        return out;
     }
 
-    for (;;) {
-        DWORD avail = 0;
-        if (!WinHttpQueryDataAvailable(hRequest, &avail)) { r.winerr = GetLastError(); break; }
-        if (avail == 0) break;
-        size_t cur = out.size();
-        out.resize(cur + avail);
-        DWORD read = 0;
-        if (!WinHttpReadData(hRequest, out.data() + cur, avail, &read)) { r.winerr = GetLastError(); break; }
-        if (read < avail) out.resize(cur + read);
+    static HttpResult WinHttpRequest(const std::wstring& method,
+        const std::wstring& host,
+        INTERNET_PORT port,
+        const std::wstring& path,
+        const std::wstring& headers,
+        const std::string& body,
+        bool secure)
+    {
+        HttpResult r;
+        DWORD status = 0; DWORD statusSize = sizeof(status);
+        std::string out;
+
+        HINTERNET hSession = WinHttpOpen(L"Mode-S Client/1.0",
+            WINHTTP_ACCESS_TYPE_NO_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+        if (!hSession) { r.winerr = GetLastError(); return r; }
+
+        HINTERNET hConnect = WinHttpConnect(hSession, host.c_str(), port, 0);
+        if (!hConnect) { r.winerr = GetLastError(); WinHttpCloseHandle(hSession); return r; }
+
+        DWORD flags = secure ? WINHTTP_FLAG_SECURE : 0;
+        HINTERNET hRequest = WinHttpOpenRequest(hConnect, method.c_str(), path.c_str(),
+            nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, flags);
+        if (!hRequest) { r.winerr = GetLastError(); WinHttpCloseHandle(hConnect); WinHttpCloseHandle(hSession); return r; }
+
+        // Reasonable timeouts so the UI doesn't hang on shutdown.
+        WinHttpSetTimeouts(hRequest, 8000, 8000, 8000, 12000);
+
+        BOOL ok = WinHttpSendRequest(hRequest,
+            headers.empty() ? WINHTTP_NO_ADDITIONAL_HEADERS : headers.c_str(),
+            headers.empty() ? 0 : (DWORD)headers.size(),
+            body.empty() ? WINHTTP_NO_REQUEST_DATA : (LPVOID)body.data(),
+            body.empty() ? 0 : (DWORD)body.size(),
+            body.empty() ? 0 : (DWORD)body.size(),
+            0);
+
+        if (!ok) { r.winerr = GetLastError(); goto done; }
+
+        ok = WinHttpReceiveResponse(hRequest, nullptr);
+        if (!ok) { r.winerr = GetLastError(); goto done; }
+
+        if (WinHttpQueryHeaders(hRequest, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+            WINHTTP_HEADER_NAME_BY_INDEX, &status, &statusSize, WINHTTP_NO_HEADER_INDEX))
+        {
+            r.status = status;
+        }
+
+        for (;;) {
+            DWORD avail = 0;
+            if (!WinHttpQueryDataAvailable(hRequest, &avail)) { r.winerr = GetLastError(); break; }
+            if (avail == 0) break;
+            size_t cur = out.size();
+            out.resize(cur + avail);
+            DWORD read = 0;
+            if (!WinHttpReadData(hRequest, out.data() + cur, avail, &read)) { r.winerr = GetLastError(); break; }
+            if (read < avail) out.resize(cur + read);
+        }
+        r.body = std::move(out);
+
+    done:
+        WinHttpCloseHandle(hRequest);
+        WinHttpCloseHandle(hConnect);
+        WinHttpCloseHandle(hSession);
+        return r;
     }
-    r.body = std::move(out);
 
-done:
-    WinHttpCloseHandle(hRequest);
-    WinHttpCloseHandle(hConnect);
-    WinHttpCloseHandle(hSession);
-    return r;
-}
-
-static void SafeCall(const std::function<void(const std::wstring&)>& f, const std::wstring& s)
-{
-    if (f) f(s);
-}
-static void SafeCall(const std::function<void(bool)>& f, bool v)
-{
-    if (f) f(v);
-}
-static void SafeCall(const std::function<void(int)>& f, int v)
-{
-    if (f) f(v);
-}
+    static void SafeCall(const std::function<void(const std::wstring&)>& f, const std::wstring& s)
+    {
+        if (f) f(s);
+    }
+    static void SafeCall(const std::function<void(bool)>& f, bool v)
+    {
+        if (f) f(v);
+    }
+    static void SafeCall(const std::function<void(int)>& f, int v)
+    {
+        if (f) f(v);
+    }
 
 } // namespace
 
@@ -159,12 +159,12 @@ std::thread StartTwitchHelixPoller(
                 msg += " body=" + b;
             }
             SafeCall(cb.log, ToW(msg));
-        };
+            };
 
         auto set_status = [&](const std::wstring& s) {
             SafeCall(cb.set_status, s);
             if (hwnd && refresh_msg) PostMessageW(hwnd, refresh_msg, 0, 0);
-        };
+            };
 
         while (running) {
             if (firstLoop) {
@@ -179,6 +179,13 @@ std::thread StartTwitchHelixPoller(
             if (login.empty() || cid.empty() || secret.empty()) {
                 SafeCall(cb.log, L"TWITCH: skipped (missing login/client_id/client_secret)");
                 set_status(L"Helix: missing login/client id/secret");
+
+                // Ensure metrics don't show stale values when config is missing.
+                state.set_twitch_viewers(0);
+                state.set_twitch_live(false);
+                SafeCall(cb.set_viewers, 0);
+                SafeCall(cb.set_live, false);
+
                 Sleep(1500);
                 continue;
             }
@@ -194,6 +201,13 @@ std::thread StartTwitchHelixPoller(
                 if (r.status != 200) {
                     set_status(L"Helix: token error (see log)");
                     log_http("token", r);
+
+                    // Avoid stale metrics if auth fails.
+                    state.set_twitch_viewers(0);
+                    state.set_twitch_live(false);
+                    SafeCall(cb.set_viewers, 0);
+                    SafeCall(cb.set_live, false);
+
                     Sleep(5000);
                     continue;
                 }
@@ -205,6 +219,12 @@ std::thread StartTwitchHelixPoller(
                     if (token.empty()) {
                         set_status(L"Helix: token parse error");
                         log_http("token-empty", r);
+
+                        state.set_twitch_viewers(0);
+                        state.set_twitch_live(false);
+                        SafeCall(cb.set_viewers, 0);
+                        SafeCall(cb.set_live, false);
+
                         Sleep(5000);
                         continue;
                     }
@@ -213,6 +233,12 @@ std::thread StartTwitchHelixPoller(
                 catch (...) {
                     set_status(L"Helix: token parse exception");
                     log_http("token-parse", r);
+
+                    state.set_twitch_viewers(0);
+                    state.set_twitch_live(false);
+                    SafeCall(cb.set_viewers, 0);
+                    SafeCall(cb.set_live, false);
+
                     Sleep(5000);
                     continue;
                 }
@@ -231,6 +257,12 @@ std::thread StartTwitchHelixPoller(
                 if (r.status != 200) {
                     set_status(L"Helix: users error (see log)");
                     log_http("users", r);
+
+                    state.set_twitch_viewers(0);
+                    state.set_twitch_live(false);
+                    SafeCall(cb.set_viewers, 0);
+                    SafeCall(cb.set_live, false);
+
                     Sleep(5000);
                     continue;
                 }
@@ -242,6 +274,12 @@ std::thread StartTwitchHelixPoller(
                     if (broadcaster_id.empty()) {
                         set_status(L"Helix: user id not found");
                         log_http("users-empty", r);
+
+                        state.set_twitch_viewers(0);
+                        state.set_twitch_live(false);
+                        SafeCall(cb.set_viewers, 0);
+                        SafeCall(cb.set_live, false);
+
                         Sleep(5000);
                         continue;
                     }
@@ -249,6 +287,12 @@ std::thread StartTwitchHelixPoller(
                 catch (...) {
                     set_status(L"Helix: users parse exception");
                     log_http("users-parse", r);
+
+                    state.set_twitch_viewers(0);
+                    state.set_twitch_live(false);
+                    SafeCall(cb.set_viewers, 0);
+                    SafeCall(cb.set_live, false);
+
                     Sleep(5000);
                     continue;
                 }
@@ -262,6 +306,12 @@ std::thread StartTwitchHelixPoller(
                 if (r.status != 200) {
                     set_status(L"Helix: streams error (see log)");
                     log_http("streams", r);
+
+                    // Avoid stale viewers/live if streams fetch fails.
+                    state.set_twitch_viewers(0);
+                    state.set_twitch_live(false);
+                    SafeCall(cb.set_viewers, 0);
+                    SafeCall(cb.set_live, false);
                 }
                 else {
                     try {
@@ -279,6 +329,11 @@ std::thread StartTwitchHelixPoller(
                     catch (...) {
                         set_status(L"Helix: streams parse exception");
                         log_http("streams-parse", r);
+
+                        state.set_twitch_viewers(0);
+                        state.set_twitch_live(false);
+                        SafeCall(cb.set_viewers, 0);
+                        SafeCall(cb.set_live, false);
                     }
                 }
             }
@@ -314,5 +369,5 @@ std::thread StartTwitchHelixPoller(
         }
 
         SafeCall(cb.log, L"TWITCH: helix poller thread exiting");
-    });
+        });
 }
