@@ -141,6 +141,7 @@
     <ClInclude Include="Resource.h" />
     <ClInclude Include="targetver.h" />
     <ClInclude Include="TikTokSidecar.h" />
+    <ClInclude Include="TwitchHelixService.h" />
     <ClInclude Include="TwitchIrcWsClient.h" />
   </ItemGroup>
   <ItemGroup>
@@ -148,6 +149,7 @@
     <ClCompile Include="Mode-S Client.cpp" />
     <ClCompile Include="ObsWsClient.cpp" />
     <ClCompile Include="TikTokSidecar.cpp" />
+    <ClCompile Include="TwitchHelixService.cpp" />
     <ClCompile Include="TwitchIrcWsClient.cpp" />
   </ItemGroup>
   <ItemGroup>

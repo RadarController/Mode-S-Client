@@ -19,7 +19,6 @@
 
 #include "resource.h"
 #include "AppConfig.h"
-#include "TwitchHelixService.h"
 #include "AppState.h"
 #include "TikTokSidecar.h"
 #include "ObsWsClient.h"
@@ -1143,24 +1142,148 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         metricsThread.detach();
         LogLine(L"TWITCH: starting Helix poller thread");
 
-LogLine(L"TWITCH: starting Helix poller thread");
-twitchHelixThread = StartTwitchHelixPoller(
-    hwnd,
-    config,
-    state,
-    gRunning,
-    (UINT)(WM_APP + 41),
-    TwitchHelixUiCallbacks{
-        /*log*/        [](const std::wstring& s) { LogLine(s); },
-        /*set_status*/ [&](const std::wstring& s) {
-            gTwitchHelixStatus = s;
-            PostMessageW(hwnd, WM_APP + 41, 0, 0);
-        },
-        /*set_live*/   [&](bool live) { gTwitchLive = live; },
-        /*set_viewers*/[&](int v) { gTwitchViewerCount = v; },
-        /*set_followers*/[&](int f) { gTwitchFollowerCount = f; }
+twitchHelixThread = std::thread([&]() {
+    LogLine(L"TWITCH: helix poller thread started");
+    bool firstLoop = true;
+    std::string token;
+    std::string broadcaster_id;
+    std::int64_t token_expiry_ms = 0;
+
+    auto log_http = [&](const char* what, const HttpResult& r) {
+        std::string msg = std::string("TWITCH HELIX ") + what + ": HTTP " + std::to_string(r.status);
+        if (r.winerr) msg += " winerr=" + std::to_string((unsigned)r.winerr);
+        if (!r.body.empty()) {
+            std::string body = r.body;
+            if (body.size() > 800) body.resize(800);
+            msg += " body=" + body;
+        }
+        LogLine(ToW(msg));
+    };
+
+    auto set_status = [&](const std::wstring& s) {
+        gTwitchHelixStatus = s;
+        PostMessageW(hwnd, WM_APP + 41, 0, 0); // refresh UI
+    };
+
+    while (gRunning) {
+        if (firstLoop) { LogLine(L"TWITCH: poll loop entered"); firstLoop = false; }
+        const std::string login = config.twitch_login;
+        const std::string cid = config.twitch_client_id;
+        const std::string secret = config.twitch_client_secret;
+
+        if (login.empty() || cid.empty() || secret.empty()) {
+            LogLine(L"TWITCH: skipped (missing login/client_id/client_secret)");
+
+            set_status(L"Helix: missing login/client id/secret");
+            Sleep(1500);
+            continue;
+        }
+
+        const std::int64_t now = (std::int64_t)GetTickCount64();
+        if (token.empty() || now + 30000 > token_expiry_ms) {
+            std::string path = "/oauth2/token?client_id=" + UrlEncode(cid) + "&client_secret=" + UrlEncode(secret) + "&grant_type=client_credentials";
+            HttpResult r = WinHttpRequest(L"POST", L"id.twitch.tv", 443, ToW(path), L"", "", true);
+            if (r.status != 200) {
+                set_status(L"Helix: token error (see log)");
+                log_http("token", r);
+                Sleep(5000);
+                continue;
+            }
+            try {
+                auto j = nlohmann::json::parse(r.body);
+                token = j.value("access_token", "");
+                int expires = j.value("expires_in", 0);
+                token_expiry_ms = now + (std::int64_t)expires * 1000;
+                set_status(L"Helix: token OK");
+            } catch (...) {
+                set_status(L"Helix: token parse error (see log)");
+                log_http("token-parse", r);
+                Sleep(5000);
+                continue;
+            }
+        }
+
+        // Resolve broadcaster id if needed
+        if (broadcaster_id.empty()) {
+            std::wstring hdr = L"Client-Id: " + ToW(cid) + L"\r\nAuthorization: Bearer " + ToW(token) + L"\r\n";
+            std::string path = "/helix/users?login=" + UrlEncode(login);
+            HttpResult r = WinHttpRequest(L"GET", L"api.twitch.tv", 443, ToW(path), hdr, "", true);
+            if (r.status != 200) {
+                set_status(L"Helix: users error (see log)");
+                log_http("users", r);
+                Sleep(5000);
+                continue;
+            }
+            try {
+                auto j = nlohmann::json::parse(r.body);
+                if (j.contains("data") && j["data"].is_array() && !j["data"].empty()) {
+                    broadcaster_id = j["data"][0].value("id", "");
+                }
+                if (broadcaster_id.empty()) {
+                    set_status(L"Helix: user id not found");
+                    log_http("users-empty", r);
+                    Sleep(5000);
+                    continue;
+                }
+                set_status(L"Helix: users OK");
+            } catch (...) {
+                set_status(L"Helix: users parse error (see log)");
+                log_http("users-parse", r);
+                Sleep(5000);
+                continue;
+            }
+        }
+
+        // Stream status + viewers
+        {
+            std::wstring hdr = L"Client-Id: " + ToW(cid) + L"\r\nAuthorization: Bearer " + ToW(token) + L"\r\n";
+            std::string path = "/helix/streams?user_login=" + UrlEncode(login);
+            HttpResult r = WinHttpRequest(L"GET", L"api.twitch.tv", 443, ToW(path), hdr, "", true);
+            if (r.status != 200) {
+                set_status(L"Helix: streams error (see log)");
+                log_http("streams", r);
+            } else {
+                try {
+                    auto j = nlohmann::json::parse(r.body);
+                    bool live = j.contains("data") && j["data"].is_array() && !j["data"].empty();
+                    int viewers = 0;
+                    if (live) viewers = j["data"][0].value("viewer_count", 0);
+                    state.set_twitch_viewers(viewers);
+                    gTwitchViewerCount = viewers;
+                    gTwitchLive = live;
+                } catch (...) {
+                    set_status(L"Helix: streams parse error (see log)");
+                    log_http("streams-parse", r);
+                }
+            }
+        }
+
+        // Followers total
+        {
+            std::wstring hdr = L"Client-Id: " + ToW(cid) + L"\r\nAuthorization: Bearer " + ToW(token) + L"\r\n";
+            std::string path = "/helix/channels/followers?broadcaster_id=" + UrlEncode(broadcaster_id);
+            HttpResult r = WinHttpRequest(L"GET", L"api.twitch.tv", 443, ToW(path), hdr, "", true);
+            if (r.status != 200) {
+                set_status(L"Helix: followers error (see log)");
+                log_http("followers", r);
+            } else {
+                try {
+                    auto j = nlohmann::json::parse(r.body);
+                    int total = j.value("total", 0);
+                    state.set_twitch_followers(total);
+                    gTwitchFollowerCount = total;
+                    set_status(L"Helix: OK");
+                } catch (...) {
+                    set_status(L"Helix: followers parse error (see log)");
+                    log_http("followers-parse", r);
+                }
+            }
+        }
+
+        PostMessageW(hwnd, WM_APP + 41, 0, 0); // refresh UI
+        Sleep(15000);
     }
-);
+});
 twitchHelixThread.detach();
 
 

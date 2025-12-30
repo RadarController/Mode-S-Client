@@ -1,301 +1,318 @@
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
 #include "TwitchHelixService.h"
-#include "AppState.h"
-#include "AppConfig.h"
 
 #include <winhttp.h>
 #pragma comment(lib, "winhttp.lib")
 
-#include <json.hpp>
-#include <chrono>
+#include <string>
+#include <sstream>
+#include <utility>
+#include <cstdint>
 
-using json = nlohmann::json;
+#include "json.hpp"
+#include "AppConfig.h"
+#include "AppState.h"
 
-static std::int64_t now_ms() {
-    using namespace std::chrono;
-    return duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
-}
+using nlohmann::json;
+
+namespace {
 
 struct HttpResult {
     DWORD status = 0;
-    std::string body;
     DWORD winerr = 0;
-    std::wstring where;
+    std::string body;
 };
 
-static HttpResult WinHttpRequestSimple(
-    const wchar_t* host,
-    INTERNET_PORT port,
-    bool secure,
-    const wchar_t* method,
-    const std::wstring& path,
-    const std::wstring& headers,
-    const std::string& body)
+static std::wstring ToW(const std::string& s) {
+    if (s.empty()) return L"";
+    int len = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
+    std::wstring out(len, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), out.data(), len);
+    return out;
+}
+
+static std::string UrlEncode(const std::string& s)
 {
-    HttpResult r{};
-    HINTERNET hSession = nullptr, hConnect = nullptr, hRequest = nullptr;
-
-    auto closeAll = [&]() {
-        if (hRequest) WinHttpCloseHandle(hRequest);
-        if (hConnect) WinHttpCloseHandle(hConnect);
-        if (hSession) WinHttpCloseHandle(hSession);
-        hRequest = hConnect = hSession = nullptr;
-    };
-
-    hSession = WinHttpOpen(L"Mode-S Client/1.0",
-        WINHTTP_ACCESS_TYPE_NO_PROXY,
-        WINHTTP_NO_PROXY_NAME,
-        WINHTTP_NO_PROXY_BYPASS,
-        0);
-    if (!hSession) { r.winerr = GetLastError(); r.where = L"WinHttpOpen"; return r; }
-
-    hConnect = WinHttpConnect(hSession, host, port, 0);
-    if (!hConnect) { r.winerr = GetLastError(); r.where = L"WinHttpConnect"; closeAll(); return r; }
-
-    DWORD flags = secure ? WINHTTP_FLAG_SECURE : 0;
-    hRequest = WinHttpOpenRequest(hConnect, method, path.c_str(),
-        nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, flags);
-    if (!hRequest) { r.winerr = GetLastError(); r.where = L"WinHttpOpenRequest"; closeAll(); return r; }
-
-    if (!headers.empty()) {
-        if (!WinHttpAddRequestHeaders(hRequest, headers.c_str(), (DWORD)-1L, WINHTTP_ADDREQ_FLAG_ADD)) {
-            r.winerr = GetLastError(); r.where = L"WinHttpAddRequestHeaders"; closeAll(); return r;
+    static const char* hex = "0123456789ABCDEF";
+    std::string out;
+    out.reserve(s.size() * 3);
+    for (unsigned char c : s) {
+        if ((c >= 'a' && c <= 'z') ||
+            (c >= 'A' && c <= 'Z') ||
+            (c >= '0' && c <= '9') ||
+            c == '-' || c == '_' || c == '.' || c == '~')
+        {
+            out.push_back((char)c);
+        }
+        else {
+            out.push_back('%');
+            out.push_back(hex[(c >> 4) & 0xF]);
+            out.push_back(hex[c & 0xF]);
         }
     }
+    return out;
+}
 
-    BOOL ok = WinHttpSendRequest(
-        hRequest,
-        WINHTTP_NO_ADDITIONAL_HEADERS, 0,
+static HttpResult WinHttpRequest(const std::wstring& method,
+                                 const std::wstring& host,
+                                 INTERNET_PORT port,
+                                 const std::wstring& path,
+                                 const std::wstring& headers,
+                                 const std::string& body,
+                                 bool secure)
+{
+    HttpResult r;
+    DWORD status = 0; DWORD statusSize = sizeof(status);
+    std::string out;
+
+    HINTERNET hSession = WinHttpOpen(L"Mode-S Client/1.0",
+        WINHTTP_ACCESS_TYPE_NO_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    if (!hSession) { r.winerr = GetLastError(); return r; }
+
+    HINTERNET hConnect = WinHttpConnect(hSession, host.c_str(), port, 0);
+    if (!hConnect) { r.winerr = GetLastError(); WinHttpCloseHandle(hSession); return r; }
+
+    DWORD flags = secure ? WINHTTP_FLAG_SECURE : 0;
+    HINTERNET hRequest = WinHttpOpenRequest(hConnect, method.c_str(), path.c_str(),
+        nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, flags);
+    if (!hRequest) { r.winerr = GetLastError(); WinHttpCloseHandle(hConnect); WinHttpCloseHandle(hSession); return r; }
+
+    // Reasonable timeouts so the UI doesn't hang on shutdown.
+    WinHttpSetTimeouts(hRequest, 8000, 8000, 8000, 12000);
+
+    BOOL ok = WinHttpSendRequest(hRequest,
+        headers.empty() ? WINHTTP_NO_ADDITIONAL_HEADERS : headers.c_str(),
+        headers.empty() ? 0 : (DWORD)headers.size(),
         body.empty() ? WINHTTP_NO_REQUEST_DATA : (LPVOID)body.data(),
         body.empty() ? 0 : (DWORD)body.size(),
         body.empty() ? 0 : (DWORD)body.size(),
         0);
 
-    if (!ok) { r.winerr = GetLastError(); r.where = L"WinHttpSendRequest"; closeAll(); return r; }
+    if (!ok) { r.winerr = GetLastError(); goto done; }
 
-    if (!WinHttpReceiveResponse(hRequest, nullptr)) {
-        r.winerr = GetLastError(); r.where = L"WinHttpReceiveResponse"; closeAll(); return r;
+    ok = WinHttpReceiveResponse(hRequest, nullptr);
+    if (!ok) { r.winerr = GetLastError(); goto done; }
+
+    if (WinHttpQueryHeaders(hRequest, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+        WINHTTP_HEADER_NAME_BY_INDEX, &status, &statusSize, WINHTTP_NO_HEADER_INDEX))
+    {
+        r.status = status;
     }
 
-    DWORD status = 0, statusSize = sizeof(status);
-    WinHttpQueryHeaders(hRequest,
-        WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
-        WINHTTP_HEADER_NAME_BY_INDEX,
-        &status, &statusSize, WINHTTP_NO_HEADER_INDEX);
-    r.status = status;
-
-    std::string out;
     for (;;) {
         DWORD avail = 0;
-        if (!WinHttpQueryDataAvailable(hRequest, &avail)) {
-            r.winerr = GetLastError(); r.where = L"WinHttpQueryDataAvailable"; closeAll(); return r;
-        }
+        if (!WinHttpQueryDataAvailable(hRequest, &avail)) { r.winerr = GetLastError(); break; }
         if (avail == 0) break;
-        size_t old = out.size();
-        out.resize(old + avail);
+        size_t cur = out.size();
+        out.resize(cur + avail);
         DWORD read = 0;
-        if (!WinHttpReadData(hRequest, out.data() + old, avail, &read)) {
-            r.winerr = GetLastError(); r.where = L"WinHttpReadData"; closeAll(); return r;
-        }
-        out.resize(old + read);
+        if (!WinHttpReadData(hRequest, out.data() + cur, avail, &read)) { r.winerr = GetLastError(); break; }
+        if (read < avail) out.resize(cur + read);
     }
-
     r.body = std::move(out);
-    closeAll();
+
+done:
+    WinHttpCloseHandle(hRequest);
+    WinHttpCloseHandle(hConnect);
+    WinHttpCloseHandle(hSession);
     return r;
 }
 
-static std::wstring ToW(const std::string& s) {
-    if (s.empty()) return L"";
-    int len = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
-    std::wstring w(len, L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), w.data(), len);
-    return w;
+static void SafeCall(const std::function<void(const std::wstring&)>& f, const std::wstring& s)
+{
+    if (f) f(s);
+}
+static void SafeCall(const std::function<void(bool)>& f, bool v)
+{
+    if (f) f(v);
+}
+static void SafeCall(const std::function<void(int)>& f, int v)
+{
+    if (f) f(v);
 }
 
-void TwitchHelixService::Start(HWND notifyHwnd, AppState* state, AppConfig* config, LogFn log)
+} // namespace
+
+std::thread StartTwitchHelixPoller(
+    HWND hwnd,
+    AppConfig& config,
+    AppState& state,
+    std::atomic<bool>& running,
+    UINT refresh_msg,
+    TwitchHelixUiCallbacks cb)
 {
-    if (th_.joinable()) return;
-    hwnd_ = notifyHwnd;
-    state_ = state;
-    config_ = config;
-    log_ = std::move(log);
+    return std::thread([=, &config, &state, &running]() mutable {
+        SafeCall(cb.log, L"TWITCH: helix poller thread started");
 
-    stop_.store(false);
-    refresh_.store(true);
+        bool firstLoop = true;
+        std::string token;
+        std::string broadcaster_id;
+        std::int64_t token_expiry_ms = 0;
 
-    if (log_) log_(L"TWITCH: starting Helix service");
-    th_ = std::thread([this]() { ThreadMain(); });
-}
+        auto log_http = [&](const char* what, const HttpResult& r) {
+            std::string msg = std::string("TWITCH HELIX ") + what + ": HTTP " + std::to_string(r.status);
+            if (r.winerr) msg += " winerr=" + std::to_string((unsigned)r.winerr);
+            if (!r.body.empty()) {
+                std::string b = r.body;
+                if (b.size() > 800) b.resize(800);
+                msg += " body=" + b;
+            }
+            SafeCall(cb.log, ToW(msg));
+        };
 
-void TwitchHelixService::Stop()
-{
-    stop_.store(true);
-    refresh_.store(true);
-    if (th_.joinable()) th_.join();
-}
+        auto set_status = [&](const std::wstring& s) {
+            SafeCall(cb.set_status, s);
+            if (hwnd && refresh_msg) PostMessageW(hwnd, refresh_msg, 0, 0);
+        };
 
-void TwitchHelixService::OnConfigChanged()
-{
-    refresh_.store(true);
-}
+        while (running) {
+            if (firstLoop) {
+                SafeCall(cb.log, L"TWITCH: poll loop entered");
+                firstLoop = false;
+            }
 
-std::wstring TwitchHelixService::TrimBodyForLog(const std::string& body, size_t maxBytes)
-{
-    if (body.size() <= maxBytes) return ToW(body);
-    return ToW(body.substr(0, maxBytes)) + L"...";
-}
+            const std::string login = config.twitch_login;
+            const std::string cid = config.twitch_client_id;
+            const std::string secret = config.twitch_client_secret;
 
-static bool ensure_app_token(TwitchHelixService* self, std::string& tokenOut)
-{
-    // expects config_ fields to be present
-    if (!self) return false;
-    // access cached fields
-    std::string client_id, client_secret;
-    {
-        // config is owned by UI thread; read atomically enough (strings copy)
-        client_id = self->config_->twitch_client_id;
-        client_secret = self->config_->twitch_client_secret;
-    }
-    if (client_id.empty() || client_secret.empty()) return false;
+            if (login.empty() || cid.empty() || secret.empty()) {
+                SafeCall(cb.log, L"TWITCH: skipped (missing login/client_id/client_secret)");
+                set_status(L"Helix: missing login/client id/secret");
+                Sleep(1500);
+                continue;
+            }
 
-    std::lock_guard<std::mutex> lock(self->cache_mtx_);
-    const auto now = now_ms();
-    if (!self->token_.empty() && now < (self->token_expiry_ms_ - 30'000)) {
-        tokenOut = self->token_;
-        return true;
-    }
+            const std::int64_t now = (std::int64_t)GetTickCount64();
+            if (token.empty() || now + 30000 > token_expiry_ms) {
+                std::string path =
+                    "/oauth2/token?client_id=" + UrlEncode(cid) +
+                    "&client_secret=" + UrlEncode(secret) +
+                    "&grant_type=client_credentials";
 
-    std::string body = "client_id=" + client_id + "&client_secret=" + client_secret + "&grant_type=client_credentials";
-    std::wstring headers = L"Content-Type: application/x-www-form-urlencoded\r\n";
-    auto r = WinHttpRequestSimple(L"id.twitch.tv", 443, true, L"POST", L"/oauth2/token", headers, body);
-
-    if (self->log_) {
-        self->log_(L"TWITCH HELIX token: HTTP " + std::to_wstring(r.status) + L" " + self->TrimBodyForLog(r.body));
-        if (r.winerr) self->log_(L"TWITCH HELIX token winerr: " + std::to_wstring(r.winerr) + L" @" + r.where);
-    }
-    if (r.status != 200) return false;
-
-    try {
-        auto j = json::parse(r.body);
-        self->token_ = j.value("access_token", "");
-        int expires = j.value("expires_in", 0);
-        self->token_expiry_ms_ = now + (long long)expires * 1000;
-        tokenOut = self->token_;
-        return !tokenOut.empty();
-    } catch (...) {
-        return false;
-    }
-}
-
-static bool ensure_user_id(TwitchHelixService* self, const std::string& token, std::string& userIdOut)
-{
-    if (!self) return false;
-    std::string login = self->config_->twitch_login;
-    std::string client_id = self->config_->twitch_client_id;
-    if (login.empty() || client_id.empty()) return false;
-
-    std::lock_guard<std::mutex> lock(self->cache_mtx_);
-    if (!self->user_id_.empty() && !self->refresh_.load()) {
-        userIdOut = self->user_id_;
-        return true;
-    }
-
-    std::wstring path = L"/helix/users?login=" + ToW(login);
-    std::wstring headers = L"Client-Id: " + ToW(client_id) + L"\r\nAuthorization: Bearer " + ToW(token) + L"\r\n";
-    auto r = WinHttpRequestSimple(L"api.twitch.tv", 443, true, L"GET", path, headers, "");
-
-    if (self->log_) {
-        self->log_(L"TWITCH HELIX users: HTTP " + std::to_wstring(r.status) + L" " + self->TrimBodyForLog(r.body));
-        if (r.winerr) self->log_(L"TWITCH HELIX users winerr: " + std::to_wstring(r.winerr) + L" @" + r.where);
-    }
-    if (r.status != 200) return false;
-
-    try {
-        auto j = json::parse(r.body);
-        if (!j.contains("data") || !j["data"].is_array() || j["data"].empty()) return false;
-        self->user_id_ = j["data"][0].value("id", "");
-        userIdOut = self->user_id_;
-        return !userIdOut.empty();
-    } catch (...) {
-        return false;
-    }
-}
-
-static void poll_once(TwitchHelixService* self)
-{
-    if (!self || !self->state_ || !self->config_) return;
-
-    std::string login = self->config_->twitch_login;
-    if (login.empty() || self->config_->twitch_client_id.empty() || self->config_->twitch_client_secret.empty()) {
-        if (self->log_) self->log_(L"TWITCH: skipped (missing twitch_login/client_id/client_secret)");
-        return;
-    }
-
-    std::string token;
-    if (!ensure_app_token(self, token)) {
-        if (self->log_) self->log_(L"TWITCH: failed to obtain app token");
-        return;
-    }
-
-    std::string user_id;
-    if (!ensure_user_id(self, token, user_id)) {
-        if (self->log_) self->log_(L"TWITCH: failed to resolve user id");
-        return;
-    }
-
-    // Streams (viewers/live)
-    {
-        std::wstring path = L"/helix/streams?user_login=" + ToW(login);
-        std::wstring headers = L"Client-Id: " + ToW(self->config_->twitch_client_id) + L"\r\nAuthorization: Bearer " + ToW(token) + L"\r\n";
-        auto r = WinHttpRequestSimple(L"api.twitch.tv", 443, true, L"GET", path, headers, "");
-        if (self->log_) {
-            self->log_(L"TWITCH HELIX streams: HTTP " + std::to_wstring(r.status) + L" " + self->TrimBodyForLog(r.body));
-            if (r.winerr) self->log_(L"TWITCH HELIX streams winerr: " + std::to_wstring(r.winerr) + L" @" + r.where);
-        }
-        if (r.status == 200) {
-            try {
-                auto j = json::parse(r.body);
-                int viewers = 0;
-                if (j.contains("data") && j["data"].is_array() && !j["data"].empty()) {
-                    viewers = j["data"][0].value("viewer_count", 0);
+                HttpResult r = WinHttpRequest(L"POST", L"id.twitch.tv", 443, ToW(path), L"", "", true);
+                if (r.status != 200) {
+                    set_status(L"Helix: token error (see log)");
+                    log_http("token", r);
+                    Sleep(5000);
+                    continue;
                 }
-                self->state_->set_twitch_viewers(viewers);
-            } catch (...) {}
-        }
-    }
+                try {
+                    auto j = json::parse(r.body);
+                    token = j.value("access_token", "");
+                    int expires = j.value("expires_in", 0);
+                    token_expiry_ms = now + (std::int64_t)expires * 1000;
+                    if (token.empty()) {
+                        set_status(L"Helix: token parse error");
+                        log_http("token-empty", r);
+                        Sleep(5000);
+                        continue;
+                    }
+                    SafeCall(cb.log, L"TWITCH: helix token ok");
+                }
+                catch (...) {
+                    set_status(L"Helix: token parse exception");
+                    log_http("token-parse", r);
+                    Sleep(5000);
+                    continue;
+                }
+            }
 
-    // Followers
-    {
-        std::wstring path = L"/helix/channels/followers?broadcaster_id=" + ToW(user_id);
-        std::wstring headers = L"Client-Id: " + ToW(self->config_->twitch_client_id) + L"\r\nAuthorization: Bearer " + ToW(token) + L"\r\n";
-        auto r = WinHttpRequestSimple(L"api.twitch.tv", 443, true, L"GET", path, headers, "");
-        if (self->log_) {
-            self->log_(L"TWITCH HELIX followers: HTTP " + std::to_wstring(r.status) + L" " + self->TrimBodyForLog(r.body));
-            if (r.winerr) self->log_(L"TWITCH HELIX followers winerr: " + std::to_wstring(r.winerr) + L" @" + r.where);
-        }
-        if (r.status == 200) {
-            try {
-                auto j = json::parse(r.body);
-                int total = j.value("total", 0);
-                self->state_->set_twitch_followers(total);
-            } catch (...) {}
-        }
-    }
+            // Resolve broadcaster id once (and re-resolve if login changes).
+            if (broadcaster_id.empty() || config.twitch_login != login) {
+                broadcaster_id.clear();
+            }
 
-    // Notify UI to redraw sooner than timer
-    if (self->hwnd_) PostMessageW(self->hwnd_, WM_APP + 41, 0, 0);
-}
+            if (broadcaster_id.empty()) {
+                std::wstring hdr = L"Client-Id: " + ToW(cid) + L"\r\nAuthorization: Bearer " + ToW(token) + L"\r\n";
+                std::string path = "/helix/users?login=" + UrlEncode(login);
 
-void TwitchHelixService::ThreadMain()
-{
-    if (log_) log_(L"TWITCH: helix poller thread started");
-    while (!stop_.load()) {
-        if (refresh_.exchange(false)) {
-            std::lock_guard<std::mutex> lock(cache_mtx_);
-            token_.clear(); token_expiry_ms_ = 0; user_id_.clear();
+                HttpResult r = WinHttpRequest(L"GET", L"api.twitch.tv", 443, ToW(path), hdr, "", true);
+                if (r.status != 200) {
+                    set_status(L"Helix: users error (see log)");
+                    log_http("users", r);
+                    Sleep(5000);
+                    continue;
+                }
+                try {
+                    auto j = json::parse(r.body);
+                    if (j.contains("data") && j["data"].is_array() && !j["data"].empty()) {
+                        broadcaster_id = j["data"][0].value("id", "");
+                    }
+                    if (broadcaster_id.empty()) {
+                        set_status(L"Helix: user id not found");
+                        log_http("users-empty", r);
+                        Sleep(5000);
+                        continue;
+                    }
+                }
+                catch (...) {
+                    set_status(L"Helix: users parse exception");
+                    log_http("users-parse", r);
+                    Sleep(5000);
+                    continue;
+                }
+            }
+
+            // Streams (live + viewers)
+            {
+                std::wstring hdr = L"Client-Id: " + ToW(cid) + L"\r\nAuthorization: Bearer " + ToW(token) + L"\r\n";
+                std::string path = "/helix/streams?user_login=" + UrlEncode(login);
+                HttpResult r = WinHttpRequest(L"GET", L"api.twitch.tv", 443, ToW(path), hdr, "", true);
+                if (r.status != 200) {
+                    set_status(L"Helix: streams error (see log)");
+                    log_http("streams", r);
+                }
+                else {
+                    try {
+                        auto j = json::parse(r.body);
+                        bool live = j.contains("data") && j["data"].is_array() && !j["data"].empty();
+                        int viewers = 0;
+                        if (live) viewers = j["data"][0].value("viewer_count", 0);
+
+                        state.set_twitch_viewers(viewers);
+                        state.set_twitch_live(live);
+
+                        SafeCall(cb.set_viewers, viewers);
+                        SafeCall(cb.set_live, live);
+                    }
+                    catch (...) {
+                        set_status(L"Helix: streams parse exception");
+                        log_http("streams-parse", r);
+                    }
+                }
+            }
+
+            // Followers total
+            {
+                std::wstring hdr = L"Client-Id: " + ToW(cid) + L"\r\nAuthorization: Bearer " + ToW(token) + L"\r\n";
+                std::string path = "/helix/channels/followers?broadcaster_id=" + UrlEncode(broadcaster_id);
+                HttpResult r = WinHttpRequest(L"GET", L"api.twitch.tv", 443, ToW(path), hdr, "", true);
+                if (r.status != 200) {
+                    set_status(L"Helix: followers error (see log)");
+                    log_http("followers", r);
+                }
+                else {
+                    try {
+                        auto j = json::parse(r.body);
+                        int total = j.value("total", 0);
+
+                        state.set_twitch_followers(total);
+                        SafeCall(cb.set_followers, total);
+
+                        set_status(L"Helix: OK");
+                    }
+                    catch (...) {
+                        set_status(L"Helix: followers parse exception");
+                        log_http("followers-parse", r);
+                    }
+                }
+            }
+
+            if (hwnd && refresh_msg) PostMessageW(hwnd, refresh_msg, 0, 0);
+            Sleep(15000);
         }
-        poll_once(this);
-        for (int i = 0; i < 30 && !stop_.load(); ++i) Sleep(500); // ~15s
-    }
-    if (log_) log_(L"TWITCH: helix poller thread exiting");
+
+        SafeCall(cb.log, L"TWITCH: helix poller thread exiting");
+    });
 }
