@@ -29,6 +29,43 @@ void AppState::set_tiktok_followers(int f) {
     metrics_.tiktok_followers = f;
 }
 
+
+void AppState::set_twitch_viewers(int v) {
+    std::lock_guard<std::mutex> lk(mtx_);
+    metrics_.ts_ms = now_ms();
+    metrics_.twitch_viewers = v;
+}
+void AppState::set_twitch_followers(int f) {
+    std::lock_guard<std::mutex> lk(mtx_);
+    metrics_.ts_ms = now_ms();
+    metrics_.twitch_followers = f;
+}
+void AppState::set_twitch_live(bool live) {
+    std::lock_guard<std::mutex> lk(mtx_);
+    metrics_.ts_ms = now_ms();
+    metrics_.twitch_live = live;
+}
+
+void AppState::set_youtube_viewers(int v) {
+    std::lock_guard<std::mutex> lk(mtx_);
+    metrics_.ts_ms = now_ms();
+    metrics_.youtube_viewers = v;
+}
+void AppState::set_youtube_followers(int f) {
+    std::lock_guard<std::mutex> lk(mtx_);
+    metrics_.ts_ms = now_ms();
+    metrics_.youtube_followers = f;
+}
+void AppState::set_youtube_live(bool live) {
+    std::lock_guard<std::mutex> lk(mtx_);
+    metrics_.ts_ms = now_ms();
+    metrics_.youtube_live = live;
+}
+void AppState::set_tiktok_live(bool live) {
+    std::lock_guard<std::mutex> lk(mtx_);
+    metrics_.ts_ms = now_ms();
+    metrics_.tiktok_live = live;
+}
 Metrics AppState::get_metrics() const {
     std::lock_guard<std::mutex> lk(mtx_);
     return metrics_;
@@ -44,6 +81,9 @@ nlohmann::json AppState::metrics_json() const {
         {"twitch_followers", m.twitch_followers},
         {"youtube_followers", m.youtube_followers},
         {"tiktok_followers", m.tiktok_followers},
+        {"twitch_live", m.twitch_live},
+        {"youtube_live", m.youtube_live},
+        {"tiktok_live", m.tiktok_live},
         {"total_viewers", m.total_viewers()},
         {"total_followers", m.total_followers()}
     };

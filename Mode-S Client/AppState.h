@@ -22,6 +22,9 @@ struct Metrics {
     int twitch_followers{};
     int youtube_followers{};
     int tiktok_followers{};
+    bool twitch_live{};
+    bool youtube_live{};
+    bool tiktok_live{};
 
     int total_viewers() const { return twitch_viewers + youtube_viewers + tiktok_viewers; }
     int total_followers() const { return twitch_followers + youtube_followers + tiktok_followers; }
@@ -34,6 +37,13 @@ public:
 
     void set_tiktok_viewers(int v);
     void set_tiktok_followers(int f);
+    void set_twitch_viewers(int v);
+    void set_twitch_followers(int f);
+    void set_twitch_live(bool live);
+    void set_youtube_viewers(int v);
+    void set_youtube_followers(int f);
+    void set_youtube_live(bool live);
+    void set_tiktok_live(bool live);
 
     Metrics get_metrics() const;
     nlohmann::json metrics_json() const;

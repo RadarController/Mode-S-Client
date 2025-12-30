@@ -12,6 +12,9 @@ struct AppConfig
 
     std::string tiktok_unique_id;  // no '@'
     std::string twitch_login;      // login (lowercase is safest)
+    std::string twitch_client_id;
+    std::string twitch_client_secret;
+    std::string metrics_json_path; // optional override
     std::string youtube_handle;    // with '@'
     std::string tiktok_sessionid;
     std::string tiktok_sessionid_ss;
@@ -51,6 +54,9 @@ struct AppConfig
             auto j = nlohmann::json::parse(data);
             tiktok_unique_id = j.value("tiktok_unique_id", tiktok_unique_id);
             twitch_login = j.value("twitch_login", twitch_login);
+            twitch_client_id = j.value("twitch_client_id", twitch_client_id);
+            twitch_client_secret = j.value("twitch_client_secret", twitch_client_secret);
+            metrics_json_path = j.value("metrics_json_path", metrics_json_path);
             youtube_handle = j.value("youtube_handle", youtube_handle);
             tiktok_sessionid = j.value("tiktok_sessionid", tiktok_sessionid);
             tiktok_sessionid_ss = j.value("tiktok_sessionid_ss", tiktok_sessionid_ss);
@@ -101,6 +107,9 @@ struct AppConfig
         // 2) Update only the fields this app is changing
         j["tiktok_unique_id"] = tiktok_unique_id;
         j["twitch_login"] = twitch_login;
+        j["twitch_client_id"] = twitch_client_id;
+        j["twitch_client_secret"] = twitch_client_secret;
+        if (!metrics_json_path.empty()) j["metrics_json_path"] = metrics_json_path;
         j["youtube_handle"] = youtube_handle;
         j["tiktok_sessionid"] = tiktok_sessionid;
         j["tiktok_sessionid_ss"] = tiktok_sessionid_ss;
