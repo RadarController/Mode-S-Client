@@ -13,7 +13,8 @@
         #log .line { margin: 2px 0; display: flex; align-items: flex-start; }
         #log .icon { width: 20px; height: 20px; flex: 0 0 20px; margin-right: 8px; }
         #log .text { white-space: normal; word-break: break-word; flex: 1 1 auto; }
-        #log .user { font-weight: 600; margin-right: 6px; }
+        /* Remove extra horizontal gap on the username so the colon added in JS produces a single space: "username: message" */
+        #log .user { font-weight: 600; margin-right: 0; }
 
         /* Hide scrollbar for WebKit-based browsers */
         #log::-webkit-scrollbar { width: 0px; height: 0px; display: none; }
@@ -101,6 +102,23 @@
             return true;
         }
 
+        // Deterministic color generator from username
+        function colorFromName(name) {
+            if (!name) return '';
+            // simple hash
+            let h = 2166136261 >>> 0;
+            for (let i = 0; i < name.length; i++) {
+                h ^= name.charCodeAt(i);
+                h = Math.imul(h, 16777619) >>> 0;
+            }
+            // map to hue 0-360
+            const hue = h % 360;
+            // pick saturation & lightness suitable for readable username colors
+            const sat = 60;
+            const light = 50;
+            return `hsl(${hue} ${sat}% ${light}%)`;
+        }
+
         function iconFor(platform) {
             platform = (platform || '').toLowerCase();
             const span = document.createElement('span');
@@ -120,12 +138,14 @@
             const icon = iconFor(n.platform); line.appendChild(icon);
 
             const txt = document.createElement('div'); txt.className = 'text';
-            // username span (colored for twitch if available)
+            // username span (colored for twitch if available, otherwise deterministic fallback)
             const userSpan = document.createElement('span');
             userSpan.className = 'user';
             userSpan.textContent = n.user;
-            if (n.platform && n.platform.indexOf('twitch') === 0 && n.color) {
-                try { userSpan.style.color = n.color; } catch (e) { /* ignore invalid color */ }
+            if (n.platform && n.platform.indexOf('twitch') === 0) {
+                const provided = (n.color || '').trim();
+                const col = provided || colorFromName(n.user);
+                try { userSpan.style.color = col; } catch (e) { /* ignore invalid color */ }
             }
             txt.appendChild(userSpan);
 
