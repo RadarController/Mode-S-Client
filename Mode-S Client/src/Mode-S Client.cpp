@@ -1251,31 +1251,8 @@ static void LayoutControls(HWND hwnd)
     int hintY = y0 + topH + 6;
     MoveWindow(hHint, pad, hintY, W - pad * 2, 18, TRUE);
 
-    // Overlay Style panel - under all three channels
-    int overlayTop = hintY + 22;
-    int overlayH = 120;
-
-    MoveWindow(hGroupOverlay, pad, overlayTop, W - pad * 2, overlayH, TRUE);
-
-    int ox = pad + 12;
-    int oy = overlayTop + 22;
-
-    // Font label + edit
-    MoveWindow(hLblOverlayFont, ox, oy, W - pad * 2 - 24, 18, TRUE);
-    oy += 20;
-    MoveWindow(hOverlayFont, ox, oy, (W - pad * 2) - 24 - 140, 24, TRUE);
-
-    // Size label + edit on right
-    int rightW = 120;
-    int rightX = pad + (W - pad * 2) - 12 - rightW;
-    MoveWindow(hLblOverlaySize, rightX, oy - 20, rightW, 18, TRUE);
-    MoveWindow(hOverlaySize, rightX, oy, rightW, 24, TRUE);
-
-    oy += 30;
-    MoveWindow(hOverlayShadow, ox, oy, 220, 20, TRUE);
-
-    // Settings section (Save button) - below Overlay Style
-    int settingsTop = overlayTop + overlayH + 10;
+    // Settings section (Save button)
+    int settingsTop = hintY + 22;
     int settingsH = 58;
     MoveWindow(hGroupSettings, pad, settingsTop, W - pad * 2, settingsH, TRUE);
 
@@ -1400,31 +1377,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
         hHint = CreateWindowW(L"STATIC", L"", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
 
-        // Overlay Style group
-        hGroupOverlay = CreateWindowW(L"BUTTON", L"Overlay Style",
-            WS_CHILD | WS_VISIBLE | BS_GROUPBOX, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
-
-        hLblOverlayFont = CreateWindowW(L"STATIC", L"Google Font family (e.g. Inter, Roboto, Montserrat)",
-            WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
-
-        hOverlayFont = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT",
-            ToW(config.overlay_font_family).c_str(),
-            WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL, 0, 0, 0, 0, hwnd, (HMENU)IDC_OVERLAY_FONT, nullptr, nullptr);
-
-        hLblOverlaySize = CreateWindowW(L"STATIC", L"Text size (px)",
-            WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
-
-        {
-            std::wstring sz = std::to_wstring(config.overlay_font_size);
-            hOverlaySize = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", sz.c_str(),
-                WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL, 0, 0, 0, 0, hwnd, (HMENU)IDC_OVERLAY_SIZE, nullptr, nullptr);
-        }
-
-        hOverlayShadow = CreateWindowW(L"BUTTON", L"Enable text shadow",
-            WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX, 0, 0, 0, 0, hwnd, (HMENU)IDC_OVERLAY_SHADOW, nullptr, nullptr);
-
-        SendMessageW(hOverlayShadow, BM_SETCHECK, config.overlay_text_shadow ? BST_CHECKED : BST_UNCHECKED, 0);
-
         // Log + tools
         gLog = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
             WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_READONLY | WS_VSCROLL, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
@@ -1468,8 +1420,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             gTikTokStatus,gTikTokViewers,gTikTokFollowers,
             gTwitchStatus,gTwitchViewers,gTwitchFollowers,gTwitchHelix,
             gYouTubeStatus,gYouTubeViewers,gYouTubeFollowers,
-            gLog,hClearLogBtn,hCopyLogBtn,hOpenFloatingChatBtn,hOpenChatMonitorBtn,
-            hGroupOverlay,hLblOverlayFont,hOverlayFont,hLblOverlaySize,hOverlaySize,hOverlayShadow
+            gLog,hClearLogBtn,hCopyLogBtn,hOpenFloatingChatBtn,hOpenChatMonitorBtn
         };
         for (HWND c : controls) if (c) SendMessageW(c, WM_SETFONT, (WPARAM)gFontUi, TRUE);
 
