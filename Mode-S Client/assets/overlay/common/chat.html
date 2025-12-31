@@ -62,7 +62,9 @@
                 const m = await (await fetch('/api/metrics')).json();
                 metricsEl.textContent = `Viewers: ${m.total_viewers}  |  Followers: ${m.total_followers}`;
 
-                const chat = await (await fetch('/api/chat')).json();
+                // New API shape: { ts_ms, messages: [...] }
+                const data = await (await fetch('/api/chat/recent?limit=200')).json();
+                const chat = (data && Array.isArray(data.messages)) ? data.messages : [];
                 if (chat.length !== lastLen) {
                     lastLen = chat.length;
                     chatEl.innerHTML = '';

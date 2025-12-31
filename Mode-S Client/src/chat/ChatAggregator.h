@@ -1,13 +1,13 @@
 #pragma once
 
 #include <deque>
+#include <functional>
 #include <mutex>
 #include <vector>
 
 #include "json.hpp"
 
-// Reuse the existing ChatMessage type already defined in AppState.h
-// so we don't create two competing definitions.
+// Reuse the project's canonical ChatMessage definition.
 #include "AppState.h"
 
 // Thread-safe aggregator / ring buffer for combined live chat.
@@ -16,6 +16,10 @@ class ChatAggregator
 {
 public:
     explicit ChatAggregator(size_t capacity = 200);
+
+    // Subscribe to newly added messages.
+    // Callback will be invoked on the calling thread of Add(). Keep it fast.
+    void Subscribe(std::function<void(const ChatMessage&)> cb);
 
     // Adds a normalized message. Safe to call from any thread.
     void Add(ChatMessage msg);
@@ -30,4 +34,5 @@ private:
     size_t capacity_;
     mutable std::mutex mu_;
     std::deque<ChatMessage> ring_;
+    std::function<void(const ChatMessage&)> on_add_;
 };

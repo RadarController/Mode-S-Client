@@ -24,7 +24,6 @@
 #include "resource.h"
 #include "AppConfig.h"
 #include "AppState.h"
-#include "chat/ChatAggregator.h"
 #include "twitch/TwitchHelixService.h"
 #include "twitch/TwitchIrcWsClient.h"
 #include "tiktok/TikTokFollowersService.h"
@@ -667,7 +666,6 @@ static bool EditTwitchSettingsModal(HWND parent, TwitchSettingsDraft& draft)
 // --------------------------- Platform start helpers -------------------------
 static bool StartOrRestartTikTokSidecar(TikTokSidecar& tiktok,
     AppState& state,
-    ChatAggregator& chat,
     HWND hwndMain,
     HWND hwndLog,
     HWND hTikTokEdit)
@@ -723,7 +721,7 @@ static bool StartOrRestartTikTokSidecar(TikTokSidecar& tiktok,
             c.message = j.value("message", "");
             double ts = j.value("ts", 0.0);
             c.ts_ms = (std::int64_t)(ts * 1000.0);
-            chat.Add(std::move(c));
+            state.add_chat(std::move(c));
         }
         // NEW: primary stats event from the updated sidecar
         else if (type == "tiktok.stats") {
@@ -759,7 +757,6 @@ static bool StartOrRestartTikTokSidecar(TikTokSidecar& tiktok,
 
 static bool StartOrRestartTwitchChat(TwitchIrcWsClient& twitch,
     AppState& state,
-    ChatAggregator& chat,
     HWND hwndLog,
     HWND hTwitchEdit)
 {
@@ -785,7 +782,7 @@ static bool StartOrRestartTwitchChat(TwitchIrcWsClient& twitch,
             c.user = user;
             c.message = message;
             c.ts_ms = (std::int64_t)(time(nullptr) * 1000);
-            chat.Add(std::move(c));
+            state.add_chat(std::move(c));
         });
 
     if (ok) {
@@ -996,7 +993,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     static AppConfig config;
 
     static AppState state;
-    static ChatAggregator chat;
     static TikTokSidecar tiktok;
     static TwitchIrcWsClient twitch;
     static std::thread serverThread;
@@ -1161,7 +1157,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         serverThread = std::thread([&]() {
             httplib::Server svr;
 
-            svr.Get("/api/metrics", [&](const httplib::Request&, httplib::Response& res) {
+            
+
+svr.Get("/api/metrics", [&](const httplib::Request&, httplib::Response& res) {
                 auto j = state.metrics_json();
 
                 const uint64_t now_ms = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -1186,17 +1184,41 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 res.set_content(R"({"ok":true})", "application/json; charset=utf-8");
                 });
 
-            svr.Get("/api/chat", [&](const httplib::Request&, httplib::Response& res) {
-                auto j = chat.RecentJson(200);
-                res.set_content(j.dump(2), "application/json; charset=utf-8");
-                });
+            // Chat API (stable shape)
+            auto handle_chat_recent = [&](const httplib::Request& req, httplib::Response& res) {
+                int limit = 200;
+                if (req.has_param("limit")) {
+                    try {
+                        limit = std::max(1, std::min(1000, std::stoi(req.get_param_value("limit"))));
+                    } catch (...) {}
+                }
+
+                // AppState currently returns an array of messages
+                nlohmann::json msgs = state.chat_json();
+                if (msgs.is_array() && (int)msgs.size() > limit) {
+                    nlohmann::json trimmed = nlohmann::json::array();
+                    const int start = (int)msgs.size() - limit;
+                    for (int i = start; i < (int)msgs.size(); ++i) trimmed.push_back(msgs[i]);
+                    msgs = std::move(trimmed);
+                }
+
+                nlohmann::json out;
+                out["ts_ms"] = (long long)std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()
+                ).count();
+                out["messages"] = std::move(msgs);
+
+                res.set_content(out.dump(2), "application/json; charset=utf-8");
+            };
+
+            svr.Get("/api/chat/recent", handle_chat_recent);
+            svr.Get("/api/chat", handle_chat_recent); // backward-compatible alias
 
 
             // ---------------- Overlay hosting ----------------
             // Serve overlays from: <exe_dir>\assets\overlay\...
             const auto overlayRoot = std::filesystem::path(GetExeDir()) / L"assets" / L"overlay";
-
-            auto content_type_for = [](const std::string& path) -> const char* {
+auto content_type_for = [](const std::string& path) -> const char* {
                 auto dot = path.find_last_of('.');
                 std::string ext = (dot == std::string::npos) ? "" : path.substr(dot + 1);
                 for (auto& c : ext) c = (char)tolower((unsigned char)c);
@@ -1277,7 +1299,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
                 // Ensure chat.html uses the templated handler above
                 if (relUtf8 == "chat.html") {
-                    res.set_redirect("/overlay/chat.html");
+                    res.set_redirect("/overlay/common/chat.html");
                     return;
                 }
 
@@ -1321,7 +1343,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 res.set_redirect("/overlay/");
                 });
 
+            LogLine(L"HTTP: listening on http://127.0.0.1:17845");
             svr.listen("127.0.0.1", 17845);
+
             });
         serverThread.detach();
 
@@ -1391,12 +1415,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         }
 
         if (id == IDC_START_TIKTOK || id == IDC_RESTART_TIKTOK) {
-            StartOrRestartTikTokSidecar(tiktok, state, chat, hwnd, gLog, hTikTok);
+            StartOrRestartTikTokSidecar(tiktok, state, hwnd, gLog, hTikTok);
             return 0;
         }
 
         if (id == IDC_START_TWITCH || id == IDC_RESTART_TWITCH) {
-            StartOrRestartTwitchChat(twitch, state, chat, gLog, hTwitch);
+            StartOrRestartTwitchChat(twitch, state, gLog, hTwitch);
             return 0;
         }
 
