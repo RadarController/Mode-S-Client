@@ -85,6 +85,35 @@ static HWND hStartYouTubeBtn = nullptr, hRestartYouTubeBtn = nullptr;
 
 static HWND hClearLogBtn = nullptr, hCopyLogBtn = nullptr;
 
+// Button to open a floating chat window
+static HWND hOpenFloatingChatBtn = nullptr;
+
+// Button to open Chat Monitor window
+static HWND hOpenChatMonitorBtn = nullptr;
+
+// Chat Monitor state
+static HWND gChatMonitorWnd = nullptr;
+static HWND gChatMonitorEdit = nullptr;
+static std::atomic<bool> gChatMonitorRunning{ false };
+static std::thread gChatMonitorThread;
+
+// Forward decls
+static LRESULT CALLBACK ChatMonitorWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+static void OpenChatMonitorWindow(HWND parent);
+static void CloseChatMonitorWindow();
+static void ChatMonitorPollLoop();
+
+// Floating chat state
+static HWND gFloatingChatWnd = nullptr;
+static HWND gFloatingChatEdit = nullptr;
+static std::atomic<bool> gFloatingChatRunning{ false };
+static std::thread gFloatingChatThread;
+
+// Forward decls
+static LRESULT CALLBACK FloatingChatWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+static void OpenFloatingChatWindow(HWND parent);
+static void CloseFloatingChatWindow();
+
 static std::atomic<bool> gRunning{ true };
 
 // Chat overlay UI controls
@@ -808,6 +837,306 @@ static void CopyLogToClipboard(HWND hwndOwner)
     CloseClipboard();
 }
 
+
+// --------------------------- Translucent window helper ----------------------
+// Prefer Acrylic blur so the background is translucent but text remains readable.
+// Falls back to layered alpha if unavailable (Windows versions without the API).
+typedef enum _ACCENT_STATE {
+    ACCENT_DISABLED = 0,
+    ACCENT_ENABLE_GRADIENT = 1,
+    ACCENT_ENABLE_TRANSPARENTGRADIENT = 2,
+    ACCENT_ENABLE_BLURBEHIND = 3,
+    ACCENT_ENABLE_ACRYLICBLURBEHIND = 4,
+    ACCENT_ENABLE_HOSTBACKDROP = 5
+} ACCENT_STATE;
+
+typedef struct _ACCENT_POLICY {
+    int AccentState;
+    int AccentFlags;
+    int GradientColor; // ARGB
+    int AnimationId;
+} ACCENT_POLICY;
+
+typedef struct _WINDOWCOMPOSITIONATTRIBDATA {
+    int Attrib;
+    PVOID pvData;
+    SIZE_T cbData;
+} WINDOWCOMPOSITIONATTRIBDATA;
+
+static bool TryEnableAcrylic(HWND hwnd, BYTE bgOpacity /*0..255*/)
+{
+    HMODULE hUser = GetModuleHandleW(L"user32.dll");
+    if (!hUser) return false;
+
+    using Fn = BOOL(WINAPI*)(HWND, WINDOWCOMPOSITIONATTRIBDATA*);
+    auto p = (Fn)GetProcAddress(hUser, "SetWindowCompositionAttribute");
+    if (!p) return false;
+
+    const int WCA_ACCENT_POLICY = 19;
+
+    ACCENT_POLICY policy{};
+    policy.AccentState = ACCENT_ENABLE_ACRYLICBLURBEHIND;
+    policy.AccentFlags = 2;
+
+    // Dark tint; bgOpacity controls tint alpha (NOT child controls).
+    policy.GradientColor = (bgOpacity << 24) | 0x202020;
+
+    WINDOWCOMPOSITIONATTRIBDATA data{};
+    data.Attrib = WCA_ACCENT_POLICY;
+    data.pvData = &policy;
+    data.cbData = sizeof(policy);
+
+    return p(hwnd, &data) != 0;
+}
+
+// --------------------------- Floating Chat Window ---------------------------
+// Resizable, always-on-top layered window (67% transparent) that polls /api/chat/recent
+
+static LRESULT CALLBACK FloatingChatWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+    switch (msg) {
+    case WM_CREATE:
+    {
+        gFloatingChatEdit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+            WS_CHILD | WS_VISIBLE | ES_LEFT | ES_MULTILINE | ES_READONLY | WS_VSCROLL,
+            0, 0, 0, 0, hwnd, nullptr, GetModuleHandleW(nullptr), nullptr);
+        SetWindowPos(hwnd, HWND_TOPMOST, 0,0,0,0, SWP_NOMOVE|SWP_NOSIZE);
+        return 0;
+    }
+    case WM_SIZE:
+    {
+        RECT rc; GetClientRect(hwnd, &rc);
+        if (gFloatingChatEdit) MoveWindow(gFloatingChatEdit, 0, 0, rc.right - rc.left, rc.bottom - rc.top, TRUE);
+        return 0;
+    }
+    case WM_APP + 50: // update chat content (lParam = std::wstring*)
+    {
+        auto p = reinterpret_cast<std::wstring*>(lParam);
+        if (p) {
+            SetWindowTextW(gFloatingChatEdit, p->c_str());
+            delete p;
+        }
+        return 0;
+    }
+    case WM_CLOSE:
+    DestroyWindow(hwnd);
+    return 0;
+
+case WM_DESTROY:
+{
+    gFloatingChatRunning = false;
+    if (gFloatingChatThread.joinable()) gFloatingChatThread.join();
+    gFloatingChatWnd = nullptr;
+    gFloatingChatEdit = nullptr;
+    return 0;
+}
+    }
+    return DefWindowProcW(hwnd, msg, wParam, lParam);
+}
+
+static void FloatingChatPollLoop()
+{
+    while (gFloatingChatRunning && gFloatingChatWnd) {
+        HttpResult r = WinHttpRequest(L"GET", L"127.0.0.1", 17845, L"/api/chat/recent?limit=200", L"", "", false);
+        if (r.status == 200 && !r.body.empty()) {
+            try {
+                auto j = nlohmann::json::parse(r.body);
+                std::wstring out;
+                if (j.contains("messages") && j["messages"].is_array()) {
+                    for (const auto &msg : j["messages"]) {
+                        std::string user;
+                        std::string text;
+                        std::string platform;
+                        if (msg.is_object()) {
+                            if (msg.contains("user")) user = msg["user"].get<std::string>();
+                            if (msg.contains("message")) text = msg["message"].get<std::string>();
+                            if (text.empty() && msg.contains("text")) text = msg["text"].get<std::string>();
+                            if (msg.contains("platform")) platform = msg["platform"].get<std::string>();
+                        }
+                        std::wstring wuser = ToW(user.empty() ? platform : user);
+                        std::wstring wtext = ToW(text);
+                        if (wuser.empty()) wuser = L"(anon)";
+                        out += wuser + L": " + wtext + L"\r\n";
+                    }
+                }
+                auto p = new std::wstring(std::move(out));
+                PostMessageW(gFloatingChatWnd, WM_APP + 50, 0, (LPARAM)p);
+            } catch (...) {}
+        }
+        for (int i=0;i<50 && gFloatingChatRunning;++i) Sleep(10); // ~500ms
+    }
+}
+
+static void OpenFloatingChatWindow(HWND parent)
+{
+    if (gFloatingChatWnd) { SetForegroundWindow(gFloatingChatWnd); return; }
+
+    const wchar_t* kClass = L"StreamHub_FloatingChat";
+    static std::atomic<bool> reg{false};
+    if (!reg.exchange(true)) {
+        WNDCLASSW wc{};
+        wc.lpfnWndProc = FloatingChatWndProc;
+        wc.hInstance = GetModuleHandleW(nullptr);
+        wc.lpszClassName = kClass;
+        wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+        wc.hbrBackground = nullptr;
+        RegisterClassW(&wc);
+    }
+
+    RECT pr{}; GetWindowRect(parent, &pr);
+    int w = 420, h = 600;
+    int x = pr.left + 50, y = pr.top + 50;
+
+    HWND wnd = CreateWindowExW(WS_EX_LAYERED | WS_EX_TOPMOST,
+        kClass, L"Floating Chat",
+        WS_OVERLAPPEDWINDOW | WS_VISIBLE | WS_SYSMENU | WS_THICKFRAME,
+        x, y, w, h,
+        nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
+    if (!wnd) return;
+
+    const BYTE alpha = (BYTE)84; // ~33% opaque -> 67% transparent
+    SetLayeredWindowAttributes(wnd, 0, alpha, LWA_ALPHA);
+
+    gFloatingChatWnd = wnd;
+    gFloatingChatRunning = true;
+    gFloatingChatThread = std::thread(FloatingChatPollLoop);
+}
+
+static void CloseFloatingChatWindow()
+{
+    if (!gFloatingChatWnd) return;
+    gFloatingChatRunning = false;
+    for (int i=0;i<50 && gFloatingChatWnd;++i) Sleep(10);
+    DestroyWindow(gFloatingChatWnd);
+}
+
+
+// --------------------------- Chat Monitor Window ----------------------------
+// A separate always-on-top, resizable window intended for monitoring chat.
+// Uses Acrylic translucency where available so the background is ~67% transparent
+// while keeping text readable. Falls back to layered alpha if Acrylic isn't available.
+
+static LRESULT CALLBACK ChatMonitorWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+    switch (msg) {
+    case WM_CREATE:
+    {
+        gChatMonitorEdit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+            WS_CHILD | WS_VISIBLE | ES_LEFT | ES_MULTILINE | ES_READONLY | WS_VSCROLL,
+            0, 0, 0, 0, hwnd, nullptr, GetModuleHandleW(nullptr), nullptr);
+        SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+        return 0;
+    }
+    case WM_SIZE:
+    {
+        RECT rc; GetClientRect(hwnd, &rc);
+        if (gChatMonitorEdit) MoveWindow(gChatMonitorEdit, 0, 0, rc.right - rc.left, rc.bottom - rc.top, TRUE);
+        return 0;
+    }
+    case WM_APP + 60: // update chat content (lParam = std::wstring*)
+    {
+        auto p = reinterpret_cast<std::wstring*>(lParam);
+        if (p) {
+            SetWindowTextW(gChatMonitorEdit, p->c_str());
+            delete p;
+        }
+        return 0;
+    }
+    case WM_CLOSE:
+        DestroyWindow(hwnd);
+        return 0;
+
+    case WM_DESTROY:
+    {
+        gChatMonitorRunning = false;
+        if (gChatMonitorThread.joinable()) gChatMonitorThread.join();
+        gChatMonitorWnd = nullptr;
+        gChatMonitorEdit = nullptr;
+        return 0;
+    }
+    }
+    return DefWindowProcW(hwnd, msg, wParam, lParam);
+}
+
+static void ChatMonitorPollLoop()
+{
+    while (gChatMonitorRunning && gChatMonitorWnd) {
+        HttpResult r = WinHttpRequest(L"GET", L"127.0.0.1", 17845, L"/api/chat/recent?limit=200", L"", "", false);
+        if (r.status == 200 && !r.body.empty()) {
+            try {
+                auto j = nlohmann::json::parse(r.body);
+                std::wstring out;
+                if (j.contains("messages") && j["messages"].is_array()) {
+                    for (const auto &msg : j["messages"]) {
+                        std::string user;
+                        std::string text;
+                        std::string platform;
+                        if (msg.is_object()) {
+                            if (msg.contains("user")) user = msg["user"].get<std::string>();
+                            if (msg.contains("message")) text = msg["message"].get<std::string>();
+                            if (text.empty() && msg.contains("text")) text = msg["text"].get<std::string>();
+                            if (msg.contains("platform")) platform = msg["platform"].get<std::string>();
+                        }
+                        std::wstring wuser = ToW(user.empty() ? platform : user);
+                        std::wstring wtext = ToW(text);
+                        if (wuser.empty()) wuser = L"(anon)";
+                        out += wuser + L": " + wtext + L"\r\n";
+                    }
+                }
+                auto p = new std::wstring(std::move(out));
+                PostMessageW(gChatMonitorWnd, WM_APP + 60, 0, (LPARAM)p);
+            } catch (...) {}
+        }
+        for (int i = 0; i < 50 && gChatMonitorRunning; ++i) Sleep(10); // ~500ms
+    }
+}
+
+static void OpenChatMonitorWindow(HWND parent)
+{
+    if (gChatMonitorWnd) { SetForegroundWindow(gChatMonitorWnd); return; }
+
+    const wchar_t* kClass = L"StreamHub_ChatMonitor";
+    static std::atomic<bool> reg{ false };
+    if (!reg.exchange(true)) {
+        WNDCLASSW wc{};
+        wc.lpfnWndProc = ChatMonitorWndProc;
+        wc.hInstance = GetModuleHandleW(nullptr);
+        wc.lpszClassName = kClass;
+        wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+        wc.hbrBackground = nullptr;
+        RegisterClassW(&wc);
+    }
+
+    RECT pr{}; GetWindowRect(parent, &pr);
+    int w = 520, h = 760;
+    int x = pr.left + 70, y = pr.top + 70;
+
+    // WS_EX_TOOLWINDOW keeps it out of Alt-Tab while still being always-on-top.
+    HWND wnd = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
+        kClass, L"Chat Monitor",
+        WS_OVERLAPPEDWINDOW | WS_VISIBLE | WS_SYSMENU | WS_THICKFRAME,
+        x, y, w, h,
+        nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
+    if (!wnd) return;
+
+    // 67% transparent background -> ~33% opaque tint strength.
+    const BYTE bgOpacity = (BYTE)84;
+    if (!TryEnableAcrylic(wnd, bgOpacity)) {
+        SetWindowLongPtrW(wnd, GWL_EXSTYLE, GetWindowLongPtrW(wnd, GWL_EXSTYLE) | WS_EX_LAYERED);
+        SetLayeredWindowAttributes(wnd, 0, bgOpacity, LWA_ALPHA);
+    }
+
+    gChatMonitorWnd = wnd;
+    gChatMonitorRunning = true;
+    gChatMonitorThread = std::thread(ChatMonitorPollLoop);
+}
+
+static void CloseChatMonitorWindow()
+{
+    if (!gChatMonitorWnd) return;
+    DestroyWindow(gChatMonitorWnd);
+}
+
 // --------------------------- Layout -----------------------------------------
 static void LayoutControls(HWND hwnd)
 {
@@ -956,13 +1285,17 @@ static void LayoutControls(HWND hwnd)
     MoveWindow(hSave, pad + savePad, saveY, (W - pad * 2) - savePad * 2, 28, TRUE);
 
     // Log tools (below Settings block)
-    int toolsY = settingsTop + settingsH + 10;
+int toolsY = settingsTop + settingsH + 10;
 
-    int toolH = 28;
-    int toolW = 80;
+int toolH = 28;
+int toolW = 80;
+int wideW = 140;
 
-    MoveWindow(hClearLogBtn, W - pad - toolW * 2 - gap, toolsY, toolW, toolH, TRUE);
-    MoveWindow(hCopyLogBtn, W - pad - toolW, toolsY, toolW, toolH, TRUE);
+MoveWindow(hOpenFloatingChatBtn, pad, toolsY, wideW, toolH, TRUE);
+MoveWindow(hOpenChatMonitorBtn, pad + wideW + gap, toolsY, wideW, toolH, TRUE);
+
+MoveWindow(hClearLogBtn, W - pad - toolW * 2 - gap, toolsY, toolW, toolH, TRUE);
+MoveWindow(hCopyLogBtn, W - pad - toolW, toolsY, toolW, toolH, TRUE);
 
     // Log area
     int logY = toolsY + toolH + 10;
@@ -1100,6 +1433,32 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         hClearLogBtn = CreateWindowW(L"BUTTON", L"Clear", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_CLEAR_LOG, nullptr, nullptr);
         hCopyLogBtn = CreateWindowW(L"BUTTON", L"Copy", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_COPY_LOG, nullptr, nullptr);
 
+        // Give them IDs so WM_COMMAND can handle them cleanly
+        #ifndef IDC_OPEN_CHAT
+        #define IDC_OPEN_CHAT        41001
+        #endif
+        #ifndef IDC_CHAT_MONITOR
+        #define IDC_CHAT_MONITOR     41002
+        #endif
+
+        HINSTANCE hInst = GetModuleHandleW(nullptr);
+
+        hOpenFloatingChatBtn = CreateWindowW(
+            L"BUTTON", L"Open Chat",
+            WS_CHILD | WS_VISIBLE,
+            0, 0, 0, 0,
+            hwnd, (HMENU)(INT_PTR)IDC_OPEN_CHAT,
+            hInst, nullptr
+        );
+
+        hOpenChatMonitorBtn = CreateWindowW(
+            L"BUTTON", L"Chat Monitor",
+            WS_CHILD | WS_VISIBLE,
+            0, 0, 0, 0,
+            hwnd, (HMENU)(INT_PTR)IDC_CHAT_MONITOR,
+            hInst, nullptr
+        );
+
         // Apply font
         HWND controls[] = {
             hGroupTikTok,hGroupTwitch,hGroupYouTube,
@@ -1109,7 +1468,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             gTikTokStatus,gTikTokViewers,gTikTokFollowers,
             gTwitchStatus,gTwitchViewers,gTwitchFollowers,gTwitchHelix,
             gYouTubeStatus,gYouTubeViewers,gYouTubeFollowers,
-            gLog,hClearLogBtn,hCopyLogBtn,
+            gLog,hClearLogBtn,hCopyLogBtn,hOpenFloatingChatBtn,hOpenChatMonitorBtn,
             hGroupOverlay,hLblOverlayFont,hOverlayFont,hLblOverlaySize,hOverlaySize,hOverlayShadow
         };
         for (HWND c : controls) if (c) SendMessageW(c, WM_SETFONT, (WPARAM)gFontUi, TRUE);
@@ -1235,7 +1594,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
             if (ok) {
                 LogLine(L"TWITCH: started/restarted IRC client.");
-            } else {
+            }
+            else {
                 LogLine(L"TWITCH: failed to start IRC client (already running or invalid parameters). Consider checking the channel name.");
             }
             return 0;
@@ -1321,7 +1681,21 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             return 0;
         }
 
-        break;
+        {
+            const int id = LOWORD(wParam);
+
+            if (id == IDC_OPEN_CHAT) {
+                OpenFloatingChatWindow(hwnd);
+                return 0;
+            }
+            if (id == IDC_CHAT_MONITOR) {
+                OpenChatMonitorWindow(hwnd);
+                return 0;
+            }
+
+            // ...existing handlers...
+            break;
+        }
     }
 
     case WM_SIZE:
