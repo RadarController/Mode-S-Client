@@ -241,8 +241,13 @@ static std::string ToUtf8(const std::wstring& w) {
 
 static std::wstring GetWindowTextWString(HWND h) {
     int len = GetWindowTextLengthW(h);
-    std::wstring w(len, L'\0');
-    GetWindowTextW(h, w.data(), len + 1);
+    if (len <= 0) return L"";
+    std::wstring w;
+    // Allocate len+1 to receive the null terminator safely, then resize to actual copied length.
+    w.resize(len + 1);
+    int copied = GetWindowTextW(h, &w[0], len + 1);
+    if (copied < 0) return L"";
+    w.resize(copied);
     return w;
 }
 
