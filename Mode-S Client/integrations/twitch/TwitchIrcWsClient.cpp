@@ -135,7 +135,7 @@ void TwitchIrcWsClient::worker(std::string oauth, std::string nick, std::string 
 
             // Keep debugger output if you like
             {
-                std::wstring w = L"[TWITCH RAW] " + ToW(line) + L"\n";
+                std::wstring w = L"[TWITCH RAW] " + ToW(line);
                 OutputDebugStringW(w.c_str());
             }
 

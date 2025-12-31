@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <ctime>
 #include <memory>
+#include <mutex>
 
 #include "httplib.h"
 #include "json.hpp"
@@ -67,6 +68,7 @@ static HFONT  gFontUi = nullptr;
 
 // --------------------------- Globals (UI handles) ---------------------------
 static HWND gLog = nullptr;
+static std::mutex gLogMutex;
 static HWND hGroupTikTok = nullptr, hGroupTwitch = nullptr, hGroupYouTube = nullptr;
 static HWND hLblTikTok = nullptr, hLblTwitch = nullptr, hLblYouTube = nullptr;
 static HWND hHint = nullptr;
@@ -117,11 +119,22 @@ static std::wstring GetExeDir()
     return (pos == std::wstring::npos) ? L"." : p.substr(0, pos);
 }
 
-static void LogLine(const std::wstring& s) {
+static void LogLine(const std::wstring& s)
+{
     if (!gLog) return;
+
+    // Make each log call atomic across threads and avoid double newlines.
+    std::lock_guard<std::mutex> _lk(gLogMutex);
+
+    std::wstring clean = s;
+    while (!clean.empty() && (clean.back() == L'\r' || clean.back() == L'\n'))
+        clean.pop_back();
+
+
+
     int len = GetWindowTextLengthW(gLog);
     SendMessageW(gLog, EM_SETSEL, (WPARAM)len, (LPARAM)len);
-    SendMessageW(gLog, EM_REPLACESEL, FALSE, (LPARAM)s.c_str());
+    SendMessageW(gLog, EM_REPLACESEL, FALSE, (LPARAM)clean.c_str());
     SendMessageW(gLog, EM_REPLACESEL, FALSE, (LPARAM)L"\r\n");
 }
 
