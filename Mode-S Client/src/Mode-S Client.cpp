@@ -66,6 +66,9 @@ static HFONT  gFontUi = nullptr;
 // --------------------------- Globals (UI handles) ---------------------------
 static HWND gLog = nullptr;
 static std::mutex gLogMutex;
+static HWND gMainWnd = nullptr;
+static DWORD gUiThreadId = 0;
+static constexpr UINT WM_APP_LOG = WM_APP + 100;
 static HWND hGroupTikTok = nullptr, hGroupTwitch = nullptr, hGroupYouTube = nullptr;
 static HWND hLblTikTok = nullptr, hLblTwitch = nullptr, hLblYouTube = nullptr;
 static HWND hHint = nullptr;
@@ -136,7 +139,7 @@ static std::wstring GetExeDir()
     return (pos == std::wstring::npos) ? L"." : p.substr(0, pos);
 }
 
-static void LogLine(const std::wstring& s)
+static void AppendLogOnUiThread(const std::wstring& s)
 {
     if (!gLog) return;
 
@@ -144,15 +147,31 @@ static void LogLine(const std::wstring& s)
     std::lock_guard<std::mutex> _lk(gLogMutex);
 
     std::wstring clean = s;
+
+    // Trim trailing CR/LF
     while (!clean.empty() && (clean.back() == L'\r' || clean.back() == L'\n'))
         clean.pop_back();
-
-
 
     int len = GetWindowTextLengthW(gLog);
     SendMessageW(gLog, EM_SETSEL, (WPARAM)len, (LPARAM)len);
     SendMessageW(gLog, EM_REPLACESEL, FALSE, (LPARAM)clean.c_str());
     SendMessageW(gLog, EM_REPLACESEL, FALSE, (LPARAM)L"\r\n");
+}
+
+static void LogLine(const std::wstring& s)
+{
+    // If called from a worker thread, marshal to the UI thread to avoid deadlocks/freezes.
+    if (gUiThreadId != 0 && GetCurrentThreadId() != gUiThreadId) {
+        if (gMainWnd) {
+            auto* heap = new std::wstring(s);
+            if (!PostMessageW(gMainWnd, WM_APP_LOG, 0, (LPARAM)heap)) {
+                delete heap; // fallback if posting fails
+            }
+        }
+        return;
+    }
+
+    AppendLogOnUiThread(s);
 }
 
 static std::wstring ToW(const std::string& s) {
@@ -784,7 +803,7 @@ static bool StartOrRestartTikTokSidecar(TikTokSidecar& tiktok,
             state.set_tiktok_viewers(j.value("viewers", 0));
             if (hwndMain) PostMessageW(hwndMain, WM_APP + 41, 0, 0);
         }
-    });
+        });
 
     if (ok) {
         if (hwndLog) LogLine(L"TikTok sidecar started/restarted.");
@@ -888,7 +907,7 @@ static LRESULT CALLBACK FloatingChatWndProc(HWND hwnd, UINT msg, WPARAM wParam, 
         gFloatingChatEdit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
             WS_CHILD | WS_VISIBLE | ES_LEFT | ES_MULTILINE | ES_READONLY | WS_VSCROLL,
             0, 0, 0, 0, hwnd, nullptr, GetModuleHandleW(nullptr), nullptr);
-        SetWindowPos(hwnd, HWND_TOPMOST, 0,0,0,0, SWP_NOMOVE|SWP_NOSIZE);
+        SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
         return 0;
     }
     case WM_SIZE:
@@ -900,24 +919,40 @@ static LRESULT CALLBACK FloatingChatWndProc(HWND hwnd, UINT msg, WPARAM wParam, 
     case WM_APP + 50: // update chat content (lParam = std::wstring*)
     {
         auto p = reinterpret_cast<std::wstring*>(lParam);
-        if (p) {
+        if (p && gFloatingChatEdit) {
             SetWindowTextW(gFloatingChatEdit, p->c_str());
+
+            // Auto-scroll to bottom
+            SendMessageW(gFloatingChatEdit, EM_SETSEL, (WPARAM)-1, (LPARAM)-1);
+            SendMessageW(gFloatingChatEdit, EM_SCROLLCARET, 0, 0);
+        }
+        delete p;
+        return 0;
+
+    }
+    case WM_CLOSE:
+        DestroyWindow(hwnd);
+        return 0;
+
+
+    case WM_APP_LOG:
+    {
+        auto* p = reinterpret_cast<std::wstring*>(lParam);
+        if (p) {
+            AppendLogOnUiThread(*p);
             delete p;
         }
         return 0;
     }
-    case WM_CLOSE:
-    DestroyWindow(hwnd);
-    return 0;
 
-case WM_DESTROY:
-{
-    gFloatingChatRunning = false;
-    if (gFloatingChatThread.joinable()) gFloatingChatThread.join();
-    gFloatingChatWnd = nullptr;
-    gFloatingChatEdit = nullptr;
-    return 0;
-}
+    case WM_DESTROY:
+    {
+        gFloatingChatRunning = false;
+        if (gFloatingChatThread.joinable()) gFloatingChatThread.join();
+        gFloatingChatWnd = nullptr;
+        gFloatingChatEdit = nullptr;
+        return 0;
+    }
     }
     return DefWindowProcW(hwnd, msg, wParam, lParam);
 }
@@ -931,7 +966,7 @@ static void FloatingChatPollLoop()
                 auto j = nlohmann::json::parse(r.body);
                 std::wstring out;
                 if (j.contains("messages") && j["messages"].is_array()) {
-                    for (const auto &msg : j["messages"]) {
+                    for (const auto& msg : j["messages"]) {
                         std::string user;
                         std::string text;
                         std::string platform;
@@ -949,9 +984,10 @@ static void FloatingChatPollLoop()
                 }
                 auto p = new std::wstring(std::move(out));
                 PostMessageW(gFloatingChatWnd, WM_APP + 50, 0, (LPARAM)p);
-            } catch (...) {}
+            }
+            catch (...) {}
         }
-        for (int i=0;i<50 && gFloatingChatRunning;++i) Sleep(10); // ~500ms
+        for (int i = 0; i < 50 && gFloatingChatRunning; ++i) Sleep(10); // ~500ms
     }
 }
 
@@ -960,7 +996,7 @@ static void OpenFloatingChatWindow(HWND parent)
     if (gFloatingChatWnd) { SetForegroundWindow(gFloatingChatWnd); return; }
 
     const wchar_t* kClass = L"StreamHub_FloatingChat";
-    static std::atomic<bool> reg{false};
+    static std::atomic<bool> reg{ false };
     if (!reg.exchange(true)) {
         WNDCLASSW wc{};
         wc.lpfnWndProc = FloatingChatWndProc;
@@ -994,7 +1030,7 @@ static void CloseFloatingChatWindow()
 {
     if (!gFloatingChatWnd) return;
     gFloatingChatRunning = false;
-    for (int i=0;i<50 && gFloatingChatWnd;++i) Sleep(10);
+    for (int i = 0; i < 50 && gFloatingChatWnd; ++i) Sleep(10);
     DestroyWindow(gFloatingChatWnd);
 }
 
@@ -1055,7 +1091,7 @@ static void ChatMonitorPollLoop()
                 auto j = nlohmann::json::parse(r.body);
                 std::wstring out;
                 if (j.contains("messages") && j["messages"].is_array()) {
-                    for (const auto &msg : j["messages"]) {
+                    for (const auto& msg : j["messages"]) {
                         std::string user;
                         std::string text;
                         std::string platform;
@@ -1073,9 +1109,10 @@ static void ChatMonitorPollLoop()
                 }
                 auto p = new std::wstring(std::move(out));
                 PostMessageW(gChatMonitorWnd, WM_APP + 60, 0, (LPARAM)p);
-            } catch (...) {}
+            }
+            catch (...) {}
         }
-        for (int i = 0; i < 50 && gChatMonitorRunning; ++i) Sleep(10); // ~500ms
+        for (int i = 0; i < 50 && gChatMonitorRunning; ++i) Sleep(10);
     }
 }
 
@@ -1250,17 +1287,17 @@ static void LayoutControls(HWND hwnd)
     MoveWindow(hSave, pad + savePad, saveY, (W - pad * 2) - savePad * 2, 28, TRUE);
 
     // Log tools (below Settings block)
-int toolsY = settingsTop + settingsH + 10;
+    int toolsY = settingsTop + settingsH + 10;
 
-int toolH = 28;
-int toolW = 80;
-int wideW = 140;
+    int toolH = 28;
+    int toolW = 80;
+    int wideW = 140;
 
-MoveWindow(hOpenFloatingChatBtn, pad, toolsY, wideW, toolH, TRUE);
-MoveWindow(hOpenChatMonitorBtn, pad + wideW + gap, toolsY, wideW, toolH, TRUE);
+    MoveWindow(hOpenFloatingChatBtn, pad, toolsY, wideW, toolH, TRUE);
+    MoveWindow(hOpenChatMonitorBtn, pad + wideW + gap, toolsY, wideW, toolH, TRUE);
 
-MoveWindow(hClearLogBtn, W - pad - toolW * 2 - gap, toolsY, toolW, toolH, TRUE);
-MoveWindow(hCopyLogBtn, W - pad - toolW, toolsY, toolW, toolH, TRUE);
+    MoveWindow(hClearLogBtn, W - pad - toolW * 2 - gap, toolsY, toolW, toolH, TRUE);
+    MoveWindow(hCopyLogBtn, W - pad - toolW, toolsY, toolW, toolH, TRUE);
 
     // Log area
     int logY = toolsY + toolH + 10;
@@ -1374,12 +1411,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         hCopyLogBtn = CreateWindowW(L"BUTTON", L"Copy", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_COPY_LOG, nullptr, nullptr);
 
         // Give them IDs so WM_COMMAND can handle them cleanly
-        #ifndef IDC_OPEN_CHAT
-        #define IDC_OPEN_CHAT        41001
-        #endif
-        #ifndef IDC_CHAT_MONITOR
-        #define IDC_CHAT_MONITOR     41002
-        #endif
+#ifndef IDC_OPEN_CHAT
+#define IDC_OPEN_CHAT        41001
+#endif
+#ifndef IDC_CHAT_MONITOR
+#define IDC_CHAT_MONITOR     41002
+#endif
 
         HINSTANCE hInst = GetModuleHandleW(nullptr);
 
@@ -1435,8 +1472,14 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         UpdateTikTokButtons(hTikTok, hStartTikTokBtn, hRestartTikTokBtn);
         LayoutControls(hwnd);
 
+        PostMessageW(hwnd, WM_APP + 1, 0, 0);
+
+        return 0;
+    }
+    case WM_APP + 1:
+    {
         // Start HTTP server in background thread
-        
+
         // Start HTTP server (API + overlay)
         {
             HttpServer::Options opt;
@@ -1499,6 +1542,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
         return 0;
     }
+
     case WM_APP + 41: // refresh platform metrics UI
     {
         Metrics m{};
@@ -1586,17 +1630,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
             config.youtube_handle = ToUtf8(GetWindowTextWString(hYouTube));
 
-            // Overlay style
-            config.overlay_font_family = ToUtf8(GetWindowTextWString(hOverlayFont));
-            config.overlay_font_family = Trim(config.overlay_font_family);
-
-            int sizePx = ParseIntOrDefault(GetWindowTextWString(hOverlaySize), config.overlay_font_size);
-            sizePx = ClampInt(sizePx, 8, 72);
-            config.overlay_font_size = sizePx;
-
-            config.overlay_text_shadow = (SendMessageW(hOverlayShadow, BM_GETCHECK, 0, 0) == BST_CHECKED);
-
-            SetWindowTextW(hOverlaySize, std::to_wstring(config.overlay_font_size).c_str());
+            // Overlay Style UI removed (will be redesigned on a separate tab/page later)
 
             if (config.Save()) {
                 LogLine(L"Saved config.json.");
@@ -1711,6 +1745,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 }
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
+    gUiThreadId = GetCurrentThreadId();
+
     const wchar_t CLASS_NAME[] = L"StreamHubWindow";
 
     WNDCLASSW wc{};
@@ -1720,7 +1756,17 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
     wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
     wc.hbrBackground = nullptr;
 
-    RegisterClassW(&wc);
+    // Diagnostic: check RegisterClassW result
+    ATOM reg = RegisterClassW(&wc);
+    if (!reg) {
+        DWORD e = GetLastError();
+        if (e != ERROR_CLASS_ALREADY_EXISTS) {
+            wchar_t buf[256];
+            wsprintfW(buf, L"RegisterClassW failed. GetLastError=%lu", e);
+            MessageBoxW(nullptr, buf, L"Mode-S Client", MB_ICONERROR);
+            return 0;
+        }
+    }
 
     HWND hwnd = CreateWindowExW(
         0, CLASS_NAME, L"RadarController Mode-S Client",
@@ -1729,17 +1775,25 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
         nullptr, nullptr, hInstance, nullptr
     );
 
+    if (!hwnd) {
+        DWORD e = GetLastError();
+        wchar_t buf[256];
+        wsprintfW(buf, L"CreateWindowExW failed. GetLastError=%lu", e);
+        MessageBoxW(nullptr, buf, L"Mode-S Client", MB_ICONERROR);
+        return 0;
+    }
+
     SendMessageW(hwnd, WM_SETICON, ICON_BIG, (LPARAM)LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCE(IDI_APP_ICON)));
     SendMessageW(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCE(IDI_APP_ICON)));
 
-    if (!hwnd) return 0;
-
-    ShowWindow(hwnd, nCmdShow);
+    // Ensure window is shown even if nCmdShow is 0 (some launchers pass 0)
+    ShowWindow(hwnd, (nCmdShow == 0) ? SW_SHOWDEFAULT : nCmdShow);
+    UpdateWindow(hwnd);
 
     MSG msg{};
     while (GetMessageW(&msg, nullptr, 0, 0)) {
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
     }
-    return 0;
+    return (int)msg.wParam;
 }
