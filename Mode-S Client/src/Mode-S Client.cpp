@@ -45,14 +45,11 @@
 #define IDC_START_TWITCH       1007
 #define IDC_RESTART_TWITCH     1008
 #define IDC_TIKTOK_COOKIES     1009
-#define IDC_TWITCH_SETTINGS   1014
+#define IDC_TWITCH_SETTINGS    1014
 #define IDC_START_YOUTUBE      1010
 #define IDC_RESTART_YOUTUBE    1011
 #define IDC_CLEAR_LOG          1012
 #define IDC_COPY_LOG           1013
-#define IDC_OVERLAY_FONT       1020
-#define IDC_OVERLAY_SIZE       1021
-#define IDC_OVERLAY_SHADOW     1022
 
 // --------------------------- Theme (Material-ish dark) ----------------------
 static COLORREF gClrBg = RGB(18, 18, 18);
@@ -115,15 +112,6 @@ static void OpenFloatingChatWindow(HWND parent);
 static void CloseFloatingChatWindow();
 
 static std::atomic<bool> gRunning{ true };
-
-// Chat overlay UI controls
-static HWND hGroupOverlay = nullptr;
-static HWND hLblOverlayFont = nullptr;
-static HWND hOverlayFont = nullptr;
-static HWND hLblOverlaySize = nullptr;
-static HWND hOverlaySize = nullptr;
-static HWND hOverlayShadow = nullptr;
-
 
 // --- Platform status widgets ---
 static HWND gTikTokStatus = nullptr, gTikTokViewers = nullptr, gTikTokFollowers = nullptr;
