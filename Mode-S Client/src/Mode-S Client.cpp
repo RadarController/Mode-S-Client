@@ -17,6 +17,7 @@
 #include <cctype>
 #include <algorithm>
 #include <ctime>
+#include <memory>
 
 #include "httplib.h"
 #include "json.hpp"
@@ -24,11 +25,13 @@
 #include "resource.h"
 #include "AppConfig.h"
 #include "AppState.h"
+#include "http/HttpServer.h"
+#include "chat/ChatAggregator.h"
 #include "twitch/TwitchHelixService.h"
 #include "twitch/TwitchIrcWsClient.h"
+#include "tiktok/TikTokSidecar.h"
 #include "tiktok/TikTokFollowersService.h"
 #include "euroscope/EuroScopeIngestService.h"
-#include "tiktok/TikTokSidecar.h"
 #include "obs/ObsWsClient.h"
 
 // --------------------------- Control IDs ------------------------------------
@@ -41,7 +44,7 @@
 #define IDC_START_TWITCH       1007
 #define IDC_RESTART_TWITCH     1008
 #define IDC_TIKTOK_COOKIES     1009
-#define IDC_TWITCH_SETTINGS    1014
+#define IDC_TWITCH_SETTINGS   1014
 #define IDC_START_YOUTUBE      1010
 #define IDC_RESTART_YOUTUBE    1011
 #define IDC_CLEAR_LOG          1012
@@ -993,9 +996,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     static AppConfig config;
 
     static AppState state;
+    static ChatAggregator chat;
     static TikTokSidecar tiktok;
     static TwitchIrcWsClient twitch;
-    static std::thread serverThread;
+    static std::unique_ptr<HttpServer> gHttp;
     static std::thread metricsThread;
     static std::thread twitchHelixThread;
     static std::thread tiktokFollowersThread;
@@ -1041,12 +1045,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         hLblTikTok = CreateWindowW(L"STATIC", L"Username (no @)", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
         hTikTok = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", ToW(config.tiktok_unique_id).c_str(),
             WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL, 0, 0, 0, 0, hwnd, (HMENU)IDC_TIKTOK_EDIT, nullptr, nullptr);
-        hTikTokCookies = CreateWindowW(L"BUTTON", L"...", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_TIKTOK_COOKIES, nullptr, nullptr);
+        hTikTokCookies = CreateWindowW(L"BUTTON", L"SET", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_TIKTOK_COOKIES, nullptr, nullptr);
 
         hLblTwitch = CreateWindowW(L"STATIC", L"Channel login", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
         hTwitch = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", ToW(config.twitch_login).c_str(),
             WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL, 0, 0, 0, 0, hwnd, (HMENU)IDC_TWITCH_EDIT, nullptr, nullptr);
-        hTwitchSettings = CreateWindowW(L"BUTTON", L"...", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_TWITCH_SETTINGS, nullptr, nullptr);
+        hTwitchSettings = CreateWindowW(L"BUTTON", L"SET", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_TWITCH_SETTINGS, nullptr, nullptr);
 
         hLblYouTube = CreateWindowW(L"STATIC", L"Handle / Channel", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
         hYouTube = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", ToW(config.youtube_handle).c_str(),
@@ -1137,7 +1141,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         }
 
         // Initial logs
-        LogLine(L"Starting Mode-S Client overlay...");
+        LogLine(L"Starting Mode-S Client overlay");
         LogLine(L"Overlay: http://localhost:17845/overlay/chat.html");
         LogLine(L"Metrics: http://localhost:17845/api/metrics");
 
@@ -1154,200 +1158,20 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         LayoutControls(hwnd);
 
         // Start HTTP server in background thread
-        serverThread = std::thread([&]() {
-            httplib::Server svr;
+        
+        // Start HTTP server (API + overlay)
+        {
+            HttpServer::Options opt;
+            opt.bind_host = "127.0.0.1";
+            opt.port = 17845;
+            opt.overlay_root = std::filesystem::path(GetExeDir()) / "assets" / "overlay";
 
-            
+            gHttp = std::make_unique<HttpServer>(state, chat, euroscope, config, opt,
+                [](const std::wstring& s) { LogLine(s); });
 
-svr.Get("/api/metrics", [&](const httplib::Request&, httplib::Response& res) {
-                auto j = state.metrics_json();
+            gHttp->Start();
+        }
 
-                const uint64_t now_ms = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
-                    std::chrono::system_clock::now().time_since_epoch()
-                ).count();
-
-                // Merge EuroScope ingest snapshot into the metrics payload
-                j.update(euroscope.Metrics(now_ms));
-
-                res.set_content(j.dump(2), "application/json; charset=utf-8");
-                });
-
-            // EuroScope plugin ingest endpoint (expects JSON with ts_ms)
-            svr.Post("/api/euroscope", [&](const httplib::Request& req, httplib::Response& res) {
-                std::string err;
-                if (!euroscope.Ingest(req.body, err)) {
-                    res.status = 400;
-                    res.set_content(std::string(R"({"ok":false,"error":")") + err + R"("})",
-                        "application/json; charset=utf-8");
-                    return;
-                }
-                res.set_content(R"({"ok":true})", "application/json; charset=utf-8");
-                });
-
-            // Chat API (stable shape)
-            auto handle_chat_recent = [&](const httplib::Request& req, httplib::Response& res) {
-                int limit = 200;
-                if (req.has_param("limit")) {
-                    try {
-                        limit = std::max(1, std::min(1000, std::stoi(req.get_param_value("limit"))));
-                    } catch (...) {}
-                }
-
-                // AppState currently returns an array of messages
-                nlohmann::json msgs = state.chat_json();
-                if (msgs.is_array() && (int)msgs.size() > limit) {
-                    nlohmann::json trimmed = nlohmann::json::array();
-                    const int start = (int)msgs.size() - limit;
-                    for (int i = start; i < (int)msgs.size(); ++i) trimmed.push_back(msgs[i]);
-                    msgs = std::move(trimmed);
-                }
-
-                nlohmann::json out;
-                out["ts_ms"] = (long long)std::chrono::duration_cast<std::chrono::milliseconds>(
-                    std::chrono::system_clock::now().time_since_epoch()
-                ).count();
-                out["messages"] = std::move(msgs);
-
-                res.set_content(out.dump(2), "application/json; charset=utf-8");
-            };
-
-            svr.Get("/api/chat/recent", handle_chat_recent);
-            svr.Get("/api/chat", handle_chat_recent); // backward-compatible alias
-
-
-            // ---------------- Overlay hosting ----------------
-            // Serve overlays from: <exe_dir>\assets\overlay\...
-            const auto overlayRoot = std::filesystem::path(GetExeDir()) / L"assets" / L"overlay";
-auto content_type_for = [](const std::string& path) -> const char* {
-                auto dot = path.find_last_of('.');
-                std::string ext = (dot == std::string::npos) ? "" : path.substr(dot + 1);
-                for (auto& c : ext) c = (char)tolower((unsigned char)c);
-
-                if (ext == "html" || ext == "htm") return "text/html; charset=utf-8";
-                if (ext == "css")  return "text/css; charset=utf-8";
-                if (ext == "js")   return "application/javascript; charset=utf-8";
-                if (ext == "json") return "application/json; charset=utf-8";
-                if (ext == "svg")  return "image/svg+xml";
-                if (ext == "png")  return "image/png";
-                if (ext == "jpg" || ext == "jpeg") return "image/jpeg";
-                if (ext == "gif")  return "image/gif";
-                if (ext == "webp") return "image/webp";
-                if (ext == "woff2") return "font/woff2";
-                if (ext == "woff")  return "font/woff";
-                if (ext == "ttf")   return "font/ttf";
-                if (ext == "otf")   return "font/otf";
-                return "application/octet-stream";
-                };
-
-            auto read_file_binary = [](const std::filesystem::path& path) -> std::string {
-                std::ifstream f(path, std::ios::binary);
-                if (!f) return {};
-                std::ostringstream ss;
-                ss << f.rdbuf();
-                return ss.str();
-                };
-
-            // Keep the chat overlay as a special case so we can inject font/shadow settings.
-            svr.Get("/overlay/chat.html", [&](const httplib::Request&, httplib::Response& res) {
-                std::wstring htmlPath = GetExeDir() + L"\\assets\\overlay\\common\\chat.html";
-                auto html = ReadFileUtf8(htmlPath);
-                if (html.empty()) {
-                    res.status = 404;
-                    res.set_content("chat.html not found (check Copy to Output Directory)", "text/plain");
-                    return;
-                }
-
-                std::string fontFamily = Trim(config.overlay_font_family);
-                std::string fontStack = "sans-serif";
-                std::string googleLink = "";
-
-                if (!fontFamily.empty()) {
-                    fontStack = "'" + fontFamily + "', sans-serif;";
-                    std::string enc = UrlEncodeGoogleFontFamily(fontFamily);
-                    std::string url = "https://fonts.googleapis.com/css2?family=" + enc + "&display=swap";
-                    googleLink = "<link rel=\"stylesheet\" href=\"" + url + "\">";
-                }
-
-                std::string shadow = config.overlay_text_shadow
-                    ? "0 0 4px rgba(0,0,0,.8)"
-                    : "none";
-
-                ReplaceAll(html, "%%GOOGLE_FONT_LINK%%", googleLink);
-                ReplaceAll(html, "%%FONT_STACK%%", fontStack);
-                ReplaceAll(html, "%%FONT_SIZE%%", std::to_string(config.overlay_font_size));
-                ReplaceAll(html, "%%TEXT_SHADOW%%", shadow);
-
-                res.set_content(html, "text/html; charset=utf-8");
-                });
-
-            // /overlay or /overlay/ -> default (keep current behaviour: chat)
-            svr.Get("/overlay", [&](const httplib::Request&, httplib::Response& res) {
-                res.set_redirect("/overlay/chat.html");
-                });
-            svr.Get("/overlay/", [&](const httplib::Request&, httplib::Response& res) {
-                res.set_redirect("/overlay/chat.html");
-                });
-
-            // Serve /overlay/<anything> from <exe_dir>\assets\overlay\<anything>
-            // Supports subfolders, e.g. /overlay/headers/26_header.html
-            svr.Get(R"(/overlay/(.*))", [&](const httplib::Request& req, httplib::Response& res) {
-                std::string relUtf8 = req.matches.size() >= 2 ? req.matches[1].str() : "";
-                if (relUtf8.empty()) {
-                    res.set_redirect("/overlay/chat.html");
-                    return;
-                }
-
-                // Ensure chat.html uses the templated handler above
-                if (relUtf8 == "chat.html") {
-                    res.set_redirect("/overlay/common/chat.html");
-                    return;
-                }
-
-                // Basic traversal guard
-                if (relUtf8.find("..") != std::string::npos || relUtf8.find(':') != std::string::npos || relUtf8.find('\\') != std::string::npos) {
-                    res.status = 400;
-                    res.set_content("Bad path", "text/plain; charset=utf-8");
-                    return;
-                }
-
-                // Map URL path -> filesystem path
-                std::wstring relW(relUtf8.begin(), relUtf8.end());
-                auto fullPath = overlayRoot / relW;
-
-                // Stronger guard: canonicalize and ensure file stays under overlayRoot
-                std::error_code ec;
-                auto canonRoot = std::filesystem::weakly_canonical(overlayRoot, ec);
-                auto canonFile = std::filesystem::weakly_canonical(fullPath, ec);
-                if (!ec) {
-                    auto rootStr = canonRoot.wstring();
-                    auto fileStr = canonFile.wstring();
-                    if (fileStr.rfind(rootStr, 0) != 0) {
-                        res.status = 403;
-                        res.set_content("Forbidden", "text/plain; charset=utf-8");
-                        return;
-                    }
-                }
-
-                auto bytes = read_file_binary(fullPath);
-                if (bytes.empty()) {
-                    res.status = 404;
-                    res.set_content("Not found", "text/plain; charset=utf-8");
-                    return;
-                }
-
-                res.set_content(std::move(bytes), content_type_for(relUtf8));
-                });
-
-            // Root -> overlay
-            svr.Get("/", [&](const httplib::Request&, httplib::Response& res) {
-                res.set_redirect("/overlay/");
-                });
-
-            LogLine(L"HTTP: listening on http://127.0.0.1:17845");
-            svr.listen("127.0.0.1", 17845);
-
-            });
-        serverThread.detach();
 
         metricsThread = std::thread([&]() {
             while (gRunning) {
@@ -1559,10 +1383,22 @@ auto content_type_for = [](const std::string& path) -> const char* {
 
     case WM_DESTROY:
         gRunning = false;
+
+        // Stop platform services first (they may still be producing events)
         tiktok.stop();
         twitch.stop();
+
+        // Stop HTTP server cleanly (stop + join)
+        if (gHttp) {
+            gHttp->Stop();
+            gHttp.reset();
+        }
+
         PostQuitMessage(0);
         return 0;
+
+    default:
+        break;
     }
 
     return DefWindowProcW(hwnd, msg, wParam, lParam);
