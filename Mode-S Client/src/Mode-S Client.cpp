@@ -1436,21 +1436,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
         nullptr, nullptr, hInstance, nullptr
     );
 
+    SendMessageW(hwnd, WM_SETICON, ICON_BIG, (LPARAM)LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCE(IDI_APP_ICON)));
+    SendMessageW(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCE(IDI_APP_ICON)));
+
     if (!hwnd) return 0;
 
-    // Set icons AFTER hwnd is valid
-    SendMessageW(hwnd, WM_SETICON, ICON_BIG,
-        (LPARAM)LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCE(IDI_APP_ICON)));
-    SendMessageW(hwnd, WM_SETICON, ICON_SMALL,
-        (LPARAM)LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCE(IDI_APP_ICON)));
-
-    // Force visible (don’t trust nCmdShow)
-    ShowWindow(hwnd, SW_SHOWNORMAL);
-    UpdateWindow(hwnd);
-
-    // Force it to the foreground and ensure it’s not off-screen
-    SetWindowPos(hwnd, HWND_TOP, 100, 100, 1440, 810, SWP_SHOWWINDOW);
-    SetForegroundWindow(hwnd);
+    ShowWindow(hwnd, nCmdShow);
 
     MSG msg{};
     while (GetMessageW(&msg, nullptr, 0, 0)) {
