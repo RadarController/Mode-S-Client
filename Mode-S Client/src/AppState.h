@@ -11,6 +11,7 @@ struct ChatMessage {
     std::string platform;
     std::string user;
     std::string message;
+    std::string color; // optional username color (e.g. "#FF0000")
     std::int64_t ts_ms{};
 };
 

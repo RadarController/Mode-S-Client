@@ -1219,8 +1219,20 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         }
 
         if (id == IDC_START_TWITCH || id == IDC_RESTART_TWITCH) {
+            // Ensure existing Twitch client is stopped before starting to allow restart or channel change
+            twitch.stop();
+
             // Use overload that sinks directly into ChatAggregator
-            twitch.start("SCHMOOPIIE", std::string("justinfan" + std::to_string(10000 + (GetTickCount() % 50000))), SanitizeTwitchLogin(ToUtf8(GetWindowTextWString(hTwitch))), chat);
+            bool ok = twitch.start("SCHMOOPIIE",
+                std::string("justinfan" + std::to_string(10000 + (GetTickCount() % 50000))),
+                SanitizeTwitchLogin(ToUtf8(GetWindowTextWString(hTwitch))),
+                chat);
+
+            if (ok) {
+                LogLine(L"TWITCH: started/restarted IRC client.");
+            } else {
+                LogLine(L"TWITCH: failed to start IRC client (already running or invalid parameters). Consider checking the channel name.");
+            }
             return 0;
         }
 

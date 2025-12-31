@@ -9,11 +9,11 @@
         html, body { margin: 0; padding: 0; height: 100%; background: transparent; overflow: hidden; }
         body { font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color: #fff; }
         /* Make the log take full viewport width and be scrollable vertically. Hide scrollbars visually but keep scrolling. */
-        #log { padding: 8px; overflow-y: auto; height: 100vh; box-sizing: border-box; width: 100vw; }
+        #log { padding: 8px; overflow-y: auto; height: 100vh; box-sizing: border-box; width: 100vw; scroll-behavior: smooth; }
         #log .line { margin: 2px 0; display: flex; align-items: flex-start; }
         #log .icon { width: 20px; height: 20px; flex: 0 0 20px; margin-right: 8px; }
         #log .text { white-space: normal; word-break: break-word; flex: 1 1 auto; }
-        pre#payload { display: none; }
+        #log .user { font-weight: 600; margin-right: 6px; }
 
         /* Hide scrollbar for WebKit-based browsers */
         #log::-webkit-scrollbar { width: 0px; height: 0px; display: none; }
@@ -25,11 +25,9 @@
 </head>
 <body>
     <div id="log"></div>
-    <pre id="payload" style="display:none"></pre>
 
     <script>
         const LOG = document.getElementById("log");
-        const PAYLOAD = document.getElementById("payload");
 
         const ENDPOINTS = [
             "/api/chat?limit=200",
@@ -86,8 +84,9 @@
             const user = String(pick(m, ["user","username","display_name","nick","author","name"], ""));
             const text = String(pick(m, ["message","text","content","msg","body"], ""));
             const ts = pick(m, ["ts_ms","timestamp","ts","time","created_at"], Date.now());
+            const color = String(pick(m, ["color","user_color"], ""));
             const id = String(pick(m, ["id","message_id","msg_id","uuid"], platform + "|" + user + "|" + ts + "|" + text));
-            return { platform, user, text, ts, id, raw: m };
+            return { platform, user, text, ts, id, color, raw: m };
         }
 
         function remember(id) {
@@ -100,10 +99,6 @@
                 seen.delete(drop);
             }
             return true;
-        }
-
-        function scrollToBottom() {
-            try { LOG.scrollTop = LOG.scrollHeight; } catch (e) {}
         }
 
         function iconFor(platform) {
@@ -123,10 +118,26 @@
             if (!n.text) return;
             const line = document.createElement('div'); line.className = 'line';
             const icon = iconFor(n.platform); line.appendChild(icon);
-            const txt = document.createElement('div'); txt.className = 'text'; txt.textContent = `${n.user}: ${n.text}`; line.appendChild(txt);
+
+            const txt = document.createElement('div'); txt.className = 'text';
+            // username span (colored for twitch if available)
+            const userSpan = document.createElement('span');
+            userSpan.className = 'user';
+            userSpan.textContent = n.user;
+            if (n.platform && n.platform.indexOf('twitch') === 0 && n.color) {
+                try { userSpan.style.color = n.color; } catch (e) { /* ignore invalid color */ }
+            }
+            txt.appendChild(userSpan);
+
+            const msgSpan = document.createElement('span');
+            msgSpan.textContent = ': ' + n.text;
+            txt.appendChild(msgSpan);
+
+            line.appendChild(txt);
             LOG.appendChild(line);
             while (LOG.childNodes.length > MAX_LINES) LOG.removeChild(LOG.firstChild);
-            scrollToBottom();
+            // Smooth scroll new line into view
+            try { line.scrollIntoView({ behavior: 'smooth', block: 'end' }); } catch (e) { LOG.scrollTop = LOG.scrollHeight; }
         }
 
         async function fetchFirstWorkingEndpoint() {
@@ -152,7 +163,6 @@
         async function poll() {
             try {
                 const { url, data } = await fetchFirstWorkingEndpoint();
-                PAYLOAD.textContent = JSON.stringify(data, null, 2);
                 const msgs = extractMessages(data);
                 if (!msgs.length) return;
                 let serverNewestTs = 0; let added = 0;
@@ -162,14 +172,13 @@
                     if (!n.text) continue;
                     if (remember(n.id)) { addLine(n); added++; }
                 }
-                if (added > 0) scrollToBottom();
-                // removed reload/localStorage logic — DOM updates are sufficient
+                // no page reload; DOM updates with smooth scroll are used
             } catch (e) {
                 console.error('chat poll error:', e);
             }
         }
 
-        (async () => { await preloadIcons(); window.addEventListener('load', () => scrollToBottom()); poll(); setInterval(poll, POLL_MS); })();
+        (async () => { await preloadIcons(); window.addEventListener('load', () => { if (LOG.lastElementChild) LOG.lastElementChild.scrollIntoView(); }); poll(); setInterval(poll, POLL_MS); })();
     </script>
 </body>
 </html>

@@ -64,6 +64,7 @@ nlohmann::json ChatAggregator::RecentJson(size_t limit) const
             {"message", m.message},
             {"ts_ms", m.ts_ms},
             {"id", id},
+            {"color", m.color}
         });
     }
     return out;

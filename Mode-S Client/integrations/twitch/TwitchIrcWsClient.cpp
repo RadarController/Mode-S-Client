@@ -203,10 +203,13 @@ void TwitchIrcWsClient::worker(std::string oauth, std::string nick, std::string 
             std::string msg = rest.substr(msgPos + 2);
 
             std::string user = "unknown";
+            std::string userColor;
             if (!tagsPart.empty()) {
                 auto tags = ParseTags(tagsPart);
                 auto it = tags.find("display-name");
                 if (it != tags.end() && !it->second.empty()) user = it->second;
+                auto itc = tags.find("color");
+                if (itc != tags.end() && !itc->second.empty()) userColor = itc->second;
             }
             else {
                 // fallback: parse nick from prefix
@@ -222,6 +225,7 @@ void TwitchIrcWsClient::worker(std::string oauth, std::string nick, std::string 
                 m.platform = "twitch";
                 m.user = user;
                 m.message = msg;
+                m.color = userColor; // may be empty
                 m.ts_ms = NowMs();
                 m_chat->Add(std::move(m));
             }
