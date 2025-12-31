@@ -24,6 +24,7 @@
 #include "resource.h"
 #include "AppConfig.h"
 #include "AppState.h"
+#include "chat/ChatAggregator.h"
 #include "twitch/TwitchHelixService.h"
 #include "twitch/TwitchIrcWsClient.h"
 #include "tiktok/TikTokFollowersService.h"
@@ -666,6 +667,7 @@ static bool EditTwitchSettingsModal(HWND parent, TwitchSettingsDraft& draft)
 // --------------------------- Platform start helpers -------------------------
 static bool StartOrRestartTikTokSidecar(TikTokSidecar& tiktok,
     AppState& state,
+    ChatAggregator& chat,
     HWND hwndMain,
     HWND hwndLog,
     HWND hTikTokEdit)
@@ -721,7 +723,7 @@ static bool StartOrRestartTikTokSidecar(TikTokSidecar& tiktok,
             c.message = j.value("message", "");
             double ts = j.value("ts", 0.0);
             c.ts_ms = (std::int64_t)(ts * 1000.0);
-            state.add_chat(std::move(c));
+            chat.Add(std::move(c));
         }
         // NEW: primary stats event from the updated sidecar
         else if (type == "tiktok.stats") {
@@ -757,6 +759,7 @@ static bool StartOrRestartTikTokSidecar(TikTokSidecar& tiktok,
 
 static bool StartOrRestartTwitchChat(TwitchIrcWsClient& twitch,
     AppState& state,
+    ChatAggregator& chat,
     HWND hwndLog,
     HWND hTwitchEdit)
 {
@@ -782,7 +785,7 @@ static bool StartOrRestartTwitchChat(TwitchIrcWsClient& twitch,
             c.user = user;
             c.message = message;
             c.ts_ms = (std::int64_t)(time(nullptr) * 1000);
-            state.add_chat(std::move(c));
+            chat.Add(std::move(c));
         });
 
     if (ok) {
@@ -993,6 +996,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     static AppConfig config;
 
     static AppState state;
+    static ChatAggregator chat;
     static TikTokSidecar tiktok;
     static TwitchIrcWsClient twitch;
     static std::thread serverThread;
@@ -1183,7 +1187,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 });
 
             svr.Get("/api/chat", [&](const httplib::Request&, httplib::Response& res) {
-                auto j = state.chat_json();
+                auto j = chat.RecentJson(200);
                 res.set_content(j.dump(2), "application/json; charset=utf-8");
                 });
 
@@ -1387,12 +1391,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         }
 
         if (id == IDC_START_TIKTOK || id == IDC_RESTART_TIKTOK) {
-            StartOrRestartTikTokSidecar(tiktok, state, hwnd, gLog, hTikTok);
+            StartOrRestartTikTokSidecar(tiktok, state, chat, hwnd, gLog, hTikTok);
             return 0;
         }
 
         if (id == IDC_START_TWITCH || id == IDC_RESTART_TWITCH) {
-            StartOrRestartTwitchChat(twitch, state, gLog, hTwitch);
+            StartOrRestartTwitchChat(twitch, state, chat, gLog, hTwitch);
             return 0;
         }
 
