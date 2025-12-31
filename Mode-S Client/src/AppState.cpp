@@ -5,13 +5,6 @@ std::int64_t AppState::now_ms() {
     return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
 }
 
-void AppState::add_chat(ChatMessage msg) {
-    std::lock_guard<std::mutex> lk(mtx_);
-    if (msg.ts_ms == 0) msg.ts_ms = now_ms();
-    chat_.push_back(std::move(msg));
-    while (chat_.size() > 200) chat_.pop_front();
-}
-
 std::vector<ChatMessage> AppState::recent_chat() const {
     std::lock_guard<std::mutex> lk(mtx_);
     return std::vector<ChatMessage>(chat_.begin(), chat_.end());

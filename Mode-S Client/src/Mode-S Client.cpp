@@ -682,6 +682,7 @@ static bool EditTwitchSettingsModal(HWND parent, TwitchSettingsDraft& draft)
 // --------------------------- Platform start helpers -------------------------
 static bool StartOrRestartTikTokSidecar(TikTokSidecar& tiktok,
     AppState& state,
+    ChatAggregator& chat,
     HWND hwndMain,
     HWND hwndLog,
     HWND hTikTokEdit)
@@ -706,8 +707,8 @@ static bool StartOrRestartTikTokSidecar(TikTokSidecar& tiktok,
 
     bool ok = tiktok.start(L"python", sidecarPath, [&](const nlohmann::json& j) {
         std::string type = j.value("type", "");
+        std::string msg = j.value("message", "");
         if (type.rfind("tiktok.", 0) == 0) {
-            std::string msg = j.value("message", "");
             std::string extra;
             if (!msg.empty()) extra = " | " + msg;
             LogLine(ToW(("TIKTOK: " + type + extra)));
@@ -737,7 +738,8 @@ static bool StartOrRestartTikTokSidecar(TikTokSidecar& tiktok,
             c.message = j.value("message", "");
             double ts = j.value("ts", 0.0);
             c.ts_ms = (std::int64_t)(ts * 1000.0);
-            state.add_chat(std::move(c));
+            // Push into aggregator instead of AppState
+            chat.Add(std::move(c));
         }
         // NEW: primary stats event from the updated sidecar
         else if (type == "tiktok.stats") {
@@ -760,7 +762,7 @@ static bool StartOrRestartTikTokSidecar(TikTokSidecar& tiktok,
             state.set_tiktok_viewers(j.value("viewers", 0));
             if (hwndMain) PostMessageW(hwndMain, WM_APP + 41, 0, 0);
         }
-        });
+    });
 
     if (ok) {
         if (hwndLog) LogLine(L"TikTok sidecar started/restarted.");
@@ -768,46 +770,6 @@ static bool StartOrRestartTikTokSidecar(TikTokSidecar& tiktok,
     else {
         if (hwndLog) LogLine(L"ERROR: Could not start TikTok sidecar. Check Python + TikTokLive install.");
     }
-    return ok;
-}
-
-static bool StartOrRestartTwitchChat(TwitchIrcWsClient& twitch,
-    AppState& state,
-    HWND hwndLog,
-    HWND hTwitchEdit)
-{
-    std::string raw = ToUtf8(GetWindowTextWString(hTwitchEdit));
-    std::string channel = SanitizeTwitchLogin(raw);
-    SetWindowTextW(hTwitchEdit, ToW(channel).c_str());
-
-    if (channel.empty()) {
-        if (hwndLog) LogLine(L"Twitch login is empty. Enter it first.");
-        return false;
-    }
-
-    twitch.stop();
-
-    int suffix = 10000 + (GetTickCount() % 50000);
-    std::string nick = "justinfan" + std::to_string(suffix);
-
-    bool ok = twitch.start("SCHMOOPIIE", nick, channel,
-        [&](const std::string& user, const std::string& message) {
-            LogLine(ToW("TWITCH: " + user + " | " + message));
-            ChatMessage c;
-            c.platform = "Twitch";
-            c.user = user;
-            c.message = message;
-            c.ts_ms = (std::int64_t)(time(nullptr) * 1000);
-            state.add_chat(std::move(c));
-        });
-
-    if (ok) {
-        if (hwndLog) LogLine(L"Twitch chat started/restarted.");
-    }
-    else {
-        if (hwndLog) LogLine(L"ERROR: Could not start Twitch chat.");
-    }
-
     return ok;
 }
 
@@ -1252,12 +1214,13 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         }
 
         if (id == IDC_START_TIKTOK || id == IDC_RESTART_TIKTOK) {
-            StartOrRestartTikTokSidecar(tiktok, state, hwnd, gLog, hTikTok);
+            StartOrRestartTikTokSidecar(tiktok, state, chat, hwnd, gLog, hTikTok);
             return 0;
         }
 
         if (id == IDC_START_TWITCH || id == IDC_RESTART_TWITCH) {
-            StartOrRestartTwitchChat(twitch, state, gLog, hTwitch);
+            // Use overload that sinks directly into ChatAggregator
+            twitch.start("SCHMOOPIIE", std::string("justinfan" + std::to_string(10000 + (GetTickCount() % 50000))), SanitizeTwitchLogin(ToUtf8(GetWindowTextWString(hTwitch))), chat);
             return 0;
         }
 

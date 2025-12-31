@@ -37,6 +37,7 @@ public:
 
 private:
     void RegisterRoutes();
+    void ApplyOverlayTokens(std::string& html);
 
     AppState& state_;
     ChatAggregator& chat_;

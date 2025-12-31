@@ -5,12 +5,21 @@
 #include <unordered_map>
 #include <vector>
 #include <algorithm>
+#include <chrono>
+
+#include "chat/ChatAggregator.h"
 
 #pragma comment(lib, "ws2_32.lib")
 
 // We use WinHTTP WebSocket (built into Windows) to avoid extra libs.
 #include <winhttp.h>
 #pragma comment(lib, "winhttp.lib")
+
+static uint64_t NowMs() {
+    return (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()
+    ).count();
+}
 
 static std::wstring ToW(const std::string& s) {
     if (s.empty()) return L"";
@@ -55,10 +64,34 @@ bool TwitchIrcWsClient::start(const std::string& oauth_token_with_oauth_prefix,
     OnPrivMsg cb) {
     if (m_running.load()) return false;
     if (oauth_token_with_oauth_prefix.empty() || nick.empty() || channel.empty()) return false;
+    m_chat = nullptr;
     m_running.store(true);
     m_thread = std::thread(&TwitchIrcWsClient::worker, this,
         oauth_token_with_oauth_prefix, nick, channel, std::move(cb));
     return true;
+}
+
+bool TwitchIrcWsClient::start(const std::string& oauth_token_with_oauth_prefix,
+    const std::string& nick,
+    const std::string& channel,
+    ChatAggregator& chat) {
+
+    // Wrap the callback API and push incoming messages into ChatAggregator
+    m_chat = &chat;
+    {
+        std::wstringstream ss;
+        ss << L"TWITCH: aggregator ptr=0x" << std::hex << (uintptr_t)m_chat << L"\n";
+        OutputDebugStringW(ss.str().c_str());
+    }
+    return start(oauth_token_with_oauth_prefix, nick, channel,
+        [&chat](const std::string& user, const std::string& message) {
+            ChatMessage m{};
+            m.platform = "twitch";
+            m.user = user;
+            m.message = message;
+            m.ts_ms = NowMs();
+            chat.Add(std::move(m));
+        });
 }
 
 void TwitchIrcWsClient::worker(std::string oauth, std::string nick, std::string channel, OnPrivMsg cb) {
@@ -184,6 +217,14 @@ void TwitchIrcWsClient::worker(std::string oauth, std::string nick, std::string 
                 }
             }
 
+            if (m_chat) {
+                ChatMessage m{};
+                m.platform = "twitch";
+                m.user = user;
+                m.message = msg;
+                m.ts_ms = NowMs();
+                m_chat->Add(std::move(m));
+            }
             if (cb) cb(user, msg);
         }
 

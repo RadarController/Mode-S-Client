@@ -28,6 +28,9 @@ public:
     // Safe to call from any thread.
     nlohmann::json RecentJson(size_t limit = 100) const;
 
+    // Current number of buffered messages.
+    size_t Size() const;
+
     void Clear();
 
 private:

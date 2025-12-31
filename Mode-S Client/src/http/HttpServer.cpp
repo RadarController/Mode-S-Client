@@ -23,13 +23,16 @@ static std::string Trim(const std::string& s) {
     return s.substr(a, b-a);
 }
 
-static void ReplaceAll(std::string& s, const std::string& from, const std::string& to) {
-    if (from.empty()) return;
+static bool ReplaceAll(std::string& s, const std::string& from, const std::string& to) {
+    if (from.empty()) return false;
+    bool changed = false;
     size_t pos = 0;
-    while ((pos = s.find(from, pos)) != std::string::npos) {
+while ((pos = s.find(from, pos)) != std::string::npos) {
         s.replace(pos, from.size(), to);
         pos += to.size();
-    }
+            changed = true;
+}
+    return changed;
 }
 
 static std::string ReadFileUtf8(const std::filesystem::path& p) {
@@ -111,6 +114,69 @@ void HttpServer::Stop() {
     svr_.reset();
 }
 
+// Inserts `insert` right after the first occurrence of `needle`.
+// Returns true if inserted.
+static bool InsertAfterFirst(std::string& s, const std::string& needle, const std::string& insert)
+{
+    const size_t pos = s.find(needle);
+    if (pos == std::string::npos) return false;
+    s.insert(pos + needle.size(), insert);
+    return true;
+}
+
+// Inserts `insert` right before the first occurrence of `needle`.
+// Returns true if inserted.
+static bool InsertBeforeFirst(std::string& s, const std::string& needle, const std::string& insert)
+{
+    const size_t pos = s.find(needle);
+    if (pos == std::string::npos) return false;
+    s.insert(pos, insert);
+    return true;
+}
+
+void HttpServer::ApplyOverlayTokens(std::string& html)
+{
+    // Default font: Inter (can be made configurable later)
+    const std::string googleLink =
+        "<link rel=\"preconnect\" href=\"https://fonts.googleapis.com\">"
+        "<link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin>"
+        "<link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap\" rel=\"stylesheet\">";
+
+    const std::string fontStack =
+        "Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
+
+    const std::string shadow =
+        (config_.overlay_text_shadow ? "text-shadow: 0 2px 12px rgba(0,0,0,.65);" : "");
+
+    // 1) Ensure the Google font link exists (insert it once if missing)
+    // Try common insertion points.
+    if (html.find("fonts.googleapis.com") == std::string::npos)
+    {
+        if (!InsertAfterFirst(html, "<head>", googleLink))
+        {
+            // Fallback: try before </head>
+            InsertBeforeFirst(html, "</head>", googleLink);
+        }
+    }
+
+    // 2) Token replacement (support both token naming schemes) — NO RECURSION
+    // Add/adjust tokens to match what your overlay uses.
+    bool changed = false;
+
+    // Font stack tokens (example: old + new names)
+    changed |= ReplaceAll(html, "{{FONT_STACK}}", fontStack);
+    changed |= ReplaceAll(html, "{FONT_STACK}", fontStack);
+
+    // Text shadow style tokens
+    changed |= ReplaceAll(html, "{{TEXT_SHADOW_STYLE}}", shadow);
+    changed |= ReplaceAll(html, "{TEXT_SHADOW_STYLE}", shadow);
+
+    // If you also have placeholders like --font-stack in CSS, you can do:
+    // changed |= ReplaceAll(html, "%%FONT_STACK%%", fontStack);
+
+    (void)changed; // keep if you don't use it; helps debugging if you later add a loop
+}
+
 void HttpServer::RegisterRoutes() {
     auto& svr = *svr_;
 
@@ -151,6 +217,25 @@ void HttpServer::RegisterRoutes() {
         // Prefer aggregator as source of truth
         json msgs = chat_.RecentJson(limit);
 
+        // If aggregator is empty (adapters write into AppState), fall back to AppState chat JSON.
+        if (!msgs.is_array() || msgs.empty()) {
+            try {
+                json s = state_.chat_json();
+                // s is an array of chat messages (oldest->newest). Return only the last `limit` messages.
+                if (s.is_array()) {
+                    if ((int)s.size() > limit) {
+                        json slice = json::array();
+                        for (size_t i = s.size() - limit; i < s.size(); ++i) slice.push_back(s[i]);
+                        msgs = std::move(slice);
+                    } else {
+                        msgs = std::move(s);
+                    }
+                }
+            } catch (...) {
+                // ignore and keep msgs as-is
+            }
+        }
+
         json out;
         out["ts_ms"] = (long long)std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()
@@ -162,6 +247,46 @@ void HttpServer::RegisterRoutes() {
 
     svr.Get("/api/chat/recent", handle_chat_recent);
     svr.Get("/api/chat", handle_chat_recent);
+
+
+// --- API: chat diagnostics ---
+// Returns address of the ChatAggregator instance and current buffered count.
+svr.Get("/api/chat/diag", [&](const httplib::Request&, httplib::Response& res) {
+    json out;
+    out["chat_ptr"] = (uint64_t)(uintptr_t)(&chat_);
+    out["count"] = (long long)chat_.Size();
+    // Include AppState chat count as well (some adapters write into AppState)
+    try {
+        auto v = state_.recent_chat();
+        out["state_count"] = (long long)v.size();
+    } catch (...) {
+        out["state_count"] = 0;
+    }
+    out["ts_ms"] = (long long)std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()
+    ).count();
+    res.set_content(out.dump(2), "application/json; charset=utf-8");
+});
+
+    // --- API: chat test inject (debug) ---
+// Example:
+//   /api/chat/test?platform=twitch&user=Test&message=Hello
+    svr.Get("/api/chat/test", [&](const httplib::Request& req, httplib::Response& res) {
+        ChatMessage m{};
+        m.platform = req.has_param("platform") ? req.get_param_value("platform") : "test";
+        m.user = req.has_param("user") ? req.get_param_value("user") : "Test";
+        m.message = req.has_param("message") ? req.get_param_value("message") : "Hello";
+
+        m.ts_ms = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()
+        ).count();
+
+        // Add into aggregator for overlays that read it
+        chat_.Add(m);
+        // Backward AppState sink removed: ChatAggregator is now the source-of-truth for overlays.
+
+        res.set_content(R"({"ok":true})", "application/json; charset=utf-8");
+        });
 
     // --- Overlay: special chat.html injection ---
     svr.Get("/overlay/chat.html", [&](const httplib::Request&, httplib::Response& res) {
@@ -186,11 +311,7 @@ void HttpServer::RegisterRoutes() {
         }
 
         std::string shadow = config_.overlay_text_shadow ? "0 2px 10px rgba(0,0,0,.55)" : "none";
-
-        ReplaceAll(html, "%%GOOGLE_FONTS_LINK%%", googleLink);
-        ReplaceAll(html, "%%FONT_FAMILY%%", fontStack);
-        ReplaceAll(html, "%%FONT_SIZE%%", std::to_string(config_.overlay_font_size));
-        ReplaceAll(html, "%%TEXT_SHADOW%%", shadow);
+        ApplyOverlayTokens(html);
 
         res.set_content(html, "text/html; charset=utf-8");
     });
@@ -228,6 +349,10 @@ void HttpServer::RegisterRoutes() {
         }
 
         auto bytes = ReadFileUtf8(p);
+        // Apply overlay token substitution for HTML files
+        if (rel.size() >= 5 && rel.substr(rel.size() - 5) == ".html") {
+            ApplyOverlayTokens(bytes);
+        }
         res.set_content(std::move(bytes), ContentTypeFor(rel));
     });
 

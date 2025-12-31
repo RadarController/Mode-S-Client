@@ -1,86 +1,146 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
     <meta charset="utf-8" />
-
-    <!-- Injected Google Font link (or empty) -->
-    %%GOOGLE_FONT_LINK%%
-
-    <style>
-        :root {
-            --chat-font: %%FONT_STACK%%;
-            --chat-size: %%FONT_SIZE%%px;
-            --chat-shadow: %%TEXT_SHADOW%%;
-        }
-
-        body {
-            margin: 0;
-            background: transparent;
-            font-family: var(--chat-font);
-        }
-
-        #chat {
-            padding: 12px;
-            font-size: var(--chat-size);
-            color: white;
-            text-shadow: var(--chat-shadow);
-        }
-
-        #metrics {
-            padding: 12px;
-            font-size: var(--chat-size);
-            color: white;
-            text-shadow: var(--chat-shadow);
-        }
-
-        .msg {
-            margin-bottom: 8px;
-        }
-
-        .p {
-            opacity: .85;
-            margin-right: 8px;
-        }
-
-        .u {
-            font-weight: 700;
-            margin-right: 8px;
-        }
-    </style>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Chat</title>
 </head>
 <body>
-    <div id="metrics"></div>
-    <div id="chat"></div>
+    <div id="status">connecting…</div>
+    <div id="log"></div>
+    <pre id="payload" style="display:none"></pre>
 
     <script>
-        const metricsEl = document.getElementById('metrics');
-        const chatEl = document.getElementById('chat');
-        let lastLen = 0;
+        const STATUS = document.getElementById("status");
+        const LOG = document.getElementById("log");
+        const PAYLOAD = document.getElementById("payload");
 
-        async function tick() {
-            try {
-                const m = await (await fetch('/api/metrics')).json();
-                metricsEl.textContent = `Viewers: ${m.total_viewers}  |  Followers: ${m.total_followers}`;
+        const ENDPOINTS = [
+            "/api/chat?limit=200",
+            "/api/chat/recent?limit=200",
+            "/api/chat",
+            "/api/chat/recent"
+        ];
 
-                // New API shape: { ts_ms, messages: [...] }
-                const data = await (await fetch('/api/chat/recent?limit=200')).json();
-                const chat = (data && Array.isArray(data.messages)) ? data.messages : [];
-                if (chat.length !== lastLen) {
-                    lastLen = chat.length;
-                    chatEl.innerHTML = '';
-                    const recent = chat.slice(-30);
-                    for (const c of recent) {
-                        const d = document.createElement('div');
-                        d.className = 'msg';
-                        d.innerHTML = `<span class="p">[${c.platform}]</span><span class="u">${c.user}</span>${c.message}`;
-                        chatEl.appendChild(d);
-                    }
-                    window.scrollTo(0, document.body.scrollHeight);
-                }
-            } catch (e) { }
+        const POLL_MS = 500;
+        const MAX_LINES = 250;
+
+        // Dedupe because "recent" endpoints usually return a rolling window each poll.
+        const seen = new Set();
+        const seenQueue = [];
+        const SEEN_LIMIT = 5000;
+
+        function setStatus(s) { STATUS.textContent = s; }
+
+        function pick(obj, keys, fallback = "") {
+            if (!obj || typeof obj !== "object") return fallback;
+            for (const k of keys) {
+                const v = obj[k];
+                if (v !== undefined && v !== null && String(v).length) return v;
+            }
+            return fallback;
         }
-        setInterval(tick, 250);
-        tick();
+
+        function normalize(raw) {
+            // unwrap {data:{...}} if needed
+            const m = (raw && raw.data && typeof raw.data === "object") ? raw.data : raw;
+
+            const platform = String(pick(m, ["platform", "source", "service", "provider", "origin"], "chat")).toLowerCase();
+            const user = String(pick(m, ["user", "username", "display_name", "nick", "author", "name"], ""));
+            const text = String(pick(m, ["message", "text", "content", "msg", "body"], ""));
+            const ts = pick(m, ["ts_ms", "timestamp", "ts", "time", "created_at"], Date.now());
+
+            // If you don’t provide an id, create a stable-enough key
+            const id = String(pick(m, ["id", "message_id", "msg_id", "uuid"], platform + "|" + user + "|" + ts + "|" + text));
+
+            return { platform, user, text, ts, id, raw: m };
+        }
+
+        function remember(id) {
+            if (!id) return false;
+            if (seen.has(id)) return false;
+            seen.add(id);
+            seenQueue.push(id);
+            if (seenQueue.length > SEEN_LIMIT) {
+                const drop = seenQueue.shift();
+                seen.delete(drop);
+            }
+            return true;
+        }
+
+        function addLine(n) {
+            if (!n.text) return; // nothing to render
+
+            const line = document.createElement("div");
+            line.textContent = `[${(n.platform || "CHAT").toUpperCase()}] ${n.user}: ${n.text}`;
+            LOG.appendChild(line);
+
+            while (LOG.childNodes.length > MAX_LINES) {
+                LOG.removeChild(LOG.firstChild);
+            }
+        }
+
+        async function fetchFirstWorkingEndpoint() {
+            let lastErr = null;
+
+            for (const url of ENDPOINTS) {
+                try {
+                    const res = await fetch(url, { cache: "no-store" });
+                    if (!res.ok) throw new Error(`${url} -> HTTP ${res.status}`);
+                    const data = await res.json();
+                    return { url, data };
+                } catch (e) {
+                    lastErr = e;
+                }
+            }
+
+            throw lastErr || new Error("No endpoints tried");
+        }
+
+        function extractMessages(data) {
+            // Accept:
+            //  - { messages: [...] }
+            //  - [...] (array)
+            //  - { items: [...] }
+            if (Array.isArray(data)) return data;
+            if (data && Array.isArray(data.messages)) return data.messages;
+            if (data && Array.isArray(data.items)) return data.items;
+            return [];
+        }
+
+        async function poll() {
+            try {
+                const { url, data } = await fetchFirstWorkingEndpoint();
+
+                PAYLOAD.textContent = JSON.stringify(data, null, 2);
+                console.log("chat poll from:", url, data);
+
+                const msgs = extractMessages(data);
+
+                if (!msgs.length) {
+                    setStatus(`live (0 messages from ${url})`);
+                    return;
+                }
+
+                let added = 0;
+                for (const raw of msgs) {
+                    const n = normalize(raw);
+                    if (!n.text) continue;
+                    if (remember(n.id)) {
+                        addLine(n);
+                        added++;
+                    }
+                }
+
+                setStatus(`live (${added} new)`);
+            } catch (e) {
+                console.error("chat poll error:", e);
+                setStatus("error (retrying)");
+            }
+        }
+
+        poll();
+        setInterval(poll, POLL_MS);
     </script>
 </body>
 </html>

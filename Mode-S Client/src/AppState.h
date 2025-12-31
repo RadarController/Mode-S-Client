@@ -32,7 +32,6 @@ struct Metrics {
 
 class AppState {
 public:
-    void add_chat(ChatMessage msg);
     std::vector<ChatMessage> recent_chat() const;
 
     void set_tiktok_viewers(int v);
