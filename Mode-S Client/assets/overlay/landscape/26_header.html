@@ -13,33 +13,144 @@
     --text: rgba(233,238,247,.92);
     --muted: rgba(233,238,247,.70);
   }
-  html,body{width:100%;height:100%;margin:0;background:transparent;font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif;overflow:hidden;}
+
+  html,body{
+    width:100%;
+    height:100%;
+    margin:0;
+    background:transparent;
+    font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif;
+    overflow:hidden;
+  }
+
   .bar{
-    width:100%;height:100%;
-    display:flex;align-items:center;justify-content:space-between;
-    padding:0 18px;box-sizing:border-box;
+    width:100%;
+    height:100%;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:0 18px;
+    box-sizing:border-box;
     background:var(--panel);
-    backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+    backdrop-filter:blur(8px);
+    -webkit-backdrop-filter:blur(8px);
     border-bottom:1px solid var(--stroke);
     pointer-events:none;
   }
-  .left{display:flex;align-items:center;gap:12px;min-width:0;}
-  .badge{width:8px;height:8px;border-radius:50%;background:rgba(30,109,255,.95);box-shadow:0 0 0 3px rgba(30,109,255,.18);flex:0 0 auto;}
-  .title{font-weight:650;letter-spacing:.08em;text-transform:uppercase;font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:55vw;}
-  .sub{font-size:12px;color:var(--muted);white-space:nowrap;}
-  .right{display:flex;align-items:center;gap:14px;flex:0 0 auto;}
+
+  .left{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    min-width:0;
+  }
+
+  .badge{
+    width:8px;
+    height:8px;
+    border-radius:50%;
+    background:rgba(30,109,255,.95);
+    box-shadow:0 0 0 3px rgba(30,109,255,.18);
+    flex:0 0 auto;
+  }
+
+  .title{
+    font-weight:650;
+    letter-spacing:.08em;
+    text-transform:uppercase;
+    font-size:12px;
+    color:var(--text);
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    max-width:55vw;
+  }
+
+  .sub{
+    font-size:12px;
+    color:var(--muted);
+    white-space:nowrap;
+  }
+
+  .right{
+    display:flex;
+    align-items:center;
+    gap:14px;
+    flex:0 0 auto;
+  }
+
   .stat{
-    display:flex;align-items:center;gap:8px;
-    padding:6px 10px;border-radius:12px;
+    display:flex;
+    align-items:center;
+    gap:8px;
+    padding:6px 10px;
+    border-radius:12px;
     background:rgba(10,14,18,.35);
     border:1px solid rgba(255,255,255,.12);
-    font-size:11px;font-weight:600;color:var(--text);
-    white-space:nowrap;min-width:92px;justify-content:center;
+    font-size:11px;
+    font-weight:600;
+    color:var(--text);
+    white-space:nowrap;
+    min-width:92px;
+    justify-content:center;
   }
-  .dot{width:6px;height:6px;border-radius:50%;background:rgba(30,109,255,.9);}
-  .label{color:var(--muted);font-weight:650;letter-spacing:.08em;text-transform:uppercase;font-size:10px;margin-right:2px;}
+
+  .dot{
+    width:6px;
+    height:6px;
+    border-radius:50%;
+    background:rgba(30,109,255,.9);
+  }
+
+  .label{
+    color:var(--muted);
+    font-weight:650;
+    letter-spacing:.08em;
+    text-transform:uppercase;
+    font-size:10px;
+    margin-right:2px;
+  }
+
   .bump{animation:bump .22s ease-out;}
-  @keyframes bump{0%{transform:translateY(0)}45%{transform:translateY(-1px)}100%{transform:translateY(0)}}
+  @keyframes bump{
+    0%{transform:translateY(0)}
+    45%{transform:translateY(-1px)}
+    100%{transform:translateY(0)}
+  }
+
+  /* ===============================
+     < 1000px : stack stats below title
+     =============================== */
+  @media (max-width: 1000px) {
+    .bar{
+      flex-direction:column;
+      align-items:center;
+      gap:10px;
+      padding:10px 18px;
+    }
+
+    .left{
+      width:100%;
+      justify-content:center;
+      text-align:center;
+    }
+
+    .right{
+      width:100%;
+      justify-content:center; /* CENTER STATS */
+    }
+  }
+
+  /* ===============================
+     < 600px : stack stats vertically
+     =============================== */
+  @media (max-width: 600px) {
+    .right{
+      flex-direction:column;
+      align-items:center;
+      gap:8px;
+    }
+  }
 </style>
 </head>
 
@@ -47,21 +158,30 @@
 <div class="bar">
   <div class="left">
     <span class="badge"></span>
-    <div class="title">MANCHESTER ATC STREAM</div>
-    <div class="sub">MANCHESTER TMA</div>
+    <div class="title">WELCOME TO THE END OF THE YEAR!</div>
+    <div class="sub">EDINBURGH | EGPH</div>
   </div>
 
   <div class="right">
-    <div class="stat"><span class="dot"></span><span class="label">VIEWERS</span><span id="viewers">0</span></div>
-    <div class="stat"><span class="dot"></span><span class="label">FOLLOWERS</span><span id="followers">0</span></div>
-    <div class="stat"><span class="dot"></span><span class="label">AIRCRAFT</span><span id="aircraft">— / —</span></div>
+    <div class="stat">
+      <span class="dot"></span>
+      <span class="label">VIEWERS</span>
+      <span id="viewers">0</span>
+    </div>
+    <div class="stat">
+      <span class="dot"></span>
+      <span class="label">FOLLOWERS</span>
+      <span id="followers">0</span>
+    </div>
+    <div class="stat">
+      <span class="dot"></span>
+      <span class="label">AIRCRAFT</span>
+      <span id="aircraft">— / —</span>
+    </div>
   </div>
 </div>
 
 <script>
-  // ===============================
-  // Mode-S Client /api/metrics
-  // ===============================
   const METRICS_URL = "/api/metrics";
   const POLL_MS = 1000;
 
@@ -81,16 +201,11 @@
 
   function makeAnimator(el){
     return {
-      el,
-      current: 0,
-      target: 0,
-      lastText: "",
+      el, current:0, target:0, lastText:"",
       set(n){ this.target = Math.max(0, toNum(n)); },
       tick(){
         const d = this.target - this.current;
-        if (Math.abs(d) < 0.05) this.current = this.target;
-        else this.current += d * 0.2;
-
+        this.current += Math.abs(d) < 0.05 ? d : d * 0.2;
         const txt = fmt(this.current);
         if (txt !== this.lastText){
           this.el.textContent = txt;
@@ -109,41 +224,32 @@
 
   function makePairAnimator(el){
     return {
-      el,
-      aCur: 0, aTgt: 0,
-      bCur: 0, bTgt: 0,
-      lastText: "",
-      connected: false,
-      set(a, b, connected){
-        this.connected = connected;
-        if (!connected) return;
-        this.aTgt = Math.max(0, toNum(a));
-        this.bTgt = Math.max(0, toNum(b));
+      el, aCur:0,aTgt:0,bCur:0,bTgt:0,lastText:"",connected:false,
+      set(a,b,c){
+        this.connected=c;
+        if (!c) return;
+        this.aTgt=Math.max(0,toNum(a));
+        this.bTgt=Math.max(0,toNum(b));
       },
       tick(){
         if (!this.connected){
-          if (this.lastText !== "— / —"){
-            this.el.textContent = "— / —";
-            this.lastText = "— / —";
+          if (this.lastText!=="— / —"){
+            this.el.textContent="— / —";
+            this.lastText="— / —";
           }
           return;
         }
-
-        let dA = this.aTgt - this.aCur;
-        let dB = this.bTgt - this.bCur;
-
-        this.aCur += Math.abs(dA) < 0.05 ? dA : dA * 0.2;
-        this.bCur += Math.abs(dB) < 0.05 ? dB : dB * 0.2;
-
-        const txt = `${fmt(this.aCur)} / ${fmt(this.bCur)}`;
-        if (txt !== this.lastText){
-          this.el.textContent = txt;
-          this.lastText = txt;
+        this.aCur += (this.aTgt-this.aCur)*0.2;
+        this.bCur += (this.bTgt-this.bCur)*0.2;
+        const txt=`${fmt(this.aCur)} / ${fmt(this.bCur)}`;
+        if (txt!==this.lastText){
+          this.el.textContent=txt;
+          this.lastText=txt;
         }
       },
-      bump(prevA, prevB){
+      bump(pa,pb){
         if (!this.connected) return;
-        if (prevA !== this.aTgt || prevB !== this.bTgt){
+        if (pa!==this.aTgt||pb!==this.bTgt){
           this.el.classList.remove("bump");
           void this.el.offsetWidth;
           this.el.classList.add("bump");
@@ -164,45 +270,25 @@
   })();
 
   async function poll(){
-    while (true){
+    while(true){
       try{
-        const r = await fetch(METRICS_URL, { cache: "no-store" });
-        if (!r.ok) throw new Error("http");
-
+        const r = await fetch(METRICS_URL,{cache:"no-store"});
+        if(!r.ok) throw 0;
         const j = await r.json();
 
-        {
-          const p = animViewers.target;
-          animViewers.set(j.total_viewers);
-          animViewers.bump(p);
-        }
-        {
-          const p = animFollowers.target;
-          animFollowers.set(j.total_followers);
-          animFollowers.bump(p);
-        }
+        let p;
+        p=animViewers.target; animViewers.set(j.total_viewers); animViewers.bump(p);
+        p=animFollowers.target; animFollowers.set(j.total_followers); animFollowers.bump(p);
 
-        {
-          const prevA = animAircraft.aTgt;
-          const prevB = animAircraft.bTgt;
-
-          const connected = j.euroscope_connected === true;
-          const a = j?.euroscope?.assumed_now ?? 0;
-          const b = j?.euroscope?.handled_session ?? 0;
-
-          animAircraft.set(a, b, connected);
-          animAircraft.bump(prevA, prevB);
-        }
-
-      } catch (e){
-        // keep last values if temporarily unavailable
-      }
+        const a=j?.euroscope?.assumed_now??0;
+        const b=j?.euroscope?.handled_session??0;
+        const c=j.euroscope_connected===true;
+        animAircraft.set(a,b,c);
+      }catch{}
       await sleep(POLL_MS);
     }
   }
-
   poll();
 </script>
-
 </body>
 </html>
