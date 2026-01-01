@@ -179,6 +179,8 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClInclude Include="integrations\tiktok\TikTokSidecar.h" />
     <ClInclude Include="integrations\twitch\TwitchHelixService.h" />
     <ClInclude Include="integrations\twitch\TwitchIrcWsClient.h" />
+    <ClInclude Include="integrations\youtube\YouTubeLiveChatService.h" />
+    <ClInclude Include="integrations\youtube\YouTubeSidecar.h" />
     <ClInclude Include="src\AppConfig.h" />
     <ClInclude Include="src\AppState.h" />
     <ClInclude Include="src\chat\ChatAggregator.h" />
@@ -196,6 +198,8 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClCompile Include="integrations\tiktok\TikTokSidecar.cpp" />
     <ClCompile Include="integrations\twitch\TwitchHelixService.cpp" />
     <ClCompile Include="integrations\twitch\TwitchIrcWsClient.cpp" />
+    <ClCompile Include="integrations\youtube\YouTubeLiveChatService.cpp" />
+    <ClCompile Include="integrations\youtube\YouTubeSidecar.cpp" />
     <ClCompile Include="src\AppState.cpp" />
     <ClCompile Include="src\chat\ChatAggregator.cpp" />
     <ClCompile Include="src\floating\FloatingChat.cpp" />
@@ -216,6 +220,7 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
       <RootFolder Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">sidecar</RootFolder>
       <RootFolder Condition="'$(Configuration)|$(Platform)'=='Release|x64'">sidecar</RootFolder>
     </None>
+    <None Include="scripts\sidecar\youtube_sidecar.py" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="assets\icons\radarcontrollermodesclient.ico" />

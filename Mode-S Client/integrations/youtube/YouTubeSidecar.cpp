@@ -1,10 +1,19 @@
-#include "TikTokSidecar.h"
+#include "YouTubeSidecar.h"
 #include <vector>
 
-TikTokSidecar::~TikTokSidecar() { stop(); }
+YouTubeSidecar::~YouTubeSidecar() { stop(); }
 
-bool TikTokSidecar::start(const std::wstring& pythonExe,
+bool YouTubeSidecar::start(const std::wstring& pythonExe,
     const std::wstring& scriptPath,
+    EventHandler onEvent)
+{
+    // Backward-compatible overload: no explicit config path.
+    return start(pythonExe, scriptPath, L"", std::move(onEvent));
+}
+
+bool YouTubeSidecar::start(const std::wstring& pythonExe,
+    const std::wstring& scriptPath,
+    const std::wstring& configPath,
     EventHandler onEvent)
 {
     stop();
@@ -25,6 +34,9 @@ bool TikTokSidecar::start(const std::wstring& pythonExe,
     si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
 
     std::wstring cmd = L"\"" + pythonExe + L"\" \"" + scriptPath + L"\"";
+    if (!configPath.empty()) {
+        cmd += L" \"" + configPath + L"\"";
+    }
     std::vector<wchar_t> cmdBuf(cmd.begin(), cmd.end());
     cmdBuf.push_back(L'\0');
 
@@ -60,7 +72,7 @@ bool TikTokSidecar::start(const std::wstring& pythonExe,
     return true;
 }
 
-void TikTokSidecar::stop()
+void YouTubeSidecar::stop()
 {
     if (!running_) return;
     running_ = false;
@@ -78,7 +90,7 @@ void TikTokSidecar::stop()
     if (reader_.joinable()) reader_.join();
 }
 
-void TikTokSidecar::reader_loop()
+void YouTubeSidecar::reader_loop()
 {
     std::string buffer;
     buffer.reserve(8192);

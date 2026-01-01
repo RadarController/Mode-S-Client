@@ -282,6 +282,17 @@ static std::string SanitizeTikTok(const std::string& input)
     return Trim(s);
 }
 
+
+static std::string SanitizeYouTubeHandle(const std::string& input)
+{
+    std::string s = Trim(input);
+    // YouTube handles are typically entered as "@handle" - strip leading @
+    s.erase(std::remove(s.begin(), s.end(), '@'), s.end());
+    // remove spaces (handles cannot contain spaces)
+    s.erase(std::remove_if(s.begin(), s.end(), [](unsigned char c){ return std::isspace(c) != 0; }), s.end());
+    return Trim(s);
+}
+
 static std::string SanitizeTwitchLogin(std::string s)
 {
     s = Trim(s);
@@ -295,6 +306,17 @@ static void UpdateTikTokButtons(HWND hTikTokEdit, HWND hStartBtn, HWND hRestartB
     if (!hTikTokEdit) return;
     auto raw = ToUtf8(GetWindowTextWString(hTikTokEdit));
     auto cleaned = SanitizeTikTok(raw);
+    BOOL enable = !cleaned.empty();
+    if (hStartBtn)   EnableWindow(hStartBtn, enable);
+    if (hRestartBtn) EnableWindow(hRestartBtn, enable);
+}
+
+
+static void UpdateYouTubeButtons(HWND hYouTubeEdit, HWND hStartBtn, HWND hRestartBtn)
+{
+    if (!hYouTubeEdit) return;
+    auto raw = ToUtf8(GetWindowTextWString(hYouTubeEdit));
+    auto cleaned = SanitizeYouTubeHandle(raw);
     BOOL enable = !cleaned.empty();
     if (hStartBtn)   EnableWindow(hStartBtn, enable);
     if (hRestartBtn) EnableWindow(hRestartBtn, enable);
@@ -793,6 +815,64 @@ static bool StartOrRestartTikTokSidecar(TikTokSidecar& tiktok,
     return ok;
 }
 
+
+static bool StartOrRestartYouTubeSidecar(TikTokSidecar& youtube,
+    AppState& state,
+    HWND hwndMain,
+    HWND hwndLog,
+    HWND hYouTubeEdit)
+{
+    std::string raw = ToUtf8(GetWindowTextWString(hYouTubeEdit));
+    std::string cleaned = SanitizeYouTubeHandle(raw);
+    SetWindowTextW(hYouTubeEdit, ToW(cleaned).c_str());
+
+    if (cleaned.empty()) {
+        if (hwndLog) LogLine(L"YouTube handle is empty. Enter it first (e.g. timthetatman).");
+        return false;
+    }
+
+    youtube.stop();
+
+    std::wstring exeDir = GetExeDir();
+    std::wstring sidecarPath = exeDir + L"\\sidecar\\youtube_sidecar.py";
+
+    LogLine((L"Starting python sidecar: " + sidecarPath));
+
+    bool ok = youtube.start(L"python", sidecarPath, [&](const nlohmann::json& j) {
+        std::string type = j.value("type", "");
+        if (type.rfind("youtube.", 0) == 0) {
+            std::string msg = j.value("message", "");
+            std::string extra;
+            if (!msg.empty()) extra = " | " + msg;
+            LogLine(ToW(("YOUTUBE: " + type + extra)));
+        }
+
+        if (type == "youtube.stats") {
+            bool live = j.value("live", false);
+            int viewers = j.value("viewers", 0);
+            int followers = j.value("followers", 0);
+
+            state.set_youtube_live(live);
+            state.set_youtube_viewers(viewers);
+            state.set_youtube_followers(followers);
+
+            if (!live) state.set_youtube_viewers(0);
+
+            // Refresh UI (which pulls /api/metrics and updates widgets)
+            if (hwndMain) PostMessageW(hwndMain, WM_APP + 41, 0, 0);
+        }
+    });
+
+    if (ok) {
+        LogLine(L"YOUTUBE: started/restarted sidecar.");
+    }
+    else {
+        LogLine(L"YOUTUBE: failed to start sidecar.");
+    }
+
+    return ok;
+}
+
 // --------------------------- Clipboard helper -------------------------------
 static void CopyLogToClipboard(HWND hwndOwner)
 {
@@ -1027,6 +1107,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     static AppState state;
     static ChatAggregator chat;
     static TikTokSidecar tiktok;
+    static TikTokSidecar youtube;
     static TwitchIrcWsClient twitch;
     static std::unique_ptr<HttpServer> gHttp;
     static std::thread metricsThread;
@@ -1111,8 +1192,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
         hStartYouTubeBtn = CreateWindowW(L"BUTTON", L"Start", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_START_YOUTUBE, nullptr, nullptr);
         hRestartYouTubeBtn = CreateWindowW(L"BUTTON", L"Restart", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_RESTART_YOUTUBE, nullptr, nullptr);
-        EnableWindow(hStartYouTubeBtn, FALSE);
-        EnableWindow(hRestartYouTubeBtn, FALSE);
+        UpdateYouTubeButtons(hYouTube, hStartYouTubeBtn, hRestartYouTubeBtn);
 
         hHint = CreateWindowW(L"STATIC", L"", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
 
@@ -1266,6 +1346,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             return 0;
         }
 
+
+if (HIWORD(wParam) == EN_CHANGE && id == IDC_YOUTUBE_EDIT) {
+    UpdateYouTubeButtons(hYouTube, hStartYouTubeBtn, hRestartYouTubeBtn);
+    return 0;
+}
+
         if (id == IDC_START_TIKTOK || id == IDC_RESTART_TIKTOK) {
             StartOrRestartTikTokSidecar(tiktok, state, chat, hwnd, gLog, hTikTok);
             return 0;
@@ -1290,10 +1376,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             return 0;
         }
 
-        if (id == IDC_START_YOUTUBE || id == IDC_RESTART_YOUTUBE) {
-            LogLine(L"YouTube support is UI-ready but not implemented yet.");
-            return 0;
-        }
+        
+if (id == IDC_START_YOUTUBE || id == IDC_RESTART_YOUTUBE) {
+    StartOrRestartYouTubeSidecar(youtube, state, hwnd, gLog, hYouTube);
+    return 0;
+}
+
 
         if (id == IDC_TIKTOK_COOKIES) {
             TikTokCookiesDraft draft;
@@ -1335,6 +1423,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             SetWindowTextW(hTwitch, ToW(config.twitch_login).c_str());
 
             config.youtube_handle = ToUtf8(GetWindowTextWString(hYouTube));
+            config.youtube_handle = Trim(config.youtube_handle);
+            config.youtube_handle = SanitizeYouTubeHandle(config.youtube_handle);
+            SetWindowTextW(hYouTube, ToW(config.youtube_handle).c_str());
+            UpdateYouTubeButtons(hYouTube, hStartYouTubeBtn, hRestartYouTubeBtn);
 
             // Overlay Style UI removed (will be redesigned on a separate tab/page later)
 
@@ -1428,6 +1520,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
         // Stop platform services first (they may still be producing events)
         tiktok.stop();
+        youtube.stop();
         twitch.stop();
 
         // Stop HTTP server cleanly (stop + join)
