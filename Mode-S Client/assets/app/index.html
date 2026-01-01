@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RadarController — Mode‑S Client</title>
+  <link rel="stylesheet" href="/app/app.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand__mark">RC</div>
+        <div class="brand__text">
+          <div class="brand__title">RadarController</div>
+          <div class="brand__subtitle">Mode‑S Client</div>
+        </div>
+      </div>
+
+      <div class="topbar__metrics" id="topMetrics">
+        <div class="pill"><span class="pill__k">Viewers</span><span class="pill__v" id="mViewers">—</span></div>
+        <div class="pill"><span class="pill__k">Followers</span><span class="pill__v" id="mFollowers">—</span></div>
+        <div class="pill"><span class="pill__k">Aircraft</span><span class="pill__v" id="mAircraft">—</span></div>
+        <div class="pill pill--status"><span class="dot" id="mDot"></span><span class="pill__k">Status</span><span class="pill__v" id="mStatus">Idle</span></div>
+      </div>
+
+      <div class="topbar__actions">
+        <button class="btn btn--primary" id="btnSave">Save Settings</button>
+        <button class="btn btn--primary" id="btnOpenChat">Open Chat</button>
+      </div>
+    </header>
+
+    <main class="grid">
+      <section class="card card--wide">
+        <div class="card__head">
+          <div class="card__title">Platforms</div>
+          <div class="card__hint">Start/Restart and Stop each platform. Settings are saved locally.</div>
+        </div>
+
+        <div class="platforms">
+          <div class="platform" data-platform="tiktok">
+            <div class="platform__head">
+              <img class="platform__icon" src="/assets/icons/tiktok-icon.svg" alt="TikTok" />
+              <div class="platform__meta">
+                <div class="platform__name">TikTok</div>
+                <div class="platform__sub" id="tiktokState">Disconnected</div>
+              </div>
+              <div class="platform__right">
+                <span class="badge" id="tiktokBadge">Offline</span>
+              </div>
+            </div>
+
+            <div class="platform__body">
+              <label class="field">
+                <span class="field__k">Username</span>
+                <div class="field__row">
+                  <input class="input" id="tiktokUser" placeholder="@username" />
+                  <button class="btn btn--ghost" data-action="set">SET</button>
+                </div>
+              </label>
+
+              <div class="platform__stats">
+                <div class="stat"><div class="stat__k">Viewers</div><div class="stat__v" id="tiktokViewers">—</div></div>
+                <div class="stat"><div class="stat__k">Followers</div><div class="stat__v" id="tiktokFollowers">—</div></div>
+              </div>
+
+              <div class="platform__actions">
+                <button class="btn btn--primary" data-action="start">Start/Restart</button>
+                <button class="btn btn--danger" data-action="stop" disabled>Stop</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="platform" data-platform="twitch">
+            <div class="platform__head">
+              <img class="platform__icon" src="/assets/icons/twitch-icon.svg" alt="Twitch" />
+              <div class="platform__meta">
+                <div class="platform__name">Twitch</div>
+                <div class="platform__sub" id="twitchState">Disconnected</div>
+              </div>
+              <div class="platform__right">
+                <span class="badge" id="twitchBadge">Offline</span>
+              </div>
+            </div>
+
+            <div class="platform__body">
+              <label class="field">
+                <span class="field__k">Channel</span>
+                <div class="field__row">
+                  <input class="input" id="twitchUser" placeholder="channel_name" />
+                  <button class="btn btn--ghost" data-action="set">SET</button>
+                </div>
+              </label>
+
+              <div class="platform__stats">
+                <div class="stat"><div class="stat__k">Viewers</div><div class="stat__v" id="twitchViewers">—</div></div>
+                <div class="stat"><div class="stat__k">Followers</div><div class="stat__v" id="twitchFollowers">—</div></div>
+              </div>
+
+              <div class="platform__actions">
+                <button class="btn btn--primary" data-action="start">Start/Restart</button>
+                <button class="btn btn--danger" data-action="stop" disabled>Stop</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="platform" data-platform="youtube">
+            <div class="platform__head">
+              <img class="platform__icon" src="/assets/icons/youtube-icon.svg" alt="YouTube" />
+              <div class="platform__meta">
+                <div class="platform__name">YouTube</div>
+                <div class="platform__sub" id="youtubeState">Disconnected</div>
+              </div>
+              <div class="platform__right">
+                <span class="badge" id="youtubeBadge">Offline</span>
+              </div>
+            </div>
+
+            <div class="platform__body">
+              <label class="field">
+                <span class="field__k">Channel ID</span>
+                <div class="field__row">
+                  <input class="input" id="youtubeUser" placeholder="UC..." />
+                  <button class="btn btn--ghost" data-action="set">SET</button>
+                </div>
+              </label>
+
+              <div class="platform__stats">
+                <div class="stat"><div class="stat__k">Viewers</div><div class="stat__v" id="youtubeViewers">—</div></div>
+                <div class="stat"><div class="stat__k">Subscribers</div><div class="stat__v" id="youtubeFollowers">—</div></div>
+              </div>
+
+              <div class="platform__actions">
+                <button class="btn btn--primary" data-action="start">Start/Restart</button>
+                <button class="btn btn--danger" data-action="stop" disabled>Stop</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card__head">
+          <div class="card__title">Log</div>
+          <div class="card__hint">Live operational messages from the client.</div>
+        </div>
+        <div class="log" id="log"></div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="footer__left">Local UI at <span class="mono">/app</span> (served by the built‑in HTTP server).</div>
+      <div class="footer__right"><span class="mono" id="buildInfo">—</span></div>
+    </footer>
+  </div>
+
+  <script src="/app/app.js"></script>
+</body>
+</html>

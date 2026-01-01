@@ -362,40 +362,6 @@ svr.Get("/api/chat/diag", [&](const httplib::Request&, httplib::Response& res) {
     // We can infer the assets root from overlay_root: <exe_dir>/assets/overlay -> <exe_dir>/assets
     const std::filesystem::path assetsRoot = opt_.overlay_root.parent_path();
 
-    // --- Modern App UI: /app and /app/* ---
-    // Serves files from <assetsRoot>/app (e.g. assets/app/index.html)
-    svr.Get("/app", [&](const httplib::Request&, httplib::Response& res) {
-        res.set_redirect("/app/index.html");
-    });
-    svr.Get("/app/", [&](const httplib::Request&, httplib::Response& res) {
-        res.set_redirect("/app/index.html");
-    });
-
-    svr.Get(R"(/app/(.*))", [&, assetsRoot](const httplib::Request& req, httplib::Response& res) {
-        std::string rel = req.matches[1].str();
-        if (rel.empty() || rel == "/") rel = "index.html";
-
-        if (rel.find("..") != std::string::npos) {
-            res.status = 400;
-            res.set_content("bad path", "text/plain");
-            return;
-        }
-
-        std::filesystem::path p = assetsRoot / "app" / rel;
-        if (!std::filesystem::exists(p) || std::filesystem::is_directory(p)) {
-            res.status = 404;
-            res.set_content("not found", "text/plain");
-            return;
-        }
-
-        auto bytes = ReadFileUtf8(p);
-        if (rel.size() >= 5 && rel.substr(rel.size() - 5) == ".html") {
-            // Allow token substitution for app pages too.
-            ApplyOverlayTokens(bytes);
-        }
-        res.set_content(std::move(bytes), ContentTypeFor(rel));
-    });
-
     svr.Get(R"(/assets/(.*))", [&, assetsRoot](const httplib::Request& req, httplib::Response& res) {
         std::string rel = req.matches[1].str();
         if (rel.empty()) rel = "index.html";

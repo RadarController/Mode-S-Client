@@ -36,33 +36,6 @@
 #include "obs/ObsWsClient.h"
 #include "floating/FloatingChat.h"
 
-// --------------------------- WebView2 (Modern UI host) ----------------------
-#if !defined(HAVE_WEBVIEW2)
-#  if defined(__has_include)
-#    if __has_include("WebView2.h")
-#      include <wrl.h>
-#      include "WebView2.h"
-#      define HAVE_WEBVIEW2 1
-#    else
-#      define HAVE_WEBVIEW2 0
-#    endif
-#  else
-#    define HAVE_WEBVIEW2 0
-#  endif
-#endif
-
-#if HAVE_WEBVIEW2
-using Microsoft::WRL::ComPtr;
-static ComPtr<ICoreWebView2Controller> gMainWebController;
-static ComPtr<ICoreWebView2>           gMainWebView;
-#endif
-
-// Flip this to false to revert to the legacy Win32 control UI.
-static bool gUseModernUi = true;
-static std::atomic<bool> gHttpReady{ false };
-static const wchar_t* kModernUiUrl = L"http://127.0.0.1:17845/app";
-
-
 // --------------------------- Control IDs ------------------------------------
 #define IDC_TIKTOK_EDIT        1001
 #define IDC_TWITCH_EDIT        1002
@@ -1391,65 +1364,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             snap += L"' twitch_client_secret_len=";
             snap += std::to_wstring(config.twitch_client_secret.size());
             LogLine(snap.c_str());
-        
-        // If enabled, host the new modern UI (HTML/CSS) directly inside the main window via WebView2.
-        // This keeps all existing backend threads + HTTP API intact, but replaces the legacy Win32 control layout.
-#if HAVE_WEBVIEW2
-        if (gUseModernUi) {
-            // Create a hidden log control so existing LogLine() plumbing still works (optional).
-            gLog = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
-                WS_CHILD | ES_MULTILINE | ES_READONLY | WS_VSCROLL, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
-
-            // Init WebView2 (controller + view). Navigation happens once the HTTP server is running.
-            HRESULT hr = CreateCoreWebView2EnvironmentWithOptions(
-                nullptr, nullptr, nullptr,
-                Microsoft::WRL::Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
-                    [hwnd](HRESULT envResult, ICoreWebView2Environment* env) -> HRESULT {
-                        if (FAILED(envResult) || !env) return envResult;
-                        env->CreateCoreWebView2Controller(
-                            hwnd,
-                            Microsoft::WRL::Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
-                                [hwnd](HRESULT ctlResult, ICoreWebView2Controller* controller) -> HRESULT {
-                                    if (FAILED(ctlResult) || !controller) return ctlResult;
-
-                                    gMainWebController = controller;
-
-                                    ICoreWebView2* core = nullptr;
-                                    gMainWebController->get_CoreWebView2(&core);
-                                    if (core) {
-                                        gMainWebView.Attach(core);
-
-                                        // Tidy defaults
-                                        ICoreWebView2Settings* settings = nullptr;
-                                        gMainWebView->get_Settings(&settings);
-                                        if (settings) {
-                                            settings->put_IsStatusBarEnabled(FALSE);
-                                            settings->put_AreDefaultContextMenusEnabled(FALSE);
-                                            settings->put_AreDefaultScriptDialogsEnabled(FALSE);
-                                            settings->Release();
-                                        }
-
-                                        // If the HTTP server is already ready, navigate now.
-                                        if (gHttpReady.load()) {
-                                            gMainWebView->Navigate(kModernUiUrl);
-                                        }
-                                    }
-
-                                    gMainWebController->put_IsVisible(TRUE);
-                                    RECT rc; GetClientRect(hwnd, &rc);
-                                    gMainWebController->put_Bounds(rc);
-                                    return S_OK;
-                                }).Get());
-                        return S_OK;
-                    }).Get());
-            (void)hr;
-
-            // Kick off backend init (HTTP server, pollers, etc.)
-            PostMessageW(hwnd, WM_APP + 1, 0, 0);
-            return 0;
         }
-#endif
-}
 
         // Group boxes
         hGroupTikTok = CreateWindowW(L"BUTTON", L"TikTok", WS_CHILD | WS_VISIBLE | BS_GROUPBOX, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
@@ -1592,14 +1507,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
             gHttp->Start();
         }
-
-        // Signal that the HTTP server is ready for WebView2 navigation.
-        gHttpReady = true;
-#if HAVE_WEBVIEW2
-        if (gUseModernUi && gMainWebView) {
-            gMainWebView->Navigate(kModernUiUrl);
-        }
-#endif
 
 
         metricsThread = std::thread([&]() {
@@ -1823,13 +1730,6 @@ if (id == IDC_START_YOUTUBE) {
     }
 
     case WM_SIZE:
-#if HAVE_WEBVIEW2
-        if (gUseModernUi && gMainWebController) {
-            RECT rc; GetClientRect(hwnd, &rc);
-            gMainWebController->put_Bounds(rc);
-            return 0;
-        }
-#endif
         LayoutControls(hwnd);
         return 0;
 
@@ -1886,17 +1786,6 @@ if (id == IDC_START_YOUTUBE) {
         tiktok.stop();
         youtube.stop();
         twitch.stop();
-
-#if HAVE_WEBVIEW2
-        // Tear down WebView2 last to avoid any late WM_SIZE/paint touching released objects.
-        if (gMainWebController) {
-            gMainWebController->put_IsVisible(FALSE);
-            gMainWebController.Reset();
-        }
-        if (gMainWebView) {
-            gMainWebView.Reset();
-        }
-#endif
 
         // Stop HTTP server cleanly (stop + join)
         if (gHttp) {
