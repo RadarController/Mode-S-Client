@@ -203,6 +203,7 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClCompile Include="src\http\HttpServer.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="assets\app\chat.html" />
     <None Include="assets\overlay\Common\chat.html" />
     <None Include="assets\overlay\Landscape\26_header.html" />
     <None Include="packages.config" />

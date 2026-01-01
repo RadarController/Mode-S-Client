@@ -15,11 +15,7 @@ struct FC_HttpResult {
 
 // Try to include WebView2 if available
 #if defined(__has_include)
-#  if __has_include(<WebView2.h>)
-#    include <wrl.h>
-#    include <WebView2.h>
-#    define HAVE_WEBVIEW2 1
-#  elif __has_include("WebView2.h")
+#  if __has_include("WebView2.h")
 #    include <wrl.h>
 #    include "WebView2.h"
 #    define HAVE_WEBVIEW2 1
@@ -36,9 +32,7 @@ public:
     ~FloatingChat();
 
     // Opens or focuses the floating chat window. Parent is used to position the window.
-    // Optional initialUrl lets you point the floating window at a different page than the browser chat.
-    // If empty, a sensible default is used.
-    bool Open(HWND parent, const std::wstring& initialUrl = L"");
+    bool Open(HWND parent);
     void Close();
     bool IsOpen() const;
 
@@ -64,7 +58,6 @@ private:
     HWND wnd_ = nullptr;
     // edit_ kept for compatibility but no longer used when WebView2 is active
     HWND edit_ = nullptr;
-    std::wstring initial_url_;
     std::thread pollThread_;
     std::atomic<bool> running_{ false };
     static std::atomic<bool> registered_;

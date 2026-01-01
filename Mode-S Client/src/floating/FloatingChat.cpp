@@ -2,9 +2,6 @@
 
 #include <windows.h>
 #include <winhttp.h>
-#include <WebView2.h>
-#pragma comment(lib, "WebView2LoaderStatic.lib")
-#define HAVE_WEBVIEW2 1
 #include <string>
 #include <thread>
 #include <atomic>
@@ -15,7 +12,8 @@
 #include "json.hpp"
 
 #if HAVE_WEBVIEW2
-// WebView2 headers are included by FloatingChat.h (which supports both <WebView2.h> and "WebView2.h").
+#include <wrl.h>
+#include "WebView2.h"
 using Microsoft::WRL::ComPtr;
 #endif
 
@@ -29,15 +27,12 @@ FloatingChat::~FloatingChat()
     Close();
 }
 
-bool FloatingChat::Open(HWND parent, const std::wstring& initialUrl)
+bool FloatingChat::Open(HWND parent)
 {
     if (wnd_) {
         SetForegroundWindow(wnd_);
         return true;
     }
-
-    // Store URL to navigate once WebView2 is created.
-    initial_url_ = initialUrl;
 
     const wchar_t* kClass = L"StreamHub_FloatingChat";
     if (!registered_.exchange(true)) {
@@ -102,37 +97,34 @@ bool FloatingChat::Open(HWND parent, const std::wstring& initialUrl)
 void FloatingChat::Close()
 {
     if (!wnd_) return;
-#if HAVE_WEBVIEW2
-    if (webview_controller_) {
-        webview_controller_->put_IsVisible(FALSE);
-        webview_controller_.Reset();
-    }
-    if (webview_window_) {
-        webview_window_.Reset();
-    }
-#else
-    // If WebView2 not available, no controller to release
-#endif
-
-    DestroyWindow(wnd_);
-    wnd_ = nullptr;
+    // Do NOT tear down WebView2 objects here. Closing a window can generate additional messages
+    // (e.g. WM_SIZE) during destruction; releasing the controller here can cause use-after-free
+    // if any message handler touches it. We release WebView2 resources in WM_DESTROY.
     running_ = false;
+    DestroyWindow(wnd_);
+    // wnd_ will be cleared in WM_DESTROY as well, but clear it here too for safety.
+    wnd_ = nullptr;
 }
 
 bool FloatingChat::IsOpen() const { return wnd_ != nullptr; }
 
 LRESULT CALLBACK FloatingChat::WndProcThunk(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
-    if (msg == WM_CREATE) {
-        CREATESTRUCTW* cs = reinterpret_cast<CREATESTRUCTW*>(lParam);
+    // Associate the window with the FloatingChat instance as early as possible.
+    // WM_NCCREATE is the canonical place for GWLP_USERDATA binding.
+    if (msg == WM_NCCREATE) {
+        auto* cs = reinterpret_cast<CREATESTRUCTW*>(lParam);
         if (cs && cs->lpCreateParams) {
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(cs->lpCreateParams));
         }
+        return TRUE;
     }
 
     auto* self = reinterpret_cast<FloatingChat*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
-    if (self) return self->WndProc(hwnd, msg, wParam, lParam);
-    return DefWindowProcW(hwnd, msg, wParam, lParam);
+    if (!self) {
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
+    }
+    return self->WndProc(hwnd, msg, wParam, lParam);
 }
 
 LRESULT CALLBACK FloatingChat::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
@@ -150,7 +142,11 @@ LRESULT CALLBACK FloatingChat::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
                         Microsoft::WRL::Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
                             [this, hwnd, env](HRESULT ctlResult, ICoreWebView2Controller* controller) -> HRESULT {
                                 if (FAILED(ctlResult) || !controller) return ctlResult;
-                                webview_controller_.Attach(controller);
+                                // IMPORTANT: do NOT use Attach() here.
+                                // The COM callback may Release() its reference after this handler
+                                // returns. Assigning to ComPtr AddRef()s the controller so we keep
+                                // a valid reference beyond this callback.
+                                webview_controller_ = controller;
                                 // obtain core webview
                                 ICoreWebView2* core = nullptr;
                                 webview_controller_->get_CoreWebView2(&core);
@@ -166,13 +162,9 @@ LRESULT CALLBACK FloatingChat::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
                                         settings->Release();
                                     }
 
-                                    // Navigate to floating chat HTML served by the local HTTP server.
-                                    // Allow the caller to override the URL (future-proof for different styling).
-                                    std::wstring url = initial_url_;
-                                    if (url.empty()) {
-                                        url = L"http://127.0.0.1:17845/assets/app/chat.html";
-                                    }
-                                    webview_window_->Navigate(url.c_str());
+                                    // Navigate to local overlay chat.html served by local HTTP server
+                                    // Navigate to the dedicated floating chat page (separate from /overlay/chat.html)
+                                    webview_window_->Navigate(L"http://127.0.0.1:17845/assets/app/chat.html");
                                 }
 
                                 // Show controller and set bounds
@@ -185,10 +177,8 @@ LRESULT CALLBACK FloatingChat::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
                 }).Get());
         (void)hr; // ignore; best-effort initialization
 #else
-        // WebView2 not available (or not compiled in): open default browser as a last resort.
-        // (The WebView2-based floating window would otherwise appear blank.)
-        const wchar_t* url = L"http://127.0.0.1:17845/assets/app/chat.html";
-        ShellExecuteW(nullptr, L"open", url, nullptr, nullptr, SW_SHOW);
+        // WebView2 not available: open default browser to the overlay page as fallback
+        ShellExecuteW(nullptr, L"open", L"http://127.0.0.1:17845/overlay/chat.html", nullptr, nullptr, SW_SHOW);
 #endif
         return 0;
     }
@@ -216,6 +206,10 @@ LRESULT CALLBACK FloatingChat::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
         running_ = false;
         return 0;
     }
+    case WM_NCDESTROY:
+        // Critical: prevent any late messages from calling into a stale instance pointer.
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+        return 0;
     }
     return DefWindowProcW(hwnd, msg, wParam, lParam);
 }
