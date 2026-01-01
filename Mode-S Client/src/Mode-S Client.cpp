@@ -32,6 +32,7 @@
 #include "twitch/TwitchIrcWsClient.h"
 #include "tiktok/TikTokSidecar.h"
 #include "tiktok/TikTokFollowersService.h"
+#include "youtube/YouTubeLiveChatService.h"
 #include "euroscope/EuroScopeIngestService.h"
 #include "obs/ObsWsClient.h"
 #include "floating/FloatingChat.h"
@@ -1028,6 +1029,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     static ChatAggregator chat;
     static TikTokSidecar tiktok;
     static TwitchIrcWsClient twitch;
+    static YouTubeLiveChatService youtube;
     static std::unique_ptr<HttpServer> gHttp;
     static std::thread metricsThread;
     static std::thread twitchHelixThread;
@@ -1111,8 +1113,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
         hStartYouTubeBtn = CreateWindowW(L"BUTTON", L"Start", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_START_YOUTUBE, nullptr, nullptr);
         hRestartYouTubeBtn = CreateWindowW(L"BUTTON", L"Restart", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_RESTART_YOUTUBE, nullptr, nullptr);
-        EnableWindow(hStartYouTubeBtn, FALSE);
-        EnableWindow(hRestartYouTubeBtn, FALSE);
+        EnableWindow(hStartYouTubeBtn, TRUE);
+        EnableWindow(hRestartYouTubeBtn, TRUE);
 
         hHint = CreateWindowW(L"STATIC", L"", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
 
@@ -1291,7 +1293,24 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         }
 
         if (id == IDC_START_YOUTUBE || id == IDC_RESTART_YOUTUBE) {
-            LogLine(L"YouTube support is UI-ready but not implemented yet.");
+            youtube.stop();
+
+            std::string h = ToUtf8(GetWindowTextWString(hYouTube));
+            h = Trim(h); // if you don’t have Trim here, just omit this line
+
+            if (h.empty()) {
+                LogLine(L"YOUTUBE: please enter a handle/channel first.");
+                return 0;
+            }
+
+            bool ok = youtube.start(h, chat, [](const std::wstring& s) { LogLine(s); });
+
+            if (ok) {
+                LogLine(L"YOUTUBE: started/restarted live chat poller.");
+            }
+            else {
+                LogLine(L"YOUTUBE: failed to start (already running or invalid handle).");
+            }
             return 0;
         }
 
@@ -1429,6 +1448,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         // Stop platform services first (they may still be producing events)
         tiktok.stop();
         twitch.stop();
+        youtube.stop();
 
         // Stop HTTP server cleanly (stop + join)
         if (gHttp) {
