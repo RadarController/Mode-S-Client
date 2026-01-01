@@ -70,6 +70,15 @@ static std::mutex gLogMutex;
 static HWND gMainWnd = nullptr;
 static DWORD gUiThreadId = 0;
 static constexpr UINT WM_APP_LOG = WM_APP + 100;
+// Splash screen
+static HWND gSplashWnd = nullptr;
+static HWND gSplashLog = nullptr;
+static constexpr UINT WM_APP_SPLASH_READY = WM_APP + 201;
+static constexpr UINT_PTR SPLASH_CLOSE_TIMER_ID = 1001;
+static constexpr UINT SPLASH_CLOSE_DELAY_MS = 1 * 1000; // test: keep splash for 1s after ready
+static const wchar_t* kAppDisplayName = L"RadarController Mode-S Client";
+static const wchar_t* kAppVersion = L"v1.0.0"; // TODO: wire to resource/file version
+
 static HWND hGroupTikTok = nullptr, hGroupTwitch = nullptr, hGroupYouTube = nullptr;
 static HWND hLblTikTok = nullptr, hLblTwitch = nullptr, hLblYouTube = nullptr;
 static HWND hHint = nullptr;
@@ -107,6 +116,8 @@ static int  gTikTokViewerCount = 0, gTwitchViewerCount = 0, gYouTubeViewerCount 
 static int  gTikTokFollowerCount = 0, gTwitchFollowerCount = 0, gYouTubeFollowerCount = 0;
 // Forward decl
 static void LayoutControls(HWND hwnd);
+static HWND CreateSplashWindow(HINSTANCE hInstance);
+static void DestroySplashWindow();
 
 // --------------------------- Helpers ----------------------------------------
 static std::wstring GetExeDir()
@@ -120,7 +131,7 @@ static std::wstring GetExeDir()
 
 static void AppendLogOnUiThread(const std::wstring& s)
 {
-    if (!gLog) return;
+    if (!gLog && !gSplashLog) return;
 
     // Make each log call atomic across threads and avoid double newlines.
     std::lock_guard<std::mutex> _lk(gLogMutex);
@@ -135,6 +146,13 @@ static void AppendLogOnUiThread(const std::wstring& s)
     SendMessageW(gLog, EM_SETSEL, (WPARAM)len, (LPARAM)len);
     SendMessageW(gLog, EM_REPLACESEL, FALSE, (LPARAM)clean.c_str());
     SendMessageW(gLog, EM_REPLACESEL, FALSE, (LPARAM)L"\r\n");
+
+    if (gSplashLog) {
+        int slen = GetWindowTextLengthW(gSplashLog);
+        SendMessageW(gSplashLog, EM_SETSEL, (WPARAM)slen, (LPARAM)slen);
+        SendMessageW(gSplashLog, EM_REPLACESEL, FALSE, (LPARAM)clean.c_str());
+        SendMessageW(gSplashLog, EM_REPLACESEL, FALSE, (LPARAM)L"\r\n");
+    }
 }
 
 static void LogLine(const std::wstring& s)
@@ -308,7 +326,8 @@ static void UpdateTikTokButtons(HWND hTikTokEdit, HWND hStartBtn, HWND hRestartB
     auto cleaned = SanitizeTikTok(raw);
     BOOL enable = !cleaned.empty();
     if (hStartBtn)   EnableWindow(hStartBtn, enable);
-    if (hRestartBtn) EnableWindow(hRestartBtn, enable);
+    // Restart/Stop button is disabled for now (Stop functionality not implemented yet).
+    if (hRestartBtn) EnableWindow(hRestartBtn, FALSE);
 }
 
 
@@ -319,8 +338,21 @@ static void UpdateYouTubeButtons(HWND hYouTubeEdit, HWND hStartBtn, HWND hRestar
     auto cleaned = SanitizeYouTubeHandle(raw);
     BOOL enable = !cleaned.empty();
     if (hStartBtn)   EnableWindow(hStartBtn, enable);
-    if (hRestartBtn) EnableWindow(hRestartBtn, enable);
+    // Restart/Stop button is disabled for now (Stop functionality not implemented yet).
+    if (hRestartBtn) EnableWindow(hRestartBtn, FALSE);
 }
+
+static void UpdateTwitchButtons(HWND hTwitchEdit, HWND hStartBtn, HWND hStopBtn)
+{
+    if (!hTwitchEdit) return;
+    auto raw = ToUtf8(GetWindowTextWString(hTwitchEdit));
+    auto cleaned = SanitizeTwitchLogin(raw);
+    BOOL enable = !cleaned.empty();
+    if (hStartBtn) EnableWindow(hStartBtn, enable);
+    // Stop button is disabled for now (Stop functionality not implemented yet).
+    if (hStopBtn) EnableWindow(hStopBtn, FALSE);
+}
+
 
 
 static void UpdatePlatformStatusUI(const Metrics& m)
@@ -429,7 +461,173 @@ static int ParseIntOrDefault(const std::wstring& w, int def)
     catch (...) {
         return def;
     }
+
 }
+
+// --------------------------- Splash screen ---------------------------------
+static LRESULT CALLBACK SplashWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+    switch (msg)
+    {
+    case WM_CREATE:
+    {
+        // Basic, dependency-free splash: title + version + live log output
+        HFONT hFontTitle = nullptr;
+        HFONT hFontBody = nullptr;
+
+        {
+            LOGFONTW lf{};
+            lf.lfHeight = -22;
+            lf.lfWeight = FW_SEMIBOLD;
+            wcscpy_s(lf.lfFaceName, L"Segoe UI");
+            hFontTitle = CreateFontIndirectW(&lf);
+        }
+        {
+            LOGFONTW lf{};
+            lf.lfHeight = -16;
+            wcscpy_s(lf.lfFaceName, L"Segoe UI");
+            hFontBody = CreateFontIndirectW(&lf);
+        }
+
+        // Store fonts as window properties so we can delete on destroy
+        SetPropW(hwnd, L"splash_font_title", hFontTitle);
+        SetPropW(hwnd, L"splash_font_body", hFontBody);
+
+        const int pad = 14;
+
+        HWND hTitle = CreateWindowW(L"STATIC", kAppDisplayName,
+            WS_CHILD | WS_VISIBLE,
+            pad, pad, 520, 28, hwnd, nullptr, nullptr, nullptr);
+
+        std::wstring ver = std::wstring(L"Loading… ") + kAppVersion;
+        HWND hVer = CreateWindowW(L"STATIC", ver.c_str(),
+            WS_CHILD | WS_VISIBLE,
+            pad, pad + 30, 520, 20, hwnd, nullptr, nullptr, nullptr);
+
+        gSplashLog = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+            WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_READONLY | WS_VSCROLL,
+            pad, pad + 58, 520, 220, hwnd, nullptr, nullptr, nullptr);
+
+        if (hTitle) SendMessageW(hTitle, WM_SETFONT, (WPARAM)hFontTitle, TRUE);
+        if (hVer)   SendMessageW(hVer, WM_SETFONT, (WPARAM)hFontBody, TRUE);
+        if (gSplashLog) SendMessageW(gSplashLog, WM_SETFONT, (WPARAM)hFontBody, TRUE);
+
+        return 0;
+    }
+
+    case WM_CTLCOLORSTATIC:
+    case WM_CTLCOLOREDIT:
+    {
+        HDC hdc = (HDC)wParam;
+        SetTextColor(hdc, RGB(230, 230, 230));
+
+        static HBRUSH hBg = CreateSolidBrush(RGB(18, 18, 18));
+        static HBRUSH hEditBg = CreateSolidBrush(RGB(32, 32, 32));
+
+        if (msg == WM_CTLCOLOREDIT) {
+            SetBkMode(hdc, OPAQUE);
+            SetBkColor(hdc, RGB(32, 32, 32));
+            return (LRESULT)hEditBg;
+        }
+
+        SetBkMode(hdc, TRANSPARENT);
+        return (LRESULT)hBg;
+    }
+
+    case WM_ERASEBKGND:
+    {
+        RECT rc{};
+        GetClientRect(hwnd, &rc);
+        static HBRUSH hBg = CreateSolidBrush(RGB(18, 18, 18));
+        FillRect((HDC)wParam, &rc, hBg);
+        return 1;
+    }
+
+
+    case WM_TIMER:
+    {
+        if (wParam == SPLASH_CLOSE_TIMER_ID) {
+            KillTimer(hwnd, SPLASH_CLOSE_TIMER_ID);
+
+            // Close splash
+            DestroySplashWindow();
+
+            // Now reveal main UI
+            if (gMainWnd && IsWindow(gMainWnd)) {
+                ShowWindow(gMainWnd, SW_SHOWDEFAULT);
+                UpdateWindow(gMainWnd);
+                SetForegroundWindow(gMainWnd);
+            }
+            return 0;
+        }
+        break;
+    }
+
+    case WM_DESTROY:
+    {
+        // cleanup fonts stored as properties
+        if (auto h = (HFONT)GetPropW(hwnd, L"splash_font_title")) { DeleteObject(h); RemovePropW(hwnd, L"splash_font_title"); }
+        if (auto h = (HFONT)GetPropW(hwnd, L"splash_font_body")) { DeleteObject(h); RemovePropW(hwnd, L"splash_font_body"); }
+        gSplashLog = nullptr;
+        return 0;
+    }
+
+    default:
+        break;
+    }
+    return DefWindowProcW(hwnd, msg, wParam, lParam);
+}
+
+static HWND CreateSplashWindow(HINSTANCE hInstance)
+{
+    const wchar_t* kSplashClass = L"ModeSClientSplash";
+
+    static std::atomic<bool> registered{ false };
+    if (!registered.exchange(true))
+    {
+        WNDCLASSW wc{};
+        wc.lpfnWndProc = SplashWndProc;
+        wc.hInstance = hInstance;
+        wc.lpszClassName = kSplashClass;
+        wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+        wc.hbrBackground = nullptr;
+        wc.style = CS_HREDRAW | CS_VREDRAW;
+        RegisterClassW(&wc);
+    }
+
+    const int w = 560;
+    const int h = 320;
+
+    RECT wa{};
+    SystemParametersInfoW(SPI_GETWORKAREA, 0, &wa, 0);
+    const int x = wa.left + ((wa.right - wa.left) - w) / 2;
+    const int y = wa.top + ((wa.bottom - wa.top) - h) / 2;
+
+    HWND hwnd = CreateWindowExW(
+        WS_EX_TOPMOST,
+        kSplashClass,
+        kAppDisplayName,
+        WS_POPUP | WS_CAPTION | WS_SYSMENU,
+        x, y, w, h,
+        nullptr, nullptr, hInstance, nullptr);
+
+    if (hwnd) {
+        ShowWindow(hwnd, SW_SHOW);
+        UpdateWindow(hwnd);
+    }
+    return hwnd;
+}
+
+static void DestroySplashWindow()
+{
+    if (gSplashWnd && IsWindow(gSplashWnd)) {
+        DestroyWindow(gSplashWnd);
+    }
+    gSplashWnd = nullptr;
+    gSplashLog = nullptr;
+}
+
+
 
 
 // --------------------------- TikTok cookie modal ----------------------------
@@ -1206,14 +1404,23 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         hGroupSettings = CreateWindowW(L"BUTTON", L"Settings", WS_CHILD | WS_VISIBLE | BS_GROUPBOX, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
         hSave = CreateWindowW(L"BUTTON", L"Save settings", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_SAVE_BTN, nullptr, nullptr);
 
-        hStartTikTokBtn = CreateWindowW(L"BUTTON", L"Start", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_START_TIKTOK, nullptr, nullptr);
-        hRestartTikTokBtn = CreateWindowW(L"BUTTON", L"Restart", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_RESTART_TIKTOK, nullptr, nullptr);
+        hStartTikTokBtn = CreateWindowW(L"BUTTON", L"Start/Restart", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_START_TIKTOK, nullptr, nullptr);
+        hRestartTikTokBtn = CreateWindowW(L"BUTTON", L"Stop", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_RESTART_TIKTOK, nullptr, nullptr);
 
-        hStartTwitchBtn = CreateWindowW(L"BUTTON", L"Start", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_START_TWITCH, nullptr, nullptr);
-        hRestartTwitchBtn = CreateWindowW(L"BUTTON", L"Restart", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_RESTART_TWITCH, nullptr, nullptr);
+        hStartTwitchBtn = CreateWindowW(L"BUTTON", L"Start/Restart", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_START_TWITCH, nullptr, nullptr);
+        hRestartTwitchBtn = CreateWindowW(L"BUTTON", L"Stop", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_RESTART_TWITCH, nullptr, nullptr);
 
-        hStartYouTubeBtn = CreateWindowW(L"BUTTON", L"Start", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_START_YOUTUBE, nullptr, nullptr);
-        hRestartYouTubeBtn = CreateWindowW(L"BUTTON", L"Restart", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_RESTART_YOUTUBE, nullptr, nullptr);
+        hStartYouTubeBtn = CreateWindowW(L"BUTTON", L"Start/Restart", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_START_YOUTUBE, nullptr, nullptr);
+        hRestartYouTubeBtn = CreateWindowW(L"BUTTON", L"Stop", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_RESTART_YOUTUBE, nullptr, nullptr);
+
+        // 'Stop' buttons are placeholders for now (Stop functionality not implemented yet). Disable them.
+        if (hRestartTikTokBtn)  EnableWindow(hRestartTikTokBtn, FALSE);
+        if (hRestartTwitchBtn)  EnableWindow(hRestartTwitchBtn, FALSE);
+        if (hRestartYouTubeBtn) EnableWindow(hRestartYouTubeBtn, FALSE);
+
+        // Initial button enable/disable state based on current input values.
+        UpdateTikTokButtons(hTikTok, hStartTikTokBtn, hRestartTikTokBtn);
+        UpdateTwitchButtons(hTwitch, hStartTwitchBtn, hRestartTwitchBtn);
         UpdateYouTubeButtons(hYouTube, hStartYouTubeBtn, hRestartYouTubeBtn);
 
         hHint = CreateWindowW(L"STATIC", L"", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
@@ -1348,6 +1555,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         );
         tiktokFollowersThread.detach();
 
+        // Signal that the app has finished initializing and the main window can be shown.
+        PostMessageW(hwnd, WM_APP_SPLASH_READY, 0, 0);
+
         return 0;
     }
 
@@ -1359,7 +1569,33 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     }
     return 0;
 
-    case WM_COMMAND:
+    case WM_APP_LOG:
+    {
+        auto* heap = reinterpret_cast<std::wstring*>(lParam);
+        if (heap) {
+            AppendLogOnUiThread(*heap);
+            delete heap;
+        }
+        return 0;
+    }
+
+    case WM_APP_SPLASH_READY:
+    {
+        // Background init has completed; keep splash visible briefly (test) then show main UI.
+        if (gSplashWnd && IsWindow(gSplashWnd)) {
+            // Start (or restart) the close timer on the splash window.
+            SetTimer(gSplashWnd, SPLASH_CLOSE_TIMER_ID, SPLASH_CLOSE_DELAY_MS, nullptr);
+        }
+        else {
+            // Fallback: if splash doesn't exist, just show the main UI immediately.
+            ShowWindow(hwnd, SW_SHOWDEFAULT);
+            UpdateWindow(hwnd);
+            SetForegroundWindow(hwnd);
+        }
+        return 0;
+    }
+
+case WM_COMMAND:
     {
         const int id = LOWORD(wParam);
 
@@ -1369,17 +1605,23 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         }
 
 
-if (HIWORD(wParam) == EN_CHANGE && id == IDC_YOUTUBE_EDIT) {
-    UpdateYouTubeButtons(hYouTube, hStartYouTubeBtn, hRestartYouTubeBtn);
-    return 0;
-}
+        if (HIWORD(wParam) == EN_CHANGE && id == IDC_TWITCH_EDIT) {
+            UpdateTwitchButtons(hTwitch, hStartTwitchBtn, hRestartTwitchBtn);
+            return 0;
+        }
 
-        if (id == IDC_START_TIKTOK || id == IDC_RESTART_TIKTOK) {
+        if (HIWORD(wParam) == EN_CHANGE && id == IDC_YOUTUBE_EDIT) {
+            UpdateYouTubeButtons(hYouTube, hStartYouTubeBtn, hRestartYouTubeBtn);
+            return 0;
+        }
+
+
+        if (id == IDC_START_TIKTOK) {
             StartOrRestartTikTokSidecar(tiktok, state, chat, hwnd, gLog, hTikTok);
             return 0;
         }
 
-        if (id == IDC_START_TWITCH || id == IDC_RESTART_TWITCH) {
+        if (id == IDC_START_TWITCH) {
             // Ensure existing Twitch client is stopped before starting to allow restart or channel change
             twitch.stop();
 
@@ -1399,7 +1641,7 @@ if (HIWORD(wParam) == EN_CHANGE && id == IDC_YOUTUBE_EDIT) {
         }
 
         
-if (id == IDC_START_YOUTUBE || id == IDC_RESTART_YOUTUBE) {
+if (id == IDC_START_YOUTUBE) {
     StartOrRestartYouTubeSidecar(youtube, state, chat, hwnd, gLog, hYouTube);
     return 0;
 }
@@ -1585,12 +1827,24 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
         }
     }
 
+    // Splash screen shown while the main window initializes
+    gSplashWnd = CreateSplashWindow(hInstance);
+
+    // Process any pending messages so the splash paints immediately.
+    MSG sm{};
+    while (PeekMessageW(&sm, nullptr, 0, 0, PM_REMOVE)) {
+        TranslateMessage(&sm);
+        DispatchMessageW(&sm);
+    }
+
     HWND hwnd = CreateWindowExW(
-        0, CLASS_NAME, L"RadarController Mode-S Client",
+        0, CLASS_NAME, kAppDisplayName,
         WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, CW_USEDEFAULT, 1440, 810,
         nullptr, nullptr, hInstance, nullptr
     );
+
+    gMainWnd = hwnd;
 
     if (!hwnd) {
         DWORD e = GetLastError();
@@ -1603,8 +1857,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
     SendMessageW(hwnd, WM_SETICON, ICON_BIG, (LPARAM)LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCE(IDI_APP_ICON)));
     SendMessageW(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCE(IDI_APP_ICON)));
 
-    // Ensure window is shown even if nCmdShow is 0 (some launchers pass 0)
-    ShowWindow(hwnd, nCmdShow ? nCmdShow : SW_SHOWDEFAULT);
+    // Defer showing the main UI until initialization is complete (splash stays visible)
+    ShowWindow(hwnd, SW_HIDE);
     UpdateWindow(hwnd);
 
     MSG msg{};
