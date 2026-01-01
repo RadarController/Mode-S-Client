@@ -191,9 +191,17 @@ void HttpServer::RegisterRoutes() {
         // Merge EuroScope ingest snapshot into the metrics payload.
         // Guard against accidental key collisions so channel live flags always come from AppState.
         auto es = euroscope_.Metrics(now_ms);
+        // Prevent EuroScope ingest from overwriting channel metrics (viewers/followers/live).
+        // Those fields should be sourced exclusively from AppState integrations.
         es.erase("twitch_live");
         es.erase("youtube_live");
         es.erase("tiktok_live");
+        es.erase("twitch_viewers");
+        es.erase("youtube_viewers");
+        es.erase("tiktok_viewers");
+        es.erase("twitch_followers");
+        es.erase("youtube_followers");
+        es.erase("tiktok_followers");
         j.update(es);
 
         res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");

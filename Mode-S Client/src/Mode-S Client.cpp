@@ -31,6 +31,7 @@
 #include "twitch/TwitchHelixService.h"
 #include "twitch/TwitchIrcWsClient.h"
 #include "tiktok/TikTokSidecar.h"
+#include "youtube/YouTubeSidecar.h"
 #include "tiktok/TikTokFollowersService.h"
 #include "euroscope/EuroScopeIngestService.h"
 #include "obs/ObsWsClient.h"
@@ -904,6 +905,67 @@ static bool StartOrRestartTikTokSidecar(TikTokSidecar& tiktok,
     return ok;
 }
 
+static bool StartOrRestartYouTubeSidecar(YouTubeSidecar& yt,
+    AppState& state,
+    HWND hwndMain,
+    HWND hwndLog,
+    HWND hYouTubeEdit)
+{
+    std::string raw = ToUtf8(GetWindowTextWString(hYouTubeEdit));
+    std::string cleaned = SanitizeYouTubeHandle(raw);
+    SetWindowTextW(hYouTubeEdit, ToW(cleaned).c_str());
+
+    if (cleaned.empty()) {
+        if (hwndLog) LogLine(L"YouTube handle is empty. Enter it first.");
+        return false;
+    }
+
+    yt.stop();
+
+    std::wstring exeDir = GetExeDir();
+    std::wstring sidecarPath = exeDir + L"\\sidecar\\youtube_sidecar.py";
+
+    LogLine((L"Starting YouTube python sidecar: " + sidecarPath));
+
+    bool ok = yt.start(L"python", sidecarPath, [&](const nlohmann::json& j) {
+        std::string type = j.value("type", "");
+        std::string msg = j.value("message", "");
+        if (type.rfind("youtube.", 0) == 0) {
+            std::string extra;
+            if (!msg.empty()) extra = " | " + msg;
+            LogLine(ToW(("YOUTUBE: " + type + extra)));
+        }
+
+        if (type == "youtube.stats") {
+            bool live = j.value("live", false);
+            int viewers = j.value("viewers", 0);
+            int followers = j.value("followers", 0);
+
+            state.set_youtube_live(live);
+            state.set_youtube_viewers(viewers);
+            state.set_youtube_followers(followers);
+
+            if (hwndMain) PostMessageW(hwndMain, WM_APP + 41, 0, 0);
+        }
+        else if (type == "youtube.offline" || type == "youtube.error") {
+            // Ensure we never show stale live/viewers.
+            state.set_youtube_live(false);
+            state.set_youtube_viewers(0);
+            if (hwndMain) PostMessageW(hwndMain, WM_APP + 41, 0, 0);
+        }
+        });
+
+    if (ok) {
+        if (hwndLog) LogLine(L"YouTube sidecar started/restarted.");
+    }
+    else {
+        if (hwndLog) LogLine(L"ERROR: Could not start YouTube sidecar. Check Python install.");
+    }
+    return ok;
+}
+
+
+
 // --------------------------- Clipboard helper -------------------------------
 static void CopyLogToClipboard(HWND hwndOwner)
 {
@@ -1138,6 +1200,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     static AppState state;
     static ChatAggregator chat;
     static TikTokSidecar tiktok;
+    static YouTubeSidecar youtube;
     static TwitchIrcWsClient twitch;
     static std::unique_ptr<HttpServer> gHttp;
     static std::thread metricsThread;
@@ -1417,7 +1480,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         }
 
         if (id == IDC_START_YOUTUBE || id == IDC_RESTART_YOUTUBE) {
-            LogLine(L"YouTube support is UI-ready but not implemented yet.");
+            StartOrRestartYouTubeSidecar(youtube, state, hwnd, gLog, hYouTube);
             return 0;
         }
 
@@ -1460,7 +1523,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             config.twitch_login = SanitizeTwitchLogin(ToUtf8(GetWindowTextWString(hTwitch)));
             SetWindowTextW(hTwitch, ToW(config.twitch_login).c_str());
 
-            config.youtube_handle = ToUtf8(GetWindowTextWString(hYouTube));
+            config.youtube_handle = SanitizeYouTubeHandle(ToUtf8(GetWindowTextWString(hYouTube)));
+            SetWindowTextW(hYouTube, ToW(config.youtube_handle).c_str());
+            UpdateYouTubeButtons(hYouTube, hStartYouTubeBtn, hRestartYouTubeBtn);
 
             // Enable/disable YouTube controls based on current handle
             UpdateYouTubeButtons(hYouTube, hStartYouTubeBtn, hRestartYouTubeBtn);
