@@ -900,11 +900,45 @@ static LRESULT CALLBACK FloatingChatWndProc(HWND hwnd, UINT msg, WPARAM wParam, 
     {
         auto p = reinterpret_cast<std::wstring*>(lParam);
         if (p && gFloatingChatEdit) {
+            // Determine if user is currently at the bottom. If not, preserve their scroll
+            // position so they can read earlier messages without being forced to the bottom.
+            bool atBottom = true;
+            // Try to use the scroll bar info which is the most reliable for detecting bottom.
+            SCROLLINFO si{};
+            si.cbSize = sizeof(si);
+            si.fMask = SIF_RANGE | SIF_PAGE | SIF_POS;
+            if (GetScrollInfo(gFloatingChatEdit, SB_VERT, &si)) {
+                // nMax is the maximum scroll range value. If pos + page >= max, we're at bottom.
+                int pos = si.nPos;
+                int page = si.nPage;
+                int max = si.nMax;
+                if (max > 0) {
+                    atBottom = (pos + page >= max - 1);
+                }
+            }
+
+            // Also capture the first visible line so we can restore it when not at bottom.
+            int prevFirstVisible = (int)SendMessageW(gFloatingChatEdit, EM_GETFIRSTVISIBLELINE, 0, 0);
+
+            // Update text
             SetWindowTextW(gFloatingChatEdit, p->c_str());
 
-            // Auto-scroll to bottom
-            SendMessageW(gFloatingChatEdit, EM_SETSEL, (WPARAM)-1, (LPARAM)-1);
-            SendMessageW(gFloatingChatEdit, EM_SCROLLCARET, 0, 0);
+            if (atBottom) {
+                // Auto-scroll to bottom
+                int len = GetWindowTextLengthW(gFloatingChatEdit);
+                if (len < 0) len = 0;
+                SendMessageW(gFloatingChatEdit, EM_SETSEL, (WPARAM)len, (LPARAM)len);
+                SendMessageW(gFloatingChatEdit, EM_SCROLLCARET, 0, 0);
+            }
+            else {
+                // Restore previous first visible line so user stays where they scrolled to.
+                int newFirstVisible = (int)SendMessageW(gFloatingChatEdit, EM_GETFIRSTVISIBLELINE, 0, 0);
+                int delta = prevFirstVisible - newFirstVisible;
+                if (delta != 0) {
+                    // EM_LINESCROLL takes vertical lines to scroll (relative).
+                    SendMessageW(gFloatingChatEdit, EM_LINESCROLL, 0, (LPARAM)delta);
+                }
+            }
         }
         delete p;
         return 0;
