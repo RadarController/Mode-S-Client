@@ -32,7 +32,6 @@
 #include "twitch/TwitchIrcWsClient.h"
 #include "tiktok/TikTokSidecar.h"
 #include "tiktok/TikTokFollowersService.h"
-#include "youtube/YouTubeLiveChatService.h"
 #include "euroscope/EuroScopeIngestService.h"
 #include "obs/ObsWsClient.h"
 #include "floating/FloatingChat.h"
@@ -296,6 +295,21 @@ static void UpdateTikTokButtons(HWND hTikTokEdit, HWND hStartBtn, HWND hRestartB
     if (!hTikTokEdit) return;
     auto raw = ToUtf8(GetWindowTextWString(hTikTokEdit));
     auto cleaned = SanitizeTikTok(raw);
+    BOOL enable = !cleaned.empty();
+    if (hStartBtn)   EnableWindow(hStartBtn, enable);
+    if (hRestartBtn) EnableWindow(hRestartBtn, enable);
+}
+
+static void UpdateYouTubeButtons(HWND hYouTubeEdit, HWND hStartBtn, HWND hRestartBtn)
+{
+    if (!hYouTubeEdit) return;
+
+    // YouTube uses a handle or channel identifier. Accept either "@handle" or "handle".
+    auto raw = ToUtf8(GetWindowTextWString(hYouTubeEdit));
+    auto cleaned = Trim(raw);
+    if (!cleaned.empty() && cleaned[0] == '@') cleaned.erase(cleaned.begin());
+    cleaned = Trim(cleaned);
+
     BOOL enable = !cleaned.empty();
     if (hStartBtn)   EnableWindow(hStartBtn, enable);
     if (hRestartBtn) EnableWindow(hRestartBtn, enable);
@@ -1029,7 +1043,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     static ChatAggregator chat;
     static TikTokSidecar tiktok;
     static TwitchIrcWsClient twitch;
-    static YouTubeLiveChatService youtube;
     static std::unique_ptr<HttpServer> gHttp;
     static std::thread metricsThread;
     static std::thread twitchHelixThread;
@@ -1113,9 +1126,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
         hStartYouTubeBtn = CreateWindowW(L"BUTTON", L"Start", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_START_YOUTUBE, nullptr, nullptr);
         hRestartYouTubeBtn = CreateWindowW(L"BUTTON", L"Restart", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_RESTART_YOUTUBE, nullptr, nullptr);
-        EnableWindow(hStartYouTubeBtn, TRUE);
-        EnableWindow(hRestartYouTubeBtn, TRUE);
-
         hHint = CreateWindowW(L"STATIC", L"", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
 
         // Log + tools
@@ -1178,6 +1188,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         SetWindowTextW(hHint, L"Tip: Save settings first. TikTok cookies are optional unless required by TikTok.");
 
         UpdateTikTokButtons(hTikTok, hStartTikTokBtn, hRestartTikTokBtn);
+        UpdateYouTubeButtons(hYouTube, hStartYouTubeBtn, hRestartYouTubeBtn);
         LayoutControls(hwnd);
 
         PostMessageW(hwnd, WM_APP + 1, 0, 0);
@@ -1268,6 +1279,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             return 0;
         }
 
+
+        if (HIWORD(wParam) == EN_CHANGE && id == IDC_YOUTUBE_EDIT) {
+            UpdateYouTubeButtons(hYouTube, hStartYouTubeBtn, hRestartYouTubeBtn);
+            return 0;
+        }
+
         if (id == IDC_START_TIKTOK || id == IDC_RESTART_TIKTOK) {
             StartOrRestartTikTokSidecar(tiktok, state, chat, hwnd, gLog, hTikTok);
             return 0;
@@ -1293,24 +1310,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         }
 
         if (id == IDC_START_YOUTUBE || id == IDC_RESTART_YOUTUBE) {
-            youtube.stop();
-
-            std::string h = ToUtf8(GetWindowTextWString(hYouTube));
-            h = Trim(h); // if you don’t have Trim here, just omit this line
-
-            if (h.empty()) {
-                LogLine(L"YOUTUBE: please enter a handle/channel first.");
-                return 0;
-            }
-
-            bool ok = youtube.start(h, chat, [](const std::wstring& s) { LogLine(s); });
-
-            if (ok) {
-                LogLine(L"YOUTUBE: started/restarted live chat poller.");
-            }
-            else {
-                LogLine(L"YOUTUBE: failed to start (already running or invalid handle).");
-            }
+            LogLine(L"YouTube support is UI-ready but not implemented yet.");
             return 0;
         }
 
@@ -1355,6 +1355,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
             config.youtube_handle = ToUtf8(GetWindowTextWString(hYouTube));
 
+            // Enable/disable YouTube controls based on current handle
+            UpdateYouTubeButtons(hYouTube, hStartYouTubeBtn, hRestartYouTubeBtn);
             // Overlay Style UI removed (will be redesigned on a separate tab/page later)
 
             if (config.Save()) {
@@ -1448,7 +1450,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         // Stop platform services first (they may still be producing events)
         tiktok.stop();
         twitch.stop();
-        youtube.stop();
 
         // Stop HTTP server cleanly (stop + join)
         if (gHttp) {
