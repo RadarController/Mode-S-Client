@@ -183,9 +183,10 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClInclude Include="src\AppState.h" />
     <ClInclude Include="src\chat\ChatAggregator.h" />
     <ClInclude Include="src\chat\ChatTypes.h" />
+    <ClInclude Include="src\floating\FloatingChat.h" />
     <ClInclude Include="src\Mode-S Client.h" />
-        <ClInclude Include="src\http\HttpServer.h" />
-<ClInclude Include="targetver.h" />
+    <ClInclude Include="src\http\HttpServer.h" />
+    <ClInclude Include="targetver.h" />
     <ClInclude Include="ui\Resource.h" />
   </ItemGroup>
   <ItemGroup>
@@ -197,9 +198,10 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClCompile Include="integrations\twitch\TwitchIrcWsClient.cpp" />
     <ClCompile Include="src\AppState.cpp" />
     <ClCompile Include="src\chat\ChatAggregator.cpp" />
+    <ClCompile Include="src\floating\FloatingChat.cpp" />
     <ClCompile Include="src\Mode-S Client.cpp" />
-      <ClCompile Include="src\http\HttpServer.cpp" />
-</ItemGroup>
+    <ClCompile Include="src\http\HttpServer.cpp" />
+  </ItemGroup>
   <ItemGroup>
     <None Include="assets\overlay\Common\chat.html" />
     <None Include="assets\overlay\Landscape\26_header.html" />

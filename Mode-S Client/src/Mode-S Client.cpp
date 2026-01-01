@@ -34,6 +34,7 @@
 #include "tiktok/TikTokFollowersService.h"
 #include "euroscope/EuroScopeIngestService.h"
 #include "obs/ObsWsClient.h"
+#include "floating/FloatingChat.h"
 
 // --------------------------- Control IDs ------------------------------------
 #define IDC_TIKTOK_EDIT        1001
@@ -88,11 +89,9 @@ static HWND hClearLogBtn = nullptr, hCopyLogBtn = nullptr;
 // Button to open a floating chat window
 static HWND hOpenFloatingChatBtn = nullptr;
 
-// Floating chat state
-static HWND gFloatingChatWnd = nullptr;
-static HWND gFloatingChatEdit = nullptr;
-static std::atomic<bool> gFloatingChatRunning{ false };
-static std::thread gFloatingChatThread;
+// Floating chat instance
+// Moved to FloatingChat class in src/floating/FloatingChat.*
+static std::unique_ptr<class FloatingChat> gFloatingChat;
 
 static std::atomic<bool> gRunning{ true };
 
@@ -877,177 +876,7 @@ static bool TryEnableAcrylic(HWND hwnd, BYTE bgOpacity /*0..255*/)
 }
 
 // --------------------------- Floating Chat Window ---------------------------
-// Resizable, always-on-top layered window (67% transparent) that polls /api/chat/recent
-
-static LRESULT CALLBACK FloatingChatWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
-{
-    switch (msg) {
-    case WM_CREATE:
-    {
-        gFloatingChatEdit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
-            WS_CHILD | WS_VISIBLE | ES_LEFT | ES_MULTILINE | ES_READONLY | WS_VSCROLL,
-            0, 0, 0, 0, hwnd, nullptr, GetModuleHandleW(nullptr), nullptr);
-        SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
-        return 0;
-    }
-    case WM_SIZE:
-    {
-        RECT rc; GetClientRect(hwnd, &rc);
-        if (gFloatingChatEdit) MoveWindow(gFloatingChatEdit, 0, 0, rc.right - rc.left, rc.bottom - rc.top, TRUE);
-        return 0;
-    }
-    case WM_APP + 50: // update chat content (lParam = std::wstring*)
-    {
-        auto p = reinterpret_cast<std::wstring*>(lParam);
-        if (p && gFloatingChatEdit) {
-            // Determine if user is currently at the bottom. If not, preserve their scroll
-            // position so they can read earlier messages without being forced to the bottom.
-            bool atBottom = true;
-            // Try to use the scroll bar info which is the most reliable for detecting bottom.
-            SCROLLINFO si{};
-            si.cbSize = sizeof(si);
-            si.fMask = SIF_RANGE | SIF_PAGE | SIF_POS;
-            if (GetScrollInfo(gFloatingChatEdit, SB_VERT, &si)) {
-                // nMax is the maximum scroll range value. If pos + page >= max, we're at bottom.
-                int pos = si.nPos;
-                int page = si.nPage;
-                int max = si.nMax;
-                if (max > 0) {
-                    atBottom = (pos + page >= max - 1);
-                }
-            }
-
-            // Also capture the first visible line so we can restore it when not at bottom.
-            int prevFirstVisible = (int)SendMessageW(gFloatingChatEdit, EM_GETFIRSTVISIBLELINE, 0, 0);
-
-            // Update text
-            SetWindowTextW(gFloatingChatEdit, p->c_str());
-
-            if (atBottom) {
-                // Auto-scroll to bottom
-                int len = GetWindowTextLengthW(gFloatingChatEdit);
-                if (len < 0) len = 0;
-                SendMessageW(gFloatingChatEdit, EM_SETSEL, (WPARAM)len, (LPARAM)len);
-                SendMessageW(gFloatingChatEdit, EM_SCROLLCARET, 0, 0);
-            }
-            else {
-                // Restore previous first visible line so user stays where they scrolled to.
-                int newFirstVisible = (int)SendMessageW(gFloatingChatEdit, EM_GETFIRSTVISIBLELINE, 0, 0);
-                int delta = prevFirstVisible - newFirstVisible;
-                if (delta != 0) {
-                    // EM_LINESCROLL takes vertical lines to scroll (relative).
-                    SendMessageW(gFloatingChatEdit, EM_LINESCROLL, 0, (LPARAM)delta);
-                }
-            }
-        }
-        delete p;
-        return 0;
-
-    }
-    case WM_CLOSE:
-        DestroyWindow(hwnd);
-        return 0;
-
-
-    case WM_APP_LOG:
-    {
-        auto* p = reinterpret_cast<std::wstring*>(lParam);
-        if (p) {
-            AppendLogOnUiThread(*p);
-            delete p;
-        }
-        return 0;
-    }
-
-    case WM_DESTROY:
-    {
-        gFloatingChatRunning = false;
-        if (gFloatingChatThread.joinable()) gFloatingChatThread.join();
-        gFloatingChatWnd = nullptr;
-        gFloatingChatEdit = nullptr;
-        return 0;
-    }
-    }
-    return DefWindowProcW(hwnd, msg, wParam, lParam);
-}
-
-static void FloatingChatPollLoop()
-{
-    while (gFloatingChatRunning && gFloatingChatWnd) {
-        HttpResult r = WinHttpRequest(L"GET", L"127.0.0.1", 17845, L"/api/chat/recent?limit=200", L"", "", false);
-        if (r.status == 200 && !r.body.empty()) {
-            try {
-                auto j = nlohmann::json::parse(r.body);
-                std::wstring out;
-                if (j.contains("messages") && j["messages"].is_array()) {
-                    for (const auto& msg : j["messages"]) {
-                        std::string user;
-                        std::string text;
-                        std::string platform;
-                        if (msg.is_object()) {
-                            if (msg.contains("user")) user = msg["user"].get<std::string>();
-                            if (msg.contains("message")) text = msg["message"].get<std::string>();
-                            if (text.empty() && msg.contains("text")) text = msg["text"].get<std::string>();
-                            if (msg.contains("platform")) platform = msg["platform"].get<std::string>();
-                        }
-                        std::wstring wuser = ToW(user.empty() ? platform : user);
-                        std::wstring wtext = ToW(text);
-                        if (wuser.empty()) wuser = L"(anon)";
-                        out += wuser + L": " + wtext + L"\r\n";
-                    }
-                }
-                auto p = new std::wstring(std::move(out));
-                PostMessageW(gFloatingChatWnd, WM_APP + 50, 0, (LPARAM)p);
-            }
-            catch (...) {}
-        }
-        for (int i = 0; i < 50 && gFloatingChatRunning; ++i) Sleep(10); // ~500ms
-    }
-}
-
-static void OpenFloatingChatWindow(HWND parent)
-{
-    if (gFloatingChatWnd) { SetForegroundWindow(gFloatingChatWnd); return; }
-
-    const wchar_t* kClass = L"StreamHub_FloatingChat";
-    static std::atomic<bool> reg{ false };
-    if (!reg.exchange(true)) {
-        WNDCLASSW wc{};
-        wc.lpfnWndProc = FloatingChatWndProc;
-        wc.hInstance = GetModuleHandleW(nullptr);
-        wc.lpszClassName = kClass;
-        wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-        wc.hbrBackground = nullptr;
-        RegisterClassW(&wc);
-    }
-
-    RECT pr{}; GetWindowRect(parent, &pr);
-    int w = 420, h = 600;
-    int x = pr.left + 50, y = pr.top + 50;
-
-    HWND wnd = CreateWindowExW(WS_EX_LAYERED | WS_EX_TOPMOST,
-        kClass, L"Floating Chat",
-        WS_OVERLAPPEDWINDOW | WS_VISIBLE | WS_SYSMENU | WS_THICKFRAME,
-        x, y, w, h,
-        nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
-    if (!wnd) return;
-
-    const BYTE alpha = (BYTE)84; // ~33% opaque -> 67% transparent
-    SetLayeredWindowAttributes(wnd, 0, alpha, LWA_ALPHA);
-
-    gFloatingChatWnd = wnd;
-    gFloatingChatRunning = true;
-    gFloatingChatThread = std::thread(FloatingChatPollLoop);
-}
-
-static void CloseFloatingChatWindow()
-{
-    if (!gFloatingChatWnd) return;
-    gFloatingChatRunning = false;
-    for (int i = 0; i < 50 && gFloatingChatWnd; ++i) Sleep(10);
-    DestroyWindow(gFloatingChatWnd);
-}
-
+// Floating chat window is now implemented in src/floating/FloatingChat.*
 // --------------------------- Layout -----------------------------------------
 static void LayoutControls(HWND hwnd)
 {
@@ -1310,6 +1139,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             hInst, nullptr
         );
 
+        // Create floating chat manager lazily
+        gFloatingChat = std::make_unique<FloatingChat>();
+
         // Apply font
         HWND controls[] = {
             hGroupTikTok,hGroupTwitch,hGroupYouTube,
@@ -1532,7 +1364,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             const int id = LOWORD(wParam);
 
             if (id == IDC_OPEN_CHAT) {
-                OpenFloatingChatWindow(hwnd);
+                if (gFloatingChat) gFloatingChat->Open(hwnd);
                 return 0;
             }
 
@@ -1611,7 +1443,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         break;
     }
 
-    return DefWindowProcW(hwnd, msg, wParam, lParam);
+    return DefWindowProc(hwnd, msg, wParam, lParam);
 }
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {

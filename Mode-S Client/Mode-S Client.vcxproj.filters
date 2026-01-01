@@ -75,6 +75,18 @@
     <ClInclude Include="integrations\euroscope\EuroScopeIngestService.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="src\chat\ChatAggregator.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\chat\ChatTypes.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\http\HttpServer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\floating\FloatingChat.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="integrations\obs\ObsWsClient.cpp">
@@ -99,6 +111,15 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="integrations\euroscope\EuroScopeIngestService.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\chat\ChatAggregator.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\http\HttpServer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\floating\FloatingChat.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
