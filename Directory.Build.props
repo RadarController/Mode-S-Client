@@ -1,0 +1,7 @@
+<Project>
+  <ItemGroup>
+    <!-- Pull WebView2 SDK via NuGet for MSBuild-based projects. -->
+    <!-- Version can be adjusted as needed. Restore packages before building. -->
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.1343.22" />
+  </ItemGroup>
+</Project>

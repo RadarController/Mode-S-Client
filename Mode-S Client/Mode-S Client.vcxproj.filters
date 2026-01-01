@@ -22,17 +22,20 @@
     <Filter Include="assets">
       <UniqueIdentifier>{894651a9-639b-4c7f-90f8-45cbe717f7bd}</UniqueIdentifier>
     </Filter>
-    <Filter Include="assets%255coverlay">
-      <UniqueIdentifier>{7df615b3-361e-43c3-80ee-d952aaf72522}</UniqueIdentifier>
-    </Filter>
     <Filter Include="sidecar">
       <UniqueIdentifier>{e70ac4a4-b7cb-4948-95c0-c7a3ec1148ef}</UniqueIdentifier>
     </Filter>
-    <Filter Include="assets%255coverlay\landscape">
+    <Filter Include="assets\overlay">
+      <UniqueIdentifier>{7df615b3-361e-43c3-80ee-d952aaf72522}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="assets\overlay\landscape">
       <UniqueIdentifier>{584b570a-5cc9-40f1-b49d-672a3d767fc8}</UniqueIdentifier>
     </Filter>
-    <Filter Include="assets%255coverlay\common">
+    <Filter Include="assets\overlay\common">
       <UniqueIdentifier>{44a65eb7-c4d7-43c4-81ab-33c80fe9971e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="assets\app">
+      <UniqueIdentifier>{dd492cda-eefd-4463-be6a-e7980f594976}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -75,6 +78,18 @@
     <ClInclude Include="integrations\euroscope\EuroScopeIngestService.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="src\chat\ChatAggregator.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\chat\ChatTypes.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\http\HttpServer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\floating\FloatingChat.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="integrations\obs\ObsWsClient.cpp">
@@ -101,6 +116,15 @@
     <ClCompile Include="integrations\euroscope\EuroScopeIngestService.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\chat\ChatAggregator.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\http\HttpServer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\floating\FloatingChat.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="ui\Mode-S Client.rc">
@@ -117,10 +141,14 @@
       <Filter>sidecar</Filter>
     </None>
     <None Include="assets\overlay\Landscape\26_header.html">
-      <Filter>assets%255coverlay\landscape</Filter>
+      <Filter>assets\overlay\landscape</Filter>
     </None>
     <None Include="assets\overlay\Common\chat.html">
-      <Filter>assets%255coverlay\common</Filter>
+      <Filter>assets\overlay\common</Filter>
+    </None>
+    <None Include="packages.config" />
+    <None Include="assets\app\chat.html">
+      <Filter>assets\app</Filter>
     </None>
   </ItemGroup>
 </Project>

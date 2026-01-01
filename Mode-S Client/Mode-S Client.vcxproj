@@ -183,9 +183,10 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClInclude Include="src\AppState.h" />
     <ClInclude Include="src\chat\ChatAggregator.h" />
     <ClInclude Include="src\chat\ChatTypes.h" />
+    <ClInclude Include="src\floating\FloatingChat.h" />
     <ClInclude Include="src\Mode-S Client.h" />
-        <ClInclude Include="src\http\HttpServer.h" />
-<ClInclude Include="targetver.h" />
+    <ClInclude Include="src\http\HttpServer.h" />
+    <ClInclude Include="targetver.h" />
     <ClInclude Include="ui\Resource.h" />
   </ItemGroup>
   <ItemGroup>
@@ -197,12 +198,15 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClCompile Include="integrations\twitch\TwitchIrcWsClient.cpp" />
     <ClCompile Include="src\AppState.cpp" />
     <ClCompile Include="src\chat\ChatAggregator.cpp" />
+    <ClCompile Include="src\floating\FloatingChat.cpp" />
     <ClCompile Include="src\Mode-S Client.cpp" />
-      <ClCompile Include="src\http\HttpServer.cpp" />
-</ItemGroup>
+    <ClCompile Include="src\http\HttpServer.cpp" />
+  </ItemGroup>
   <ItemGroup>
+    <None Include="assets\app\chat.html" />
     <None Include="assets\overlay\Common\chat.html" />
     <None Include="assets\overlay\Landscape\26_header.html" />
+    <None Include="packages.config" />
     <None Include="scripts\sidecar\tiktok_sidecar.py">
       <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</DeploymentContent>
       <FileType>Document</FileType>
@@ -221,5 +225,12 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
+    <Import Project="..\packages\Microsoft.Web.WebView2.1.0.3650.58\build\native\Microsoft.Web.WebView2.targets" Condition="Exists('..\packages\Microsoft.Web.WebView2.1.0.3650.58\build\native\Microsoft.Web.WebView2.targets')" />
   </ImportGroup>
+  <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
+    <PropertyGroup>
+      <ErrorText>This project references NuGet package(s) that are missing on this computer. Use NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105. The missing file is {0}.</ErrorText>
+    </PropertyGroup>
+    <Error Condition="!Exists('..\packages\Microsoft.Web.WebView2.1.0.3650.58\build\native\Microsoft.Web.WebView2.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\Microsoft.Web.WebView2.1.0.3650.58\build\native\Microsoft.Web.WebView2.targets'))" />
+  </Target>
 </Project>

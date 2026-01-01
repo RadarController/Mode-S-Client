@@ -7,22 +7,28 @@
     <style>
         /* Minimal styling to ensure the log is scrollable in OBS browser sources */
         html, body { margin: 0; padding: 0; height: 100%; background: transparent; overflow: hidden; }
-        body { font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color: #fff; }
+        body { font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color: #000; }
         /* Make the log take full viewport width and be scrollable vertically. Hide scrollbars visually but keep scrolling. */
         #log { padding: 8px; overflow-y: auto; height: 100vh; box-sizing: border-box; width: 100vw; scroll-behavior: smooth; }
         #log .line { margin: 2px 0; display: flex; align-items: flex-start; }
-        #log .icon {
-            width: 20px;
-            height: 20px;
-            flex: 0 0 20px;
-            margin-right: 8px;
-        }
-        /* 🔧 Normalize inline SVG icon sizing */
-        #log .icon svg {
-            width: 100%;
-            height: 100%;
-            display: block;
-        }
+            #log .line {
+                margin: 2px 0;
+                display: flex;
+                align-items: flex-start;
+            }
+
+            #log .icon {
+                width: 20px;
+                height: 20px;
+                flex: 0 0 20px;
+                margin-right: 8px;
+            }
+                /* 🔧 Normalize inline SVG icon sizing */
+                #log .icon svg {
+                    width: 100%;
+                    height: 100%;
+                    display: block;
+                }
         #log .text { white-space: normal; word-break: break-word; flex: 1 1 auto; }
         /* Remove extra horizontal gap on the username so the colon added in JS produces a single space: "username: message" */
         #log .user { font-weight: 600; margin-right: 0; }
