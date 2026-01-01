@@ -1,316 +1,329 @@
 #!/usr/bin/env python
-# tiktok_sidecar.py — Mode-S Client TikTok sidecar (TikTokLive 6.6.5, Python 3.13 safe)
+# TikTok sidecar for Mode-S Client
+# FINAL SIMPLIFIED VERSION
 #
-# Key fixes:
-# - Reads Debug\config.json even when launched from Debug\sidecar\
-# - Never calls client.run() (avoids "bound to a different event loop" on Python 3.13)
-# - Retries signer failures around await client.connect(...)
-# - Emits newline-delimited JSON with flush=True for C++ pipe reader
+# Viewers logic:
+#   - viewers == room_info.user_count ONLY
+#   - No totals, no popularity, no heuristics
+#   - Matches TikTok website "watching now"
 
 import asyncio
 import json
 import sys
 import time
 import traceback
+import inspect
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Callable, Tuple
 
-
-# Force line-buffered output for subprocess pipes
-try:
-    sys.stdout.reconfigure(line_buffering=True)
-except Exception:
-    pass
+# ---------------- stdout pipe safety (Windows) ----------------
+def emit(obj: Dict[str, Any]) -> None:
+    try:
+        print(json.dumps(obj, ensure_ascii=False), flush=True)
+    except (BrokenPipeError, OSError):
+        # Downstream pipe closed (findstr / PowerShell)
+        raise SystemExit(0)
 
 
 def now_ts() -> float:
     return time.time()
 
 
-def emit(obj: Dict[str, Any]) -> None:
-    print(json.dumps(obj, ensure_ascii=False), flush=True)
-
-
-def log_info(msg: str) -> None:
-    emit({"type": "tiktok.info", "ts": now_ts(), "message": msg})
-
-
-def log_warn(msg: str) -> None:
-    emit({"type": "tiktok.warn", "ts": now_ts(), "message": msg})
-
-
-def log_err(msg: str, details: Optional[str] = None) -> None:
-    payload: Dict[str, Any] = {"type": "tiktok.error", "ts": now_ts(), "message": msg}
-    if details:
-        payload["details"] = details
-    emit(payload)
-
-
-def emit_stats(live: bool, viewers: int, followers: Optional[int] = None, room_id: Optional[int] = None, note: str = "") -> None:
-    payload: Dict[str, Any] = {
+def emit_stats(
+    live: bool,
+    viewers: int,
+    note: str = "",
+    room_id: Optional[int] = None,
+):
+    # IMPORTANT: Always emit a fresh stats object so downstream rewrites the value each poll.
+    payload = {
         "type": "tiktok.stats",
         "ts": now_ts(),
         "live": bool(live),
         "viewers": int(viewers),
+        "note": note,
     }
-    if followers is not None:
-        payload["followers"] = int(followers)
     if room_id is not None:
         payload["room_id"] = int(room_id)
-    if note:
-        payload["note"] = note
     emit(payload)
 
 
+def log(t: str, msg: str, **extra):
+    payload = {"type": t, "ts": now_ts(), "message": msg}
+    payload.update(extra)
+    emit(payload)
+
+
+# ---------------- config ----------------
 def load_config() -> Dict[str, Any]:
-    """
-    Prefer config.json next to the executable,
-    then Debug\\config.json (dev),
-    then current working directory.
-    """
-
-    # 1) config.json next to the executable (production)
-    try:
-        exe_dir = Path(sys.executable).resolve().parent
-        p0 = exe_dir / "config.json"
-        if p0.exists():
-            return json.loads(p0.read_text(encoding="utf-8"))
-    except Exception:
-        pass
-
-    # 2) Debug\config.json (when running from Debug\sidecar\tiktok_sidecar.py)
-    try:
-        p1 = Path(__file__).resolve().parent.parent / "config.json"
-        if p1.exists():
-            return json.loads(p1.read_text(encoding="utf-8"))
-    except Exception:
-        pass
-
-    # 3) current working directory (fallback)
-    try:
-        p2 = Path("config.json")
-        if p2.exists():
-            return json.loads(p2.read_text(encoding="utf-8"))
-    except Exception:
-        pass
-
+    candidates = [
+        Path(sys.executable).resolve().parent / "config.json",
+        Path(__file__).resolve().parent.parent / "config.json",
+        Path("config.json"),
+    ]
+    for p in candidates:
+        if p.exists():
+            return json.loads(p.read_text(encoding="utf-8"))
     return {}
 
-def is_signer_failure(text: str) -> bool:
-    t = (text or "").lower()
-    return (
-        "sign" in t
-        or "signer" in t
-        or "fetch_signed_websocket" in t
-        or "sign_not_200" in t
-        or "status code 500" in t
-        or "504" in t
-    )
 
+# ---------------- TikTokLive ----------------
+from TikTokLive import TikTokLiveClient
+from TikTokLive.events import ConnectEvent, DisconnectEvent, CommentEvent
 
-def extract_viewers_from_room_user_seq(event: Any) -> Optional[int]:
-    # common attribute names across builds
-    for key in (
-        "viewer_count",
-        "viewerCount",
-        "total_viewer_count",
-        "totalViewerCount",
-        "total_user",
-        "totalUser",
-        "online_user",
-        "onlineUser",
-    ):
-        try:
-            if hasattr(event, key):
-                v = getattr(event, key)
-                if isinstance(v, int):
-                    return int(v)
-        except Exception:
-            pass
-
-    # __dict__ fallback
-    try:
-        d = getattr(event, "__dict__", {}) or {}
-        for key in (
-            "viewer_count",
-            "viewerCount",
-            "total_viewer_count",
-            "totalViewerCount",
-            "total_user",
-            "totalUser",
-            "online_user",
-            "onlineUser",
-        ):
-            v = d.get(key)
-            if isinstance(v, int):
-                return int(v)
-    except Exception:
-        pass
-
-    return None
+try:
+    from TikTokLive.client.errors import SignAPIError  # type: ignore
+except Exception:
+    SignAPIError = None  # type: ignore
 
 
 emit({"type": "tiktok.boot", "ts": now_ts()})
 
-# TikTokLive imports
-try:
-    from TikTokLive import TikTokLiveClient  # type: ignore
-    from TikTokLive.events import ConnectEvent, DisconnectEvent, CommentEvent, RoomUserSeqEvent  # type: ignore
-except Exception:
-    log_err("Failed to import TikTokLive", traceback.format_exc())
-    raise
 
-
-async def connect_once(unique_id: str, session_id: Optional[str], fetch_room_info: bool) -> None:
+# ---------------- helpers ----------------
+def extract_user_count(obj: Any) -> Optional[int]:
     """
-    Connects the client once on the CURRENT asyncio loop. No client.run().
+    Extract ONLY user_count from room info.
+    This matches the TikTok website viewer number on this build.
     """
-    client = TikTokLiveClient(unique_id=unique_id)
-    log_info("TikTokLiveClient created")
+    if obj is None:
+        return None
 
-    # Apply session if possible (TikTokLive 6.6.5 does not accept session_id in __init__)
-    if session_id:
-        applied = False
-        for fn_name in ("set_session", "set_session_id"):
-            try:
-                fn = getattr(client, fn_name, None)
-                if callable(fn):
-                    fn(session_id)
-                    applied = True
-                    break
-            except Exception:
-                pass
-        # Some builds expose a web/session object
-        if not applied:
-            try:
-                web = getattr(client, "web", None)
-                if web is not None:
-                    fn = getattr(web, "set_session", None)
-                    if callable(fn):
-                        fn(session_id)
-                        applied = True
-            except Exception:
-                pass
+    # Direct attribute
+    try:
+        v = getattr(obj, "user_count", None)
+        if isinstance(v, int) and v >= 0:
+            return v
+    except Exception:
+        pass
 
-        if applied:
-            log_info("Session set (sid + tt-target-idc)")
-        else:
-            log_warn("Session id present but could not be applied via this TikTokLive build")
+    # Dict
+    if isinstance(obj, dict):
+        v = obj.get("user_count")
+        if isinstance(v, int) and v >= 0:
+            return v
 
-    last_viewers = 0
-    last_followers: Optional[int] = None
-    last_room_id: Optional[int] = None
-
-    @client.on(ConnectEvent)
-    async def on_connect(event: ConnectEvent):
-        nonlocal last_room_id
-        # Room id might exist on some builds
+    # Nested common containers
+    for name in ("stats", "data", "room", "room_info", "roomInfo"):
         try:
-            rid = getattr(event, "room_id", None)
-            if isinstance(rid, int):
-                last_room_id = rid
+            nested = getattr(obj, name, None)
+            v = extract_user_count(nested)
+            if v is not None:
+                return v
         except Exception:
             pass
 
+    return None
+
+
+def is_signer_failure(exc: BaseException) -> bool:
+    msg = str(exc).lower()
+    if "sign_not_200" in msg or "sign api" in msg or "504" in msg:
+        return True
+    if SignAPIError is not None and isinstance(exc, SignAPIError):
+        return True
+    return False
+
+
+async def call_maybe_async(fn: Callable[..., Any], *args: Any) -> Any:
+    """
+    Call fn with args, supporting both sync and async callables.
+    """
+    res = fn(*args)
+    return await res if asyncio.iscoroutine(res) else res
+
+
+def candidate_fetchers(client: Any) -> Tuple[Tuple[str, Callable[..., Any]], ...]:
+    """
+    Return a list of (label, callable) fetchers that are likely to perform a *fresh* room info fetch.
+    We try public APIs first, then common internal ones used across TikTokLive versions.
+    """
+    cands: list[Tuple[str, Callable[..., Any]]] = []
+
+    # Public-ish names seen across versions
+    for name in ("fetch_room_info", "get_room_info", "room_info", "fetchRoomInfo", "getRoomInfo"):
+        fn = getattr(client, name, None)
+        if callable(fn):
+            cands.append((f"client.{name}", fn))
+
+    # Internal/common objects that sometimes exist
+    for obj_name in ("_web", "web", "_client", "client", "_room", "room"):
+        obj = getattr(client, obj_name, None)
+        if obj is None:
+            continue
+        for name in ("fetch_room_info", "get_room_info", "room_info", "fetchRoomInfo", "getRoomInfo"):
+            fn = getattr(obj, name, None)
+            if callable(fn):
+                cands.append((f"{obj_name}.{name}", fn))
+
+    return tuple(cands)
+
+
+async def fetch_fresh_room_info(client: Any, room_id: Optional[int]) -> Tuple[Optional[Any], str]:
+    """
+    Try hard to fetch a fresh room-info object every poll.
+    Returns (info, label_used). If nothing worked: (None, "none").
+    """
+    for label, fn in candidate_fetchers(client):
+        try:
+            # Some versions require room_id; others accept no args.
+            sig = None
+            try:
+                sig = inspect.signature(fn)
+            except Exception:
+                sig = None
+
+            if sig is not None:
+                # If it looks like it expects at least 1 positional arg (beyond self),
+                # try with room_id first when available.
+                params = list(sig.parameters.values())
+                wants_arg = any(
+                    p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD) and p.default is p.empty
+                    for p in params[1:]  # skip self
+                )
+                if wants_arg and room_id is not None:
+                    info = await call_maybe_async(fn, room_id)
+                else:
+                    info = await call_maybe_async(fn)
+            else:
+                # No signature info; try (room_id) then ().
+                if room_id is not None:
+                    try:
+                        info = await call_maybe_async(fn, room_id)
+                    except TypeError:
+                        info = await call_maybe_async(fn)
+                else:
+                    info = await call_maybe_async(fn)
+
+            if info is not None:
+                return info, label
+        except TypeError:
+            # Wrong arity; keep trying other candidates
+            continue
+        except Exception:
+            # Fetch failed; try next candidate
+            continue
+
+    return None, "none"
+
+
+# ---------------- main ----------------
+async def main_async() -> int:
+    cfg = load_config()
+    unique_id = (cfg.get("tiktok_unique_id") or "").replace("@", "").strip()
+
+    emit({"type": "tiktok.config", "ts": now_ts(), "unique_id": unique_id})
+
+    if not unique_id:
+        log("tiktok.error", "tiktok_unique_id missing")
+        return 1
+
+    client = TikTokLiveClient(unique_id=unique_id)
+    log("tiktok.info", "TikTokLiveClient created")
+
+    last_room_id: Optional[int] = None
+    last_viewers: int = 0
+    dumped_missing_user_count = False
+
+    # ---------------- events ----------------
+    @client.on(ConnectEvent)
+    async def on_connect(event: ConnectEvent):
+        nonlocal last_room_id
+        last_room_id = getattr(event, "room_id", None)
         emit({"type": "tiktok.connected", "ts": now_ts()})
-        emit_stats(live=True, viewers=last_viewers, followers=last_followers, room_id=last_room_id, note="connected")
+        # Emit immediately (may be 0 until first poll refreshes)
+        emit_stats(True, last_viewers, note="connected", room_id=last_room_id)
 
     @client.on(DisconnectEvent)
     async def on_disconnect(_: DisconnectEvent):
         emit({"type": "tiktok.offline", "ts": now_ts()})
-        emit_stats(live=False, viewers=0, followers=last_followers, room_id=last_room_id, note="disconnected")
+        emit_stats(False, 0, note="disconnected", room_id=last_room_id)
 
     @client.on(CommentEvent)
     async def on_comment(event: CommentEvent):
         try:
-            user = "unknown"
-            if getattr(event, "user", None) and getattr(event.user, "nickname", None):
-                user = str(event.user.nickname)
-            msg = str(getattr(event, "comment", "") or "")
-            emit({"type": "tiktok.chat", "ts": now_ts(), "user": user, "message": msg})
+            emit({
+                "type": "tiktok.chat",
+                "ts": now_ts(),
+                "user": event.user.nickname if event.user else "unknown",
+                "message": event.comment,
+            })
         except Exception:
             pass
 
-    @client.on(RoomUserSeqEvent)
-    async def on_room_user_seq(event: RoomUserSeqEvent):
-        nonlocal last_viewers
-        viewers = extract_viewers_from_room_user_seq(event)
+    # ---------------- room info polling (SOURCE OF TRUTH) ----------------
+    async def poll_room_info():
+        nonlocal last_viewers, dumped_missing_user_count
 
-        # One-time debug if we can't find a viewer field (helps tune extraction)
-        if viewers is None:
-            if not getattr(on_room_user_seq, "_debugged", False):
-                setattr(on_room_user_seq, "_debugged", True)
-                try:
-                    d = getattr(event, "__dict__", {}) or {}
-                    keys = sorted([k for k in d.keys() if not str(k).startswith("_")])[:80]
-                    emit({"type": "tiktok.debug", "ts": now_ts(), "label": "RoomUserSeqEvent", "keys": keys})
-                except Exception:
-                    pass
-            return
+        while True:
+            await asyncio.sleep(5)
 
-        if viewers != last_viewers:
-            last_viewers = viewers
-            emit_stats(live=True, viewers=viewers, followers=last_followers, room_id=last_room_id, note="room_user_seq")
+            # Always try to fetch *fresh* room info each poll
+            info, used = await fetch_fresh_room_info(client, last_room_id)
 
-    log_info("Registered listener: CommentEvent")
-    log_info("Registered RoomUserSeqEvent (class)")
-    log_info(f"Starting asyncio.run(client.connect(fetch_room_info={fetch_room_info}))")
-
-    # This is the critical call (loop-safe)
-    await client.connect(fetch_room_info=fetch_room_info)
-
-
-async def main_async() -> int:
-    cfg = load_config()
-
-    # Log which config path we chose
-    try:
-        preferred = Path(__file__).resolve().parent.parent / "config.json"
-        if preferred.exists():
-            log_info(f"Reading config: {str(preferred)}")
-        else:
-            log_info(f"Reading config: {str(Path('config.json').resolve())}")
-    except Exception:
-        pass
-
-    unique_id = (cfg.get("tiktok_unique_id", "") or "").replace("@", "").strip()
-    emit({"type": "tiktok.config", "ts": now_ts(), "unique_id": unique_id})
-    if not unique_id:
-        log_err("tiktok_unique_id is empty")
-        return 1
-
-    session_id = cfg.get("tiktok_session_id")
-
-    MAX_RETRIES = 6
-    for attempt in range(1, MAX_RETRIES + 1):
-        try:
-            await connect_once(unique_id=unique_id, session_id=session_id, fetch_room_info=True)
-            # If connect returns, treat as ended
-            emit_stats(live=False, viewers=0, note="connect_returned")
-            return 0
-
-        except Exception:
-            tb = traceback.format_exc()
-
-            if is_signer_failure(tb) and attempt < MAX_RETRIES:
+            if info is None:
+                # Do NOT fall back to cached attributes (they can be stale).
                 emit({
-                    "type": "tiktok.sign_error",
+                    "type": "tiktok.warn",
                     "ts": now_ts(),
-                    "message": "ERROR: TikTok signer service failed (temporary). Retrying…",
-                    "details": tb.splitlines()[-1] if tb else "",
+                    "message": "room_info_poll: no fresh room info method available",
                 })
-                emit_stats(live=False, viewers=0, note="signer_retrying")
+                # Still emit stats so downstream sees ongoing polls (viewers stays as last known).
+                emit_stats(True, last_viewers, note="room_info_poll_no_fresh_info", room_id=last_room_id)
+                continue
 
+            viewers = extract_user_count(info)
+
+            if viewers is None:
+                if not dumped_missing_user_count:
+                    dumped_missing_user_count = True
+                    try:
+                        emit({
+                            "type": "tiktok.debug",
+                            "ts": now_ts(),
+                            "label": "user_count_missing",
+                            "fetcher": used,
+                            "keys": list((getattr(info, "__dict__", {}) or {}).keys()),
+                        })
+                    except Exception:
+                        pass
+                # Still emit stats each poll (keep last_viewers) so field is rewritten.
+                emit_stats(True, last_viewers, note=f"room_info_poll_missing_user_count:{used}", room_id=last_room_id)
+                continue
+
+            last_viewers = int(viewers)
+
+            # IMPORTANT: emit every poll, not only when it changes
+            emit_stats(True, last_viewers, note=f"room_info_poll:{used}", room_id=last_room_id)
+
+    asyncio.create_task(poll_room_info())
+
+    # ---------------- connect with retry on signer failures ----------------
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            await client.connect(fetch_room_info=True)
+            emit_stats(False, 0, note="connect_returned", room_id=last_room_id)
+            return 0
+        except Exception as e:
+            if is_signer_failure(e):
                 delay = min(2.0 * attempt, 10.0) + 0.5
-                log_info(f"Retrying in {delay:.1f}s")
+                emit({
+                    "type": "tiktok.warn",
+                    "ts": now_ts(),
+                    "message": f"Signer failure (temporary). Retrying in {delay:.1f}s",
+                })
                 await asyncio.sleep(delay)
                 continue
 
-            log_err("Unhandled exception", tb)
-            emit_stats(live=False, viewers=0, note="exception")
+            emit({
+                "type": "tiktok.error",
+                "ts": now_ts(),
+                "message": "Unhandled exception",
+                "details": traceback.format_exc(),
+            })
             return 2
-
-    return 2
 
 
 def main() -> int:
