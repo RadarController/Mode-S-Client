@@ -59,6 +59,16 @@ static const char* ContentTypeFor(const std::string& path) {
     return "application/octet-stream";
 }
 
+static std::string WideToUtf8(const std::wstring& ws) {
+    if (ws.empty()) return {};
+    int needed = WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), (int)ws.size(), nullptr, 0, nullptr, nullptr);
+    if (needed <= 0) return {};
+    std::string out;
+    out.resize((size_t)needed);
+    WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), (int)ws.size(), out.data(), needed, nullptr, nullptr);
+    return out;
+}
+
 HttpServer::HttpServer(AppState& state,
                        ChatAggregator& chat,
                        EuroScopeIngestService& euroscope,
@@ -193,6 +203,70 @@ void HttpServer::RegisterRoutes() {
 
         res.set_content(j.dump(2), "application/json; charset=utf-8");
     });
+
+
+// --- API: settings save (used by /app UI) ---
+// Accept both legacy and newer paths.
+auto handle_settings_save = [&](const httplib::Request& req, httplib::Response& res) {
+    // If the UI sends a JSON body, apply it to config_ before saving.
+    if (!req.body.empty()) {
+        try {
+            auto j = json::parse(req.body);
+
+            if (j.contains("tiktok_unique_id"))      config_.tiktok_unique_id      = j.value("tiktok_unique_id", config_.tiktok_unique_id);
+            if (j.contains("twitch_login"))          config_.twitch_login          = j.value("twitch_login", config_.twitch_login);
+            if (j.contains("twitch_client_id"))      config_.twitch_client_id      = j.value("twitch_client_id", config_.twitch_client_id);
+            if (j.contains("twitch_client_secret"))  config_.twitch_client_secret  = j.value("twitch_client_secret", config_.twitch_client_secret);
+            if (j.contains("youtube_handle"))        config_.youtube_handle        = j.value("youtube_handle", config_.youtube_handle);
+
+            // TikTok cookie/session fields (optional)
+            if (j.contains("tiktok_sessionid"))      config_.tiktok_sessionid      = j.value("tiktok_sessionid", config_.tiktok_sessionid);
+            if (j.contains("tiktok_sessionid_ss"))   config_.tiktok_sessionid_ss   = j.value("tiktok_sessionid_ss", config_.tiktok_sessionid_ss);
+            if (j.contains("tiktok_tt_target_idc"))  config_.tiktok_tt_target_idc  = j.value("tiktok_tt_target_idc", config_.tiktok_tt_target_idc);
+
+            // Overlay styling fields (optional)
+            if (j.contains("overlay_font_family"))   config_.overlay_font_family   = j.value("overlay_font_family", config_.overlay_font_family);
+            if (j.contains("overlay_font_size"))     config_.overlay_font_size     = j.value("overlay_font_size", config_.overlay_font_size);
+            if (j.contains("overlay_text_shadow"))   config_.overlay_text_shadow   = j.value("overlay_text_shadow", config_.overlay_text_shadow);
+
+            if (j.contains("metrics_json_path"))     config_.metrics_json_path     = j.value("metrics_json_path", config_.metrics_json_path);
+        } catch (...) {
+            res.status = 400;
+            res.set_content(R"({"ok":false,"error":"invalid_json"})", "application/json; charset=utf-8");
+            return;
+        }
+    }
+
+    const std::wstring cfg_path_w = AppConfig::ConfigPath();
+    const std::string  cfg_path   = WideToUtf8(cfg_path_w);
+
+    if (!config_.Save()) {
+        if (log_) {
+            log_(L"settingssave: FAILED writing " + cfg_path_w);
+        }
+        res.status = 500;
+        json out;
+        out["ok"] = false;
+        out["error"] = "save_failed";
+        out["path"] = cfg_path;
+        res.set_content(out.dump(2), "application/json; charset=utf-8");
+        return;
+    }
+
+    if (log_) {
+        log_(L"settingssave: wrote " + cfg_path_w);
+    }
+
+    json out;
+    out["ok"] = true;
+    out["path"] = cfg_path;
+    res.set_header("X-Config-Path", cfg_path.c_str());
+    res.set_content(out.dump(2), "application/json; charset=utf-8");
+};
+
+svr.Post("/api/settingssave", handle_settings_save);
+svr.Post("/api/settings/save", handle_settings_save);
+
 
     // EuroScope plugin ingest endpoint (expects JSON with ts_ms)
     svr.Post("/api/euroscope", [&](const httplib::Request& req, httplib::Response& res) {
