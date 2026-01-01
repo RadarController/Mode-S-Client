@@ -356,6 +356,37 @@ svr.Get("/api/chat/diag", [&](const httplib::Request&, httplib::Response& res) {
         res.set_content(std::move(bytes), ContentTypeFor(rel));
     });
 
+    // --- Static assets: /assets/... ---
+    // Your floating chat lives at /assets/app/chat.html.
+    // Map this URL space to the on-disk "assets" directory next to the executable.
+    // We can infer the assets root from overlay_root: <exe_dir>/assets/overlay -> <exe_dir>/assets
+    const std::filesystem::path assetsRoot = opt_.overlay_root.parent_path();
+
+    svr.Get(R"(/assets/(.*))", [&, assetsRoot](const httplib::Request& req, httplib::Response& res) {
+        std::string rel = req.matches[1].str();
+        if (rel.empty()) rel = "index.html";
+
+        if (rel.find("..") != std::string::npos) {
+            res.status = 400;
+            res.set_content("bad path", "text/plain");
+            return;
+        }
+
+        std::filesystem::path p = assetsRoot / rel;
+        if (!std::filesystem::exists(p) || std::filesystem::is_directory(p)) {
+            res.status = 404;
+            res.set_content("not found", "text/plain");
+            return;
+        }
+
+        auto bytes = ReadFileUtf8(p);
+        if (rel.size() >= 5 && rel.substr(rel.size() - 5) == ".html") {
+            // Reuse the same token logic for app pages (lets you apply font/shadow tokens if desired).
+            ApplyOverlayTokens(bytes);
+        }
+        res.set_content(std::move(bytes), ContentTypeFor(rel));
+    });
+
     // Root -> overlay
     svr.Get("/", [&](const httplib::Request&, httplib::Response& res) {
         res.set_redirect("/overlay/");

@@ -2,11 +2,22 @@
 
 #include <windows.h>
 #include <winhttp.h>
+#include <WebView2.h>
+#pragma comment(lib, "WebView2LoaderStatic.lib")
+#define HAVE_WEBVIEW2 1
 #include <string>
 #include <thread>
 #include <atomic>
 #include <sstream>
+#include <vector>
+#include <memory>
+#include <algorithm>
 #include "json.hpp"
+
+#if HAVE_WEBVIEW2
+// WebView2 headers are included by FloatingChat.h (which supports both <WebView2.h> and "WebView2.h").
+using Microsoft::WRL::ComPtr;
+#endif
 
 #pragma comment(lib, "winhttp.lib")
 
@@ -18,12 +29,15 @@ FloatingChat::~FloatingChat()
     Close();
 }
 
-bool FloatingChat::Open(HWND parent)
+bool FloatingChat::Open(HWND parent, const std::wstring& initialUrl)
 {
     if (wnd_) {
         SetForegroundWindow(wnd_);
         return true;
     }
+
+    // Store URL to navigate once WebView2 is created.
+    initial_url_ = initialUrl;
 
     const wchar_t* kClass = L"StreamHub_FloatingChat";
     if (!registered_.exchange(true)) {
@@ -80,18 +94,29 @@ bool FloatingChat::Open(HWND parent)
 
     wnd_ = wnd;
     running_ = true;
-    pollThread_ = std::thread(&FloatingChat::PollLoop, this);
+
+    // WebView2 initialization will occur in WM_CREATE handler via WndProc.
     return true;
 }
 
 void FloatingChat::Close()
 {
     if (!wnd_) return;
-    running_ = false;
-    if (pollThread_.joinable()) pollThread_.join();
+#if HAVE_WEBVIEW2
+    if (webview_controller_) {
+        webview_controller_->put_IsVisible(FALSE);
+        webview_controller_.Reset();
+    }
+    if (webview_window_) {
+        webview_window_.Reset();
+    }
+#else
+    // If WebView2 not available, no controller to release
+#endif
+
     DestroyWindow(wnd_);
     wnd_ = nullptr;
-    edit_ = nullptr;
+    running_ = false;
 }
 
 bool FloatingChat::IsOpen() const { return wnd_ != nullptr; }
@@ -114,61 +139,88 @@ LRESULT CALLBACK FloatingChat::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
 {
     switch (msg) {
     case WM_CREATE: {
-        edit_ = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
-            WS_CHILD | WS_VISIBLE | ES_LEFT | ES_MULTILINE | ES_READONLY | WS_VSCROLL,
-            0, 0, 0, 0, hwnd, nullptr, GetModuleHandleW(nullptr), nullptr);
-        SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+#if HAVE_WEBVIEW2
+        // Initialize WebView2 environment and controller
+        HRESULT hr = CreateCoreWebView2EnvironmentWithOptions(nullptr, nullptr, nullptr,
+            Microsoft::WRL::Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
+                [this, hwnd](HRESULT envResult, ICoreWebView2Environment* env) -> HRESULT {
+                    if (FAILED(envResult) || !env) return envResult;
+                    // Create controller
+                    env->CreateCoreWebView2Controller(hwnd,
+                        Microsoft::WRL::Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
+                            [this, hwnd, env](HRESULT ctlResult, ICoreWebView2Controller* controller) -> HRESULT {
+                                if (FAILED(ctlResult) || !controller) return ctlResult;
+                                webview_controller_.Attach(controller);
+                                // obtain core webview
+                                ICoreWebView2* core = nullptr;
+                                webview_controller_->get_CoreWebView2(&core);
+                                if (core) {
+                                    webview_window_.Attach(core);
+                                    // Make background transparent if supported
+                                    ICoreWebView2Settings* settings = nullptr;
+                                    webview_window_->get_Settings(&settings);
+                                    if (settings) {
+                                        settings->put_IsStatusBarEnabled(FALSE);
+                                        settings->put_AreDefaultContextMenusEnabled(FALSE);
+                                        settings->put_AreDefaultScriptDialogsEnabled(FALSE);
+                                        settings->Release();
+                                    }
+
+                                    // Navigate to floating chat HTML served by the local HTTP server.
+                                    // Allow the caller to override the URL (future-proof for different styling).
+                                    std::wstring url = initial_url_;
+                                    if (url.empty()) {
+                                        url = L"http://127.0.0.1:17845/assets/app/chat.html";
+                                    }
+                                    webview_window_->Navigate(url.c_str());
+                                }
+
+                                // Show controller and set bounds
+                                webview_controller_->put_IsVisible(TRUE);
+                                RECT rc; GetClientRect(hwnd, &rc);
+                                webview_controller_->put_Bounds(rc);
+                                return S_OK;
+                            }).Get());
+                    return S_OK;
+                }).Get());
+        (void)hr; // ignore; best-effort initialization
+#else
+        // WebView2 not available (or not compiled in): open default browser as a last resort.
+        // (The WebView2-based floating window would otherwise appear blank.)
+        const wchar_t* url = L"http://127.0.0.1:17845/assets/app/chat.html";
+        ShellExecuteW(nullptr, L"open", url, nullptr, nullptr, SW_SHOW);
+#endif
         return 0;
     }
     case WM_SIZE: {
         RECT rc; GetClientRect(hwnd, &rc);
-        if (edit_) MoveWindow(edit_, 0, 0, rc.right - rc.left, rc.bottom - rc.top, TRUE);
-        return 0;
-    }
-    case WM_APP + 50: {
-        auto p = reinterpret_cast<std::wstring*>(lParam);
-        if (p && edit_) {
-            bool atBottom = true;
-            SCROLLINFO si{};
-            si.cbSize = sizeof(si);
-            si.fMask = SIF_RANGE | SIF_PAGE | SIF_POS;
-            if (GetScrollInfo(edit_, SB_VERT, &si)) {
-                int pos = si.nPos;
-                int page = si.nPage;
-                int max = si.nMax;
-                if (max > 0) atBottom = (pos + page >= max - 1);
-            }
-            int prevFirstVisible = (int)SendMessageW(edit_, EM_GETFIRSTVISIBLELINE, 0, 0);
-            SetWindowTextW(edit_, p->c_str());
-            if (atBottom) {
-                int len = GetWindowTextLengthW(edit_);
-                if (len < 0) len = 0;
-                SendMessageW(edit_, EM_SETSEL, (WPARAM)len, (LPARAM)len);
-                SendMessageW(edit_, EM_SCROLLCARET, 0, 0);
-            } else {
-                int newFirstVisible = (int)SendMessageW(edit_, EM_GETFIRSTVISIBLELINE, 0, 0);
-                int delta = prevFirstVisible - newFirstVisible;
-                if (delta != 0) SendMessageW(edit_, EM_LINESCROLL, 0, (LPARAM)delta);
-            }
+#if HAVE_WEBVIEW2
+        if (webview_controller_) {
+            webview_controller_->put_Bounds(rc);
         }
-        delete p;
+#endif
         return 0;
     }
     case WM_CLOSE:
         DestroyWindow(hwnd);
         return 0;
     case WM_DESTROY: {
-        running_ = false;
-        if (pollThread_.joinable()) pollThread_.join();
+#if HAVE_WEBVIEW2
+        if (webview_controller_) {
+            webview_controller_->put_IsVisible(FALSE);
+            webview_controller_.Reset();
+        }
+        if (webview_window_) webview_window_.Reset();
+#endif
         wnd_ = nullptr;
-        edit_ = nullptr;
+        running_ = false;
         return 0;
     }
     }
     return DefWindowProcW(hwnd, msg, wParam, lParam);
 }
 
-// Simplified WinHttpRequest used only by this module.
+// Simplified WinHttpRequest kept for compatibility (unused when using WebView2)
 FC_HttpResult FloatingChat::WinHttpRequest(const std::wstring& method,
     const std::wstring& host,
     INTERNET_PORT port,
@@ -233,51 +285,8 @@ done:
 
 void FloatingChat::PollLoop()
 {
-    while (running_ && wnd_) {
-        auto r = WinHttpRequest(L"GET", L"127.0.0.1", 17845, L"/api/chat/recent?limit=200", L"", "", false);
-        if (r.status == 200 && !r.body.empty()) {
-            try {
-                auto j = nlohmann::json::parse(r.body);
-                std::wstring out;
-                if (j.contains("messages") && j["messages"].is_array()) {
-                    for (const auto& msg : j["messages"]) {
-                        std::string user;
-                        std::string text;
-                        std::string platform;
-                        if (msg.is_object()) {
-                            if (msg.contains("user")) user = msg["user"].get<std::string>();
-                            if (msg.contains("message")) text = msg["message"].get<std::string>();
-                            if (text.empty() && msg.contains("text")) text = msg["text"].get<std::string>();
-                            if (msg.contains("platform")) platform = msg["platform"].get<std::string>();
-                        }
-                        std::wstring wuser = std::wstring();
-                        if (!user.empty()) {
-                            int len = MultiByteToWideChar(CP_UTF8, 0, user.c_str(), (int)user.size(), nullptr, 0);
-                            wuser.resize(len);
-                            if (len) MultiByteToWideChar(CP_UTF8, 0, user.c_str(), (int)user.size(), &wuser[0], len);
-                        }
-                        std::wstring wtext = std::wstring();
-                        if (!text.empty()) {
-                            int len = MultiByteToWideChar(CP_UTF8, 0, text.c_str(), (int)text.size(), nullptr, 0);
-                            wtext.resize(len);
-                            if (len) MultiByteToWideChar(CP_UTF8, 0, text.c_str(), (int)text.size(), &wtext[0], len);
-                        }
-                        if (wuser.empty()) {
-                            if (!platform.empty()) {
-                                int len = MultiByteToWideChar(CP_UTF8, 0, platform.c_str(), (int)platform.size(), nullptr, 0);
-                                wuser.resize(len);
-                                if (len) MultiByteToWideChar(CP_UTF8, 0, platform.c_str(), (int)platform.size(), &wuser[0], len);
-                            }
-                        }
-                        if (wuser.empty()) wuser = L"(anon)";
-                        out += wuser + L": " + wtext + L"\r\n";
-                    }
-                }
-                auto p = new std::wstring(std::move(out));
-                PostMessageW(wnd_, WM_APP + 50, 0, (LPARAM)p);
-            }
-            catch (...) {}
-        }
-        for (int i = 0; i < 50 && running_; ++i) Sleep(10);
+    // PollLoop kept for backward compatibility but not used with WebView2-based UI.
+    while (running_) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
 }

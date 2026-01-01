@@ -143,5 +143,6 @@
     <None Include="assets\overlay\Common\chat.html">
       <Filter>assets%255coverlay\common</Filter>
     </None>
+    <None Include="packages.config" />
   </ItemGroup>
 </Project>
