@@ -927,7 +927,9 @@ static bool StartOrRestartYouTubeSidecar(YouTubeSidecar& yt,
 
     LogLine((L"Starting YouTube python sidecar: " + sidecarPath));
 
-    bool ok = yt.start(L"python", sidecarPath, [&](const nlohmann::json& j) {
+    const std::wstring configPath = AppConfig::ConfigPath();
+
+    bool ok = yt.start(L"python", sidecarPath, configPath, [&](const nlohmann::json& j) {
         std::string type = j.value("type", "");
         std::string msg = j.value("message", "");
         if (type.rfind("youtube.", 0) == 0) {

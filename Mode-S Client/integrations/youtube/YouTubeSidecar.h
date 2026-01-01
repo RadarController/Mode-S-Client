@@ -17,6 +17,12 @@ public:
         const std::wstring& scriptPath,
         EventHandler onEvent);
 
+    // Starts sidecar and passes a config.json path as argv[1]
+    bool start(const std::wstring& pythonExe,
+        const std::wstring& scriptPath,
+        const std::wstring& configPath,
+        EventHandler onEvent);
+
     void stop();
 
 private:

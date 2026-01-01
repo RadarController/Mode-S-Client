@@ -17,7 +17,7 @@ import sys
 import time
 import re
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, List
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
@@ -33,48 +33,114 @@ def now_ts() -> float:
     return time.time()
 
 
-def _to_int_from_compact(s: str) -> int:
-    """Parse numbers like '1,234' or compact '1.2K'/'3.4M'."""
-    if not s:
-        return 0
-    t = s.strip().replace(",", "").replace(" ", "")
-    try:
-        return int(t)
-    except ValueError:
-        pass
+def find_config_candidates() -> List[Path]:
+    # Match TikTok sidecar behavior, but also allow an explicit config path arg.
+    candidates: List[Path] = []
+    if len(sys.argv) > 1:
+        try:
+            candidates.append(Path(sys.argv[1]).expanduser())
+        except Exception:
+            pass
 
-    m = re.match(r"^(\d+(?:\.\d+)?)([KkMm])$", t)
-    if not m:
-        return 0
-    n = float(m.group(1))
-    suf = m.group(2).upper()
-    if suf == "K":
-        n *= 1_000
-    elif suf == "M":
-        n *= 1_000_000
-    return int(n)
+    candidates.extend([
+        Path(sys.executable).resolve().parent / "config.json",
+        Path(__file__).resolve().parent.parent / "config.json",
+        Path("config.json"),
+    ])
+    # De-duplicate while preserving order
+    out: List[Path] = []
+    seen = set()
+    for p in candidates:
+        try:
+            rp = p.resolve()
+        except Exception:
+            rp = p
+        key = str(rp)
+        if key not in seen:
+            seen.add(key)
+            out.append(p)
+    return out
 
+# ---------------- config ----------------
+def load_config() -> Tuple[Dict[str, Any], Optional[Path]]:
+    """Load config.json using the same discovery approach as tiktok_sidecar.py,
+    plus a couple of extra common locations used by the app.
 
+    Returns: (cfg_dict, path_used_or_None)
+    """
+    # 1) Explicit path argument takes priority (useful when launched by the app).
+    arg_path: Optional[Path] = None
+    if len(sys.argv) > 1:
+        try:
+            p = Path(sys.argv[1])
+            arg_path = p if p.is_absolute() else (Path.cwd() / p)
+        except Exception:
+            arg_path = None
 
-def load_config() -> Dict[str, Any]:
-    candidates = [
+    candidates: List[Path] = []
+    if arg_path:
+        candidates.append(arg_path)
+
+    # 2) TikTok-style candidates (copied)
+    candidates += [
         Path(sys.executable).resolve().parent / "config.json",
         Path(__file__).resolve().parent.parent / "config.json",
         Path("config.json"),
     ]
-    for p in candidates:
-        if p.exists():
-            try:
-                return json.loads(p.read_text(encoding="utf-8"))
-            except Exception:
-                return {}
-    return {}
 
-    print(json.dumps({
-    "type": "youtube.debug",
-    "config_path": config_path,
-    "youtube_handle": handle
-}), flush=True)
+    # 3) Additional common locations (to avoid cwd surprises)
+    # project root (scripts/sidecar -> scripts -> <root>)
+    try:
+        candidates.append(Path(__file__).resolve().parents[2] / "config.json")
+    except Exception:
+        pass
+
+    # next to the script itself (scripts/sidecar/config.json)
+    try:
+        candidates.append(Path(__file__).resolve().parent / "config.json")
+    except Exception:
+        pass
+
+    # Next to the launched program (sometimes the exe sets argv[0])
+    try:
+        candidates.append(Path(sys.argv[0]).resolve().parent / "config.json")
+    except Exception:
+        pass
+
+    # De-dupe while preserving order
+    try:
+        candidates = unique_candidates(candidates)
+    except Exception:
+        # Fallback de-dupe
+        seen = set()
+        deduped = []
+        for p in candidates:
+            sp = str(p)
+            if sp not in seen:
+                seen.add(sp)
+                deduped.append(p)
+        candidates = deduped
+
+    for p in candidates:
+        try:
+            if p.exists():
+                return json.loads(p.read_text(encoding="utf-8")), p
+        except Exception:
+            continue
+
+    return {}, None
+
+def emit_debug_config(cfg_path: Optional[Path], cfg: Dict[str, Any]) -> None:
+    # Always emit so we can diagnose missing_handle quickly
+    emit({
+        "type": "youtube.debug",
+        "ts": time.time(),
+        "config_path": str(cfg_path.resolve()) if cfg_path else None,
+        "cwd": str(Path.cwd()),
+        "youtube_handle": cfg.get("youtube_handle", ""),
+    })
+
+
 
 def sanitize_handle(s: str) -> str:
     s = (s or "").strip()
@@ -191,36 +257,21 @@ def extract_live_and_viewers(html: str) -> Tuple[bool, int, str]:
     if "LIVE_STREAM_OFFLINE" in html:
         return False, 0, "live_offline_marker"
 
-    # 1) Best signal: embedded JSON field (most reliable when present)
-    # Examples:
-    #   "concurrentViewers":"1234"
-    #   "concurrentViewers":1234
-    m = re.search(r'"concurrentViewers"\s*:\s*"(?P<n>\d+)"', html)
-    if m:
-        return True, int(m.group("n")), "concurrentViewers_json"
-
-    m = re.search(r'"concurrentViewers"\s*:\s*(?P<n>\d+)', html)
-    if m:
-        return True, int(m.group("n")), "concurrentViewers_json_num"
-
-    # 2) UI text (varies by layout/locale)
-    # Common: "1,234 watching now"
+    # concurrent viewers often appears as: "1,234 watching now"
     m = re.search(r'([0-9][0-9,\.]*)\s+watching\s+now', html, re.IGNORECASE)
     if m:
-        n = _to_int_from_compact(m.group(1))
-        return True, n, "watching_now_text" if n else "watching_now_parse_fail"
+        n = m.group(1).replace(",", "")
+        try:
+            return True, int(float(n)), "watching_now_text"
+        except Exception:
+            return True, 0, "watching_now_parse_fail"
 
-    # Alternate: "watching now ... 1,234"
-    m = re.search(r'watching\s+now[^0-9]*([0-9][0-9,\.]*)', html, re.IGNORECASE)
-    if m:
-        n = _to_int_from_compact(m.group(1))
-        return True, n, "watching_now_text_alt" if n else "watching_now_parse_fail_alt"
-
-    # 3) Secondary: look for JSON flag patterns that indicate LIVE
+    # Secondary: look for JSON flag patterns
     if '"isLiveContent":true' in html or '"isLive":true' in html:
         return True, 0, "isLive_marker"
 
     return False, 0, "no_live_markers"
+
 
 def emit_stats(live: bool, viewers: int, followers: int, note: str = "") -> None:
     emit(
@@ -243,7 +294,8 @@ def main() -> int:
     last_viewers = 0
 
     while True:
-        cfg = load_config()
+        cfg, cfg_path = load_config()
+        emit_debug_config(cfg_path, cfg)
         handle = sanitize_handle(cfg.get("youtube_handle", ""))
 
         if not handle:
@@ -281,6 +333,7 @@ def main() -> int:
         emit_stats(live, viewers, followers, note=note)
 
         time.sleep(15)
+
 
 if __name__ == "__main__":
     raise SystemExit(main())

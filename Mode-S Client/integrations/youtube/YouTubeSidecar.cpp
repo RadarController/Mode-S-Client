@@ -7,6 +7,15 @@ bool YouTubeSidecar::start(const std::wstring& pythonExe,
     const std::wstring& scriptPath,
     EventHandler onEvent)
 {
+    // Backward-compatible overload: no explicit config path.
+    return start(pythonExe, scriptPath, L"", std::move(onEvent));
+}
+
+bool YouTubeSidecar::start(const std::wstring& pythonExe,
+    const std::wstring& scriptPath,
+    const std::wstring& configPath,
+    EventHandler onEvent)
+{
     stop();
     onEvent_ = std::move(onEvent);
 
@@ -25,6 +34,9 @@ bool YouTubeSidecar::start(const std::wstring& pythonExe,
     si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
 
     std::wstring cmd = L"\"" + pythonExe + L"\" \"" + scriptPath + L"\"";
+    if (!configPath.empty()) {
+        cmd += L" \"" + configPath + L"\"";
+    }
     std::vector<wchar_t> cmdBuf(cmd.begin(), cmd.end());
     cmdBuf.push_back(L'\0');
 
@@ -32,14 +44,25 @@ bool YouTubeSidecar::start(const std::wstring& pythonExe,
     if (!CreateProcessW(nullptr, cmdBuf.data(), nullptr, nullptr, TRUE,
         CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi_))
     {
+        // IMPORTANT: GetLastError() is only meaningful immediately after CreateProcessW fails.
+        // Do not call it on the success path (it may be 0 or stale).
+        const DWORD err = GetLastError();
+        wchar_t buf[1024];
+        swprintf_s(
+            buf,
+            L"CreateProcessW failed. GetLastError=%lu\n  pythonExe=%s\n  scriptPath=%s\n  cmd=%s\n",
+            err,
+            pythonExe.c_str(),
+            scriptPath.c_str(),
+            cmd.c_str());
+        OutputDebugStringW(buf);
+
         CloseHandle(hStdOutRd_); hStdOutRd_ = nullptr;
         CloseHandle(hStdOutWr_); hStdOutWr_ = nullptr;
         return false;
     }
-    DWORD err = GetLastError();
-    wchar_t buf[256];
-    swprintf_s(buf, L"CreateProcess failed. GetLastError=%lu", err);
-    OutputDebugStringW(buf);
+
+    // Success: do not call GetLastError() here.
 
     CloseHandle(hStdOutWr_);
     hStdOutWr_ = nullptr;
