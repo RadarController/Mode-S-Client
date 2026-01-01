@@ -31,7 +31,6 @@
 #include "twitch/TwitchHelixService.h"
 #include "twitch/TwitchIrcWsClient.h"
 #include "tiktok/TikTokSidecar.h"
-#include "youtube/YouTubeSidecar.h"
 #include "tiktok/TikTokFollowersService.h"
 #include "euroscope/EuroScopeIngestService.h"
 #include "obs/ObsWsClient.h"
@@ -283,6 +282,17 @@ static std::string SanitizeTikTok(const std::string& input)
     return Trim(s);
 }
 
+
+static std::string SanitizeYouTubeHandle(const std::string& input)
+{
+    std::string s = Trim(input);
+    // YouTube handles are typically entered as "@handle" - strip leading @
+    s.erase(std::remove(s.begin(), s.end(), '@'), s.end());
+    // remove spaces (handles cannot contain spaces)
+    s.erase(std::remove_if(s.begin(), s.end(), [](unsigned char c){ return std::isspace(c) != 0; }), s.end());
+    return Trim(s);
+}
+
 static std::string SanitizeTwitchLogin(std::string s)
 {
     s = Trim(s);
@@ -301,117 +311,17 @@ static void UpdateTikTokButtons(HWND hTikTokEdit, HWND hStartBtn, HWND hRestartB
     if (hRestartBtn) EnableWindow(hRestartBtn, enable);
 }
 
+
 static void UpdateYouTubeButtons(HWND hYouTubeEdit, HWND hStartBtn, HWND hRestartBtn)
 {
     if (!hYouTubeEdit) return;
-
-    // YouTube uses a handle or channel identifier. Accept either "@handle" or "handle".
     auto raw = ToUtf8(GetWindowTextWString(hYouTubeEdit));
-    auto cleaned = Trim(raw);
-    if (!cleaned.empty() && cleaned[0] == '@') cleaned.erase(cleaned.begin());
-    cleaned = Trim(cleaned);
-
+    auto cleaned = SanitizeYouTubeHandle(raw);
     BOOL enable = !cleaned.empty();
     if (hStartBtn)   EnableWindow(hStartBtn, enable);
     if (hRestartBtn) EnableWindow(hRestartBtn, enable);
 }
 
-
-static std::string SanitizeYouTubeHandle(std::string s)
-{
-    s = Trim(s);
-    if (!s.empty() && s[0] == '@') s.erase(s.begin());
-    return Trim(s);
-}
-
-static bool IsYouTubeLiveFromHtml(const std::string& html)
-{
-    // YouTube embeds JSON blobs (ytInitialPlayerResponse / ytInitialData) that typically include isLiveContent.
-    // This is a lightweight heuristic, intended to be resilient across minor markup changes.
-    if (html.find("isLiveContent\\\":true") != std::string::npos) return true;
-    if (html.find("\"isLiveContent\":true") != std::string::npos) return true;
-
-    // Some responses include a simpler isLive boolean.
-    if (html.find("\"isLive\":true") != std::string::npos) return true;
-
-    // If we clearly see an "offline" marker, treat as not live.
-    if (html.find("LIVE_STREAM_OFFLINE") != std::string::npos) return false;
-
-    return false;
-}
-
-static std::thread StartYouTubeLivePoller(
-    HWND hwndMain,
-    AppConfig& config,
-    AppState& state,
-    std::atomic<bool>& running,
-    UINT wmRefreshUi)
-{
-    return std::thread([hwndMain, &config, &state, &running, wmRefreshUi]() {
-        bool lastLive = false;
-
-        auto LooksLikeYouTubeConsentPage = [](const std::string& html) -> bool {
-            return (html.find("consent.youtube.com") != std::string::npos) ||
-                (html.find("Before you continue to YouTube") != std::string::npos) ||
-                (html.find("We use cookies") != std::string::npos && html.find("YouTube") != std::string::npos);
-            };
-
-        while (running) {
-            std::string handle = SanitizeYouTubeHandle(config.youtube_handle);
-
-            if (handle.empty()) {
-                if (lastLive) {
-                    state.set_youtube_live(false);
-                    state.set_youtube_viewers(0);
-                    if (hwndMain) PostMessageW(hwndMain, wmRefreshUi, 0, 0);
-                    lastLive = false;
-                }
-                Sleep(5000);
-                continue;
-            }
-
-            std::wstring path = L"/@" + ToW(handle) + L"/live";
-
-            // Consent bypass for UK/EU + realistic headers
-            const std::wstring kYouTubeSocCookie =
-                L"SOCS=CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyaBg";
-
-            std::wstring headers =
-                L"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                L"(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\r\n"
-                L"Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n"
-                L"Accept-Language: en-GB,en;q=0.9\r\n"
-                L"Referer: https://www.youtube.com/\r\n"
-                L"Cookie: " + kYouTubeSocCookie + L"\r\n";
-
-            HttpResult r = WinHttpRequest(L"GET", L"www.youtube.com", 443, path, headers, "", true);
-
-            bool live = false;
-            if (r.status == 200 && !r.body.empty()) {
-                if (LooksLikeYouTubeConsentPage(r.body)) {
-                    // If we still hit consent, don't claim LIVE.
-                    // (Optional: add a log here if you have logging.)
-                    live = false;
-                }
-                else {
-                    live = IsYouTubeLiveFromHtml(r.body);
-                }
-            }
-            else {
-                live = false;
-            }
-
-            if (live != lastLive) {
-                state.set_youtube_live(live);
-                if (!live) state.set_youtube_viewers(0);
-                if (hwndMain) PostMessageW(hwndMain, wmRefreshUi, 0, 0);
-                lastLive = live;
-            }
-
-            Sleep(15000);
-        }
-        });
-}
 
 static void UpdatePlatformStatusUI(const Metrics& m)
 {
@@ -905,7 +815,8 @@ static bool StartOrRestartTikTokSidecar(TikTokSidecar& tiktok,
     return ok;
 }
 
-static bool StartOrRestartYouTubeSidecar(YouTubeSidecar& yt,
+
+static bool StartOrRestartYouTubeSidecar(TikTokSidecar& youtube,
     AppState& state,
     HWND hwndMain,
     HWND hwndLog,
@@ -916,23 +827,21 @@ static bool StartOrRestartYouTubeSidecar(YouTubeSidecar& yt,
     SetWindowTextW(hYouTubeEdit, ToW(cleaned).c_str());
 
     if (cleaned.empty()) {
-        if (hwndLog) LogLine(L"YouTube handle is empty. Enter it first.");
+        if (hwndLog) LogLine(L"YouTube handle is empty. Enter it first (e.g. timthetatman).");
         return false;
     }
 
-    yt.stop();
+    youtube.stop();
 
     std::wstring exeDir = GetExeDir();
     std::wstring sidecarPath = exeDir + L"\\sidecar\\youtube_sidecar.py";
 
-    LogLine((L"Starting YouTube python sidecar: " + sidecarPath));
+    LogLine((L"Starting python sidecar: " + sidecarPath));
 
-    const std::wstring configPath = AppConfig::ConfigPath();
-
-    bool ok = yt.start(L"python", sidecarPath, configPath, [&](const nlohmann::json& j) {
+    bool ok = youtube.start(L"python", sidecarPath, [&](const nlohmann::json& j) {
         std::string type = j.value("type", "");
-        std::string msg = j.value("message", "");
         if (type.rfind("youtube.", 0) == 0) {
+            std::string msg = j.value("message", "");
             std::string extra;
             if (!msg.empty()) extra = " | " + msg;
             LogLine(ToW(("YOUTUBE: " + type + extra)));
@@ -947,26 +856,22 @@ static bool StartOrRestartYouTubeSidecar(YouTubeSidecar& yt,
             state.set_youtube_viewers(viewers);
             state.set_youtube_followers(followers);
 
+            if (!live) state.set_youtube_viewers(0);
+
+            // Refresh UI (which pulls /api/metrics and updates widgets)
             if (hwndMain) PostMessageW(hwndMain, WM_APP + 41, 0, 0);
         }
-        else if (type == "youtube.offline" || type == "youtube.error") {
-            // Ensure we never show stale live/viewers.
-            state.set_youtube_live(false);
-            state.set_youtube_viewers(0);
-            if (hwndMain) PostMessageW(hwndMain, WM_APP + 41, 0, 0);
-        }
-        });
+    });
 
     if (ok) {
-        if (hwndLog) LogLine(L"YouTube sidecar started/restarted.");
+        LogLine(L"YOUTUBE: started/restarted sidecar.");
     }
     else {
-        if (hwndLog) LogLine(L"ERROR: Could not start YouTube sidecar. Check Python install.");
+        LogLine(L"YOUTUBE: failed to start sidecar.");
     }
+
     return ok;
 }
-
-
 
 // --------------------------- Clipboard helper -------------------------------
 static void CopyLogToClipboard(HWND hwndOwner)
@@ -1202,13 +1107,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     static AppState state;
     static ChatAggregator chat;
     static TikTokSidecar tiktok;
-    static YouTubeSidecar youtube;
+    static TikTokSidecar youtube;
     static TwitchIrcWsClient twitch;
     static std::unique_ptr<HttpServer> gHttp;
     static std::thread metricsThread;
     static std::thread twitchHelixThread;
     static std::thread tiktokFollowersThread;
-    static std::thread youtubeLiveThread;
     static EuroScopeIngestService euroscope;
     static ObsWsClient obs;
 
@@ -1288,6 +1192,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
         hStartYouTubeBtn = CreateWindowW(L"BUTTON", L"Start", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_START_YOUTUBE, nullptr, nullptr);
         hRestartYouTubeBtn = CreateWindowW(L"BUTTON", L"Restart", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_RESTART_YOUTUBE, nullptr, nullptr);
+        UpdateYouTubeButtons(hYouTube, hStartYouTubeBtn, hRestartYouTubeBtn);
+
         hHint = CreateWindowW(L"STATIC", L"", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
 
         // Log + tools
@@ -1350,7 +1256,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         SetWindowTextW(hHint, L"Tip: Save settings first. TikTok cookies are optional unless required by TikTok.");
 
         UpdateTikTokButtons(hTikTok, hStartTikTokBtn, hRestartTikTokBtn);
-        UpdateYouTubeButtons(hYouTube, hStartYouTubeBtn, hRestartYouTubeBtn);
         LayoutControls(hwnd);
 
         PostMessageW(hwnd, WM_APP + 1, 0, 0);
@@ -1421,16 +1326,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         );
         tiktokFollowersThread.detach();
 
-        LogLine(L"YOUTUBE: starting live status poller thread");
-        youtubeLiveThread = StartYouTubeLivePoller(
-            hwnd,
-            config,
-            state,
-            gRunning,
-            (UINT)(WM_APP + 41)
-        );
-        youtubeLiveThread.detach();
-
         return 0;
     }
 
@@ -1452,10 +1347,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         }
 
 
-        if (HIWORD(wParam) == EN_CHANGE && id == IDC_YOUTUBE_EDIT) {
-            UpdateYouTubeButtons(hYouTube, hStartYouTubeBtn, hRestartYouTubeBtn);
-            return 0;
-        }
+if (HIWORD(wParam) == EN_CHANGE && id == IDC_YOUTUBE_EDIT) {
+    UpdateYouTubeButtons(hYouTube, hStartYouTubeBtn, hRestartYouTubeBtn);
+    return 0;
+}
 
         if (id == IDC_START_TIKTOK || id == IDC_RESTART_TIKTOK) {
             StartOrRestartTikTokSidecar(tiktok, state, chat, hwnd, gLog, hTikTok);
@@ -1481,10 +1376,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             return 0;
         }
 
-        if (id == IDC_START_YOUTUBE || id == IDC_RESTART_YOUTUBE) {
-            StartOrRestartYouTubeSidecar(youtube, state, hwnd, gLog, hYouTube);
-            return 0;
-        }
+        
+if (id == IDC_START_YOUTUBE || id == IDC_RESTART_YOUTUBE) {
+    StartOrRestartYouTubeSidecar(youtube, state, hwnd, gLog, hYouTube);
+    return 0;
+}
+
 
         if (id == IDC_TIKTOK_COOKIES) {
             TikTokCookiesDraft draft;
@@ -1525,12 +1422,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             config.twitch_login = SanitizeTwitchLogin(ToUtf8(GetWindowTextWString(hTwitch)));
             SetWindowTextW(hTwitch, ToW(config.twitch_login).c_str());
 
-            config.youtube_handle = SanitizeYouTubeHandle(ToUtf8(GetWindowTextWString(hYouTube)));
+            config.youtube_handle = ToUtf8(GetWindowTextWString(hYouTube));
+            config.youtube_handle = Trim(config.youtube_handle);
+            config.youtube_handle = SanitizeYouTubeHandle(config.youtube_handle);
             SetWindowTextW(hYouTube, ToW(config.youtube_handle).c_str());
             UpdateYouTubeButtons(hYouTube, hStartYouTubeBtn, hRestartYouTubeBtn);
 
-            // Enable/disable YouTube controls based on current handle
-            UpdateYouTubeButtons(hYouTube, hStartYouTubeBtn, hRestartYouTubeBtn);
             // Overlay Style UI removed (will be redesigned on a separate tab/page later)
 
             if (config.Save()) {
@@ -1623,6 +1520,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
         // Stop platform services first (they may still be producing events)
         tiktok.stop();
+        youtube.stop();
         twitch.stop();
 
         // Stop HTTP server cleanly (stop + join)

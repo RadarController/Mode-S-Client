@@ -188,25 +188,9 @@ void HttpServer::RegisterRoutes() {
             std::chrono::system_clock::now().time_since_epoch()
         ).count();
 
-        // Merge EuroScope ingest snapshot into the metrics payload.
-        // Guard against accidental key collisions so channel live flags always come from AppState.
-        auto es = euroscope_.Metrics(now_ms);
+        // Merge EuroScope ingest snapshot into the metrics payload
+        j.update(euroscope_.Metrics(now_ms));
 
-        // Prevent EuroScope merge from overwriting app/sidecar-derived channel metrics
-        static const char* kProtectedKeys[] = {
-            "twitch_live", "youtube_live", "tiktok_live",
-            "twitch_viewers", "youtube_viewers", "tiktok_viewers",
-            "twitch_followers", "youtube_followers", "tiktok_followers"
-        };
-
-        for (auto* k : kProtectedKeys) {
-            if (es.contains(k)) es.erase(k);
-        }
-
-        j.update(es);
-
-        res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
-        res.set_header("Pragma", "no-cache");
         res.set_content(j.dump(2), "application/json; charset=utf-8");
     });
 
