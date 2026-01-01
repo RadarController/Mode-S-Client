@@ -316,6 +316,102 @@ static void UpdateYouTubeButtons(HWND hYouTubeEdit, HWND hStartBtn, HWND hRestar
 }
 
 
+static std::string SanitizeYouTubeHandle(std::string s)
+{
+    s = Trim(s);
+    if (!s.empty() && s[0] == '@') s.erase(s.begin());
+    return Trim(s);
+}
+
+static bool IsYouTubeLiveFromHtml(const std::string& html)
+{
+    // YouTube embeds JSON blobs (ytInitialPlayerResponse / ytInitialData) that typically include isLiveContent.
+    // This is a lightweight heuristic, intended to be resilient across minor markup changes.
+    if (html.find("isLiveContent\\\":true") != std::string::npos) return true;
+    if (html.find("\"isLiveContent\":true") != std::string::npos) return true;
+
+    // Some responses include a simpler isLive boolean.
+    if (html.find("\"isLive\":true") != std::string::npos) return true;
+
+    // If we clearly see an "offline" marker, treat as not live.
+    if (html.find("LIVE_STREAM_OFFLINE") != std::string::npos) return false;
+
+    return false;
+}
+
+static std::thread StartYouTubeLivePoller(
+    HWND hwndMain,
+    AppConfig& config,
+    AppState& state,
+    std::atomic<bool>& running,
+    UINT wmRefreshUi)
+{
+    return std::thread([hwndMain, &config, &state, &running, wmRefreshUi]() {
+        bool lastLive = false;
+
+        auto LooksLikeYouTubeConsentPage = [](const std::string& html) -> bool {
+            return (html.find("consent.youtube.com") != std::string::npos) ||
+                (html.find("Before you continue to YouTube") != std::string::npos) ||
+                (html.find("We use cookies") != std::string::npos && html.find("YouTube") != std::string::npos);
+            };
+
+        while (running) {
+            std::string handle = SanitizeYouTubeHandle(config.youtube_handle);
+
+            if (handle.empty()) {
+                if (lastLive) {
+                    state.set_youtube_live(false);
+                    state.set_youtube_viewers(0);
+                    if (hwndMain) PostMessageW(hwndMain, wmRefreshUi, 0, 0);
+                    lastLive = false;
+                }
+                Sleep(5000);
+                continue;
+            }
+
+            std::wstring path = L"/@" + ToW(handle) + L"/live";
+
+            // Consent bypass for UK/EU + realistic headers
+            const std::wstring kYouTubeSocCookie =
+                L"SOCS=CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyaBg";
+
+            std::wstring headers =
+                L"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                L"(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\r\n"
+                L"Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n"
+                L"Accept-Language: en-GB,en;q=0.9\r\n"
+                L"Referer: https://www.youtube.com/\r\n"
+                L"Cookie: " + kYouTubeSocCookie + L"\r\n";
+
+            HttpResult r = WinHttpRequest(L"GET", L"www.youtube.com", 443, path, headers, "", true);
+
+            bool live = false;
+            if (r.status == 200 && !r.body.empty()) {
+                if (LooksLikeYouTubeConsentPage(r.body)) {
+                    // If we still hit consent, don't claim LIVE.
+                    // (Optional: add a log here if you have logging.)
+                    live = false;
+                }
+                else {
+                    live = IsYouTubeLiveFromHtml(r.body);
+                }
+            }
+            else {
+                live = false;
+            }
+
+            if (live != lastLive) {
+                state.set_youtube_live(live);
+                if (!live) state.set_youtube_viewers(0);
+                if (hwndMain) PostMessageW(hwndMain, wmRefreshUi, 0, 0);
+                lastLive = live;
+            }
+
+            Sleep(15000);
+        }
+        });
+}
+
 static void UpdatePlatformStatusUI(const Metrics& m)
 {
     auto set = [](HWND h, const std::wstring& s) { if (h) SetWindowTextW(h, s.c_str()); };
@@ -1047,6 +1143,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     static std::thread metricsThread;
     static std::thread twitchHelixThread;
     static std::thread tiktokFollowersThread;
+    static std::thread youtubeLiveThread;
     static EuroScopeIngestService euroscope;
     static ObsWsClient obs;
 
@@ -1258,6 +1355,16 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             }
         );
         tiktokFollowersThread.detach();
+
+        LogLine(L"YOUTUBE: starting live status poller thread");
+        youtubeLiveThread = StartYouTubeLivePoller(
+            hwnd,
+            config,
+            state,
+            gRunning,
+            (UINT)(WM_APP + 41)
+        );
+        youtubeLiveThread.detach();
 
         return 0;
     }

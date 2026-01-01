@@ -188,9 +188,16 @@ void HttpServer::RegisterRoutes() {
             std::chrono::system_clock::now().time_since_epoch()
         ).count();
 
-        // Merge EuroScope ingest snapshot into the metrics payload
-        j.update(euroscope_.Metrics(now_ms));
+        // Merge EuroScope ingest snapshot into the metrics payload.
+        // Guard against accidental key collisions so channel live flags always come from AppState.
+        auto es = euroscope_.Metrics(now_ms);
+        es.erase("twitch_live");
+        es.erase("youtube_live");
+        es.erase("tiktok_live");
+        j.update(es);
 
+        res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+        res.set_header("Pragma", "no-cache");
         res.set_content(j.dump(2), "application/json; charset=utf-8");
     });
 
