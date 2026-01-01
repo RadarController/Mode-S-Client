@@ -818,6 +818,7 @@ static bool StartOrRestartTikTokSidecar(TikTokSidecar& tiktok,
 
 static bool StartOrRestartYouTubeSidecar(TikTokSidecar& youtube,
     AppState& state,
+    ChatAggregator& chat,
     HWND hwndMain,
     HWND hwndLog,
     HWND hYouTubeEdit)
@@ -861,6 +862,27 @@ static bool StartOrRestartYouTubeSidecar(TikTokSidecar& youtube,
             // Refresh UI (which pulls /api/metrics and updates widgets)
             if (hwndMain) PostMessageW(hwndMain, WM_APP + 41, 0, 0);
         }
+        else if (type == "youtube.chat" || type == "youtube.message" || type == "youtube.msg") {
+            ChatMessage c;
+            c.platform = "youtube";
+            c.user = j.value("user", j.value("author", j.value("username", "unknown")));
+            c.message = j.value("message", j.value("text", j.value("content", "")));
+
+            // sidecar may send ts (seconds) or ts_ms (milliseconds)
+            if (j.contains("ts_ms")) {
+                c.ts_ms = j.value("ts_ms", 0LL);
+            } else {
+                double ts = j.value("ts", 0.0);
+                c.ts_ms = (std::int64_t)(ts * 1000.0);
+            }
+
+            if (!c.message.empty()) {
+                chat.Add(std::move(c));
+                // Refresh UI (chat.html polls /api/chat)
+                if (hwndMain) PostMessageW(hwndMain, WM_APP + 41, 0, 0);
+            }
+        }
+
     });
 
     if (ok) {
@@ -1378,7 +1400,7 @@ if (HIWORD(wParam) == EN_CHANGE && id == IDC_YOUTUBE_EDIT) {
 
         
 if (id == IDC_START_YOUTUBE || id == IDC_RESTART_YOUTUBE) {
-    StartOrRestartYouTubeSidecar(youtube, state, hwnd, gLog, hYouTube);
+    StartOrRestartYouTubeSidecar(youtube, state, chat, hwnd, gLog, hYouTube);
     return 0;
 }
 
