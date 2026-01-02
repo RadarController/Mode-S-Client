@@ -6,6 +6,10 @@
   "tiktok_sessionid_ss": "",
   "tiktok_tt_target_idc": "",
   "tiktok_unique_id": "",
+  "twitch": {
+    "user_access_token": "",
+    "user_refresh_token": ""
+  },
   "twitch_client_id": "",
   "twitch_client_secret": "",
   "twitch_login": "",
