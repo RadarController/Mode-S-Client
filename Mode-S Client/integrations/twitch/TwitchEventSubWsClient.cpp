@@ -186,6 +186,22 @@ void TwitchEventSubWsClient::Start(
 
     client_id_ = clientId;
     access_token_ = userAccessToken;
+
+    // Normalize token if user pasted IRC-style "oauth:..." or included "Bearer ".
+    auto trim_ws = [](std::string s) {
+        while (!s.empty() && (s.front()==' ' || s.front()=='\t' || s.front()=='\r' || s.front()=='\n')) s.erase(s.begin());
+        while (!s.empty() && (s.back()==' ' || s.back()=='\t' || s.back()=='\r' || s.back()=='\n')) s.pop_back();
+        return s;
+    };
+    access_token_ = trim_ws(access_token_);
+    if (access_token_.rfind("oauth:", 0) == 0) {
+        access_token_ = access_token_.substr(6);
+    }
+    if (access_token_.rfind("Bearer ", 0) == 0) {
+        access_token_ = access_token_.substr(7);
+        access_token_ = trim_ws(access_token_);
+    }
+
     broadcaster_id_ = broadcasterId;
     broadcaster_user_id_.clear();
 
@@ -627,8 +643,11 @@ std::string TwitchEventSubWsClient::ResolveBroadcasterUserId()
         return broadcaster_user_id_;
     }
 
-    if (client_id_.empty() || access_token_.empty() || broadcaster_id_.empty())
+    if (client_id_.empty() || access_token_.empty() || broadcaster_id_.empty()) {
+        std::lock_guard<std::mutex> lk(status_mu_);
+        last_error_ = "missing client_id/access_token/broadcaster_id";
         return "";
+    }
 
     // GET /helix/users?login=<login>
     std::wstring path = L"/helix/users?login=" + Utf8ToWide(broadcaster_id_);
@@ -640,6 +659,19 @@ std::string TwitchEventSubWsClient::ResolveBroadcasterUserId()
     HttpResult r = WinHttpRequest(L"GET", L"api.twitch.tv", INTERNET_DEFAULT_HTTPS_PORT, path, headers, "", true);
     if (r.status < 200 || r.status >= 300) {
         OutputDebug(L"ResolveBroadcasterUserId failed HTTP " + std::to_wstring(r.status) + L" body=" + Utf8ToWide(r.body));
+        {
+            std::lock_guard<std::mutex> lk(status_mu_);
+            last_error_ = std::string("helix/users HTTP ") + std::to_string(r.status);
+            if (!subscriptions_.is_array()) subscriptions_ = json::array();
+            json attempt;
+            attempt["type"] = "helix.users";
+            attempt["version"] = "1";
+            attempt["status"] = r.status;
+            attempt["ok"] = false;
+            if (!r.body.empty()) attempt["body"] = r.body;
+            subscriptions_.push_back(attempt);
+        }
+        EmitStatus();
         return "";
     }
 
@@ -649,6 +681,11 @@ std::string TwitchEventSubWsClient::ResolveBroadcasterUserId()
             broadcaster_user_id_ = jr["data"][0].value("id", "");
         }
     } catch (...) {
+        {
+            std::lock_guard<std::mutex> lk(status_mu_);
+            last_error_ = "helix/users parse_error";
+        }
+        EmitStatus();
         return "";
     }
 
@@ -722,6 +759,11 @@ bool TwitchEventSubWsClient::SubscribeAll(const std::string& sessionId)
     std::string broadcasterUid = ResolveBroadcasterUserId();
     if (broadcasterUid.empty()) {
         OutputDebug(L"SubscribeAll: missing broadcaster user id (check twitch_login, token, client-id)");
+        {
+            std::lock_guard<std::mutex> lk(status_mu_);
+            if (last_error_.empty()) last_error_ = "missing broadcaster_user_id";
+        }
+        EmitStatus();
         return false;
     }
 
