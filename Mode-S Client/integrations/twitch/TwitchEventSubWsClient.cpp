@@ -655,6 +655,7 @@ bool TwitchEventSubWsClient::CreateSubscription(const std::string& type,
         L"/helix/eventsub/subscriptions",
         headers,
         body.dump(),
+        true);
 
     // Track subscription attempts for /api/twitch/eventsub/status
     {
@@ -671,7 +672,6 @@ bool TwitchEventSubWsClient::CreateSubscription(const std::string& type,
         }
     }
     EmitStatus();
-        true);
 
     if (r.status == 202 || (r.status >= 200 && r.status < 300)) {
         DebugLog(L"Subscribed: " + Utf8ToWide(type) + L" v" + Utf8ToWide(version));
