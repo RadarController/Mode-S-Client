@@ -81,9 +81,6 @@
     <ClInclude Include="src\chat\ChatAggregator.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="src\chat\ChatTypes.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="src\http\HttpServer.h">
       <Filter>Header Files</Filter>
     </ClInclude>

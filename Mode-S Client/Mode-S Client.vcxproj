@@ -184,7 +184,6 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClInclude Include="src\AppConfig.h" />
     <ClInclude Include="src\AppState.h" />
     <ClInclude Include="src\chat\ChatAggregator.h" />
-    <ClInclude Include="src\chat\ChatTypes.h" />
     <ClInclude Include="src\floating\FloatingChat.h" />
     <ClInclude Include="src\http\LogBuffer.h" />
     <ClInclude Include="src\Mode-S Client.h" />
