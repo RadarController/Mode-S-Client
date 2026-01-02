@@ -206,7 +206,7 @@ void TwitchEventSubWsClient::Start(
     worker_ = std::thread(&TwitchEventSubWsClient::Run, this);
 }
 
-void TwitchEventSubWsClient::Stopvoid TwitchEventSubWsClient::Stop()
+void TwitchEventSubWsClient::Stop()
 {
     running_ = false;
 
@@ -281,7 +281,7 @@ void TwitchEventSubWsClient::EmitStatus(bool helixOkTick)
     on_status_(out);
 }
 
-void TwitchEventSubWsClient::RequestReconnectvoid TwitchEventSubWsClient::RequestReconnect(const std::wstring& wssUrl)
+void TwitchEventSubWsClient::RequestReconnect(const std::wstring& wssUrl)
 {
     std::wstring host, path;
     if (!ParseWssUrl(wssUrl, host, path)) {
