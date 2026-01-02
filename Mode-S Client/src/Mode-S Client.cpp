@@ -1559,18 +1559,48 @@ switch (msg) {
 
                 if (ok) {
                     // Start EventSub (follows/subs/gifts) using OAuth token in config.json
-                    twitchEventSub.Start(
-                        config.twitch_client_id,
-                        ReadTwitchUserAccessToken(),
-                        config.twitch_login,   // broadcaster identifier (login is OK for now)
-                        [&](const ChatMessage& msg)
-                        {
-                            chat.Add(msg);
-                        });
+                    const std::string userToken = ReadTwitchUserAccessToken();
+                    if (!config.twitch_client_id.empty() && !userToken.empty() && !config.twitch_login.empty()) {
+                        twitchEventSub.Start(
+                            config.twitch_client_id,
+                            userToken,
+                            config.twitch_login,   // login is resolved to broadcaster_user_id via Helix
+                            [&](const ChatMessage& msg)
+                            {
+                                chat.Add(msg);
+                            },
+                            // Separate EventSub events feed (debug/testing)
+                            [&](const nlohmann::json& ev)
+                            {
+                                state.add_twitch_eventsub_event(ev);
+                            },
+                            // Status snapshots (for /api/twitch/eventsub/status)
+                            [&](const nlohmann::json& st)
+                            {
+                                state.set_twitch_eventsub_status(st);
+                            });
+                    }
+                    else {
+                        // Keep IRC working even if EventSub can't start.
+                        nlohmann::json st;
+                        st["ws_state"] = "stopped";
+                        st["connected"] = false;
+                        st["session_id"] = "";
+                        st["subscribed"] = false;
+                        st["last_ws_message_ms"] = 0;
+                        st["last_keepalive_ms"] = 0;
+                        st["last_helix_ok_ms"] = 0;
+                        st["subscriptions"] = nlohmann::json::array();
+                        st["last_error"] = "eventsub_missing_config_or_token";
+                        state.set_twitch_eventsub_status(st);
+                        LogLine(L"TWITCH: EventSub not started (missing twitch_client_id, twitch_login, or twitch.user_access_token)");
+                    }
                 }
                 return ok;
             };
             opt.stop_twitch = [&]() -> bool {
+                // Stop EventSub first so it doesn't keep reporting events after IRC is stopped.
+                twitchEventSub.Stop();
                 PlatformControl::StopTwitch(twitch, state, hwnd, (UINT)(WM_APP + 41), [](const std::wstring& s) { LogLine(s); });
                 return true;
             };

@@ -5,6 +5,7 @@
 #include <atomic>
 #include <functional>
 #include <mutex>
+#include "json.hpp"
 
 struct ChatMessage;
 
@@ -15,6 +16,7 @@ class TwitchEventSubWsClient
 {
 public:
     using ChatCallback = std::function<void(const ChatMessage&)>;
+    using JsonCallback = std::function<void(const nlohmann::json&)>;
 
     TwitchEventSubWsClient();
     ~TwitchEventSubWsClient();
@@ -25,7 +27,9 @@ public:
         const std::string& clientId,
         const std::string& userAccessToken,
         const std::string& broadcasterId,
-        ChatCallback onChatEvent);
+        ChatCallback onChatEvent,
+        JsonCallback onEvent = nullptr,
+        JsonCallback onStatus = nullptr);
 
     void Stop();
 
@@ -46,6 +50,11 @@ private:
     // WebSocket control
     void RequestReconnect(const std::wstring& wssUrl);
 
+    // Status helpers
+    void SetWsState(const std::string& s);
+    void SetLastError(const std::string& e);
+    void EmitStatus(bool helixOkTick = false);
+
 private:
     std::string client_id_;
     std::string access_token_;
@@ -53,6 +62,8 @@ private:
     std::string broadcaster_user_id_; // numeric id
 
     ChatCallback on_chat_event_;
+    JsonCallback on_event_;
+    JsonCallback on_status_;
 
     std::thread worker_;
     std::atomic<bool> running_{ false };
@@ -66,4 +77,16 @@ private:
     std::wstring ws_host_{ L"eventsub.wss.twitch.tv" };
     std::wstring ws_path_{ L"/ws" };
     bool reconnect_requested_{ false };
+
+    // Status fields (mirrored to /api/twitch/eventsub/status via AppState)
+    std::mutex status_mu_;
+    std::string ws_state_ = "stopped";
+    bool connected_ = false;
+    bool subscribed_ = false;
+    std::string session_id_;
+    std::int64_t last_ws_message_ms_ = 0;
+    std::int64_t last_keepalive_ms_ = 0;
+    std::int64_t last_helix_ok_ms_ = 0;
+    std::string last_error_;
+    nlohmann::json subscriptions_ = nlohmann::json::array();
 };

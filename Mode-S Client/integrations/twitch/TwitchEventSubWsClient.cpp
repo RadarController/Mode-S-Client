@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 #include <cctype>
+#include <chrono>
 
 #include "json.hpp"
 
@@ -36,6 +37,13 @@ static std::string WideToUtf8(const std::wstring& w)
 static void DebugLog(const std::wstring& w)
 {
     OutputDebugStringW((L"[TwitchEventSub] " + w + L"\n").c_str());
+}
+
+
+static std::int64_t NowMs()
+{
+    using namespace std::chrono;
+    return (std::int64_t)duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
 }
 
 struct HttpResult {
@@ -156,7 +164,9 @@ void TwitchEventSubWsClient::Start(
     const std::string& clientId,
     const std::string& userAccessToken,
     const std::string& broadcasterId,
-    ChatCallback onChatEvent)
+    ChatCallback onChatEvent,
+    JsonCallback onEvent,
+    JsonCallback onStatus)
 {
     Stop();
 
@@ -164,7 +174,10 @@ void TwitchEventSubWsClient::Start(
     access_token_ = userAccessToken;
     broadcaster_id_ = broadcasterId;
     broadcaster_user_id_.clear();
+
     on_chat_event_ = std::move(onChatEvent);
+    on_event_ = std::move(onEvent);
+    on_status_ = std::move(onStatus);
 
     // reset reconnect target
     {
@@ -174,11 +187,26 @@ void TwitchEventSubWsClient::Start(
         reconnect_requested_ = false;
     }
 
+    // reset status
+    {
+        std::lock_guard<std::mutex> lk(status_mu_);
+        ws_state_ = "connecting";
+        connected_ = false;
+        subscribed_ = false;
+        session_id_.clear();
+        last_ws_message_ms_ = 0;
+        last_keepalive_ms_ = 0;
+        last_helix_ok_ms_ = 0;
+        last_error_.clear();
+        subscriptions_ = json::array();
+    }
+    EmitStatus();
+
     running_ = true;
     worker_ = std::thread(&TwitchEventSubWsClient::Run, this);
 }
 
-void TwitchEventSubWsClient::Stop()
+void TwitchEventSubWsClient::Stopvoid TwitchEventSubWsClient::Stop()
 {
     running_ = false;
 
@@ -196,9 +224,64 @@ void TwitchEventSubWsClient::Stop()
 
     if (worker_.joinable())
         worker_.join();
+
+    {
+        std::lock_guard<std::mutex> lk(status_mu_);
+        ws_state_ = "stopped";
+        connected_ = false;
+        subscribed_ = false;
+        session_id_.clear();
+    }
+    EmitStatus();
 }
 
-void TwitchEventSubWsClient::RequestReconnect(const std::wstring& wssUrl)
+// ---- status helpers ----
+void TwitchEventSubWsClient::SetWsState(const std::string& s)
+{
+    {
+        std::lock_guard<std::mutex> lk(status_mu_);
+        ws_state_ = s;
+    }
+    EmitStatus();
+}
+
+void TwitchEventSubWsClient::SetLastError(const std::string& e)
+{
+    {
+        std::lock_guard<std::mutex> lk(status_mu_);
+        last_error_ = e;
+        ws_state_ = "error";
+    }
+    EmitStatus();
+}
+
+void TwitchEventSubWsClient::EmitStatus(bool helixOkTick)
+{
+    if (!on_status_) return;
+
+    json out;
+    {
+        std::lock_guard<std::mutex> lk(status_mu_);
+        if (helixOkTick) {
+            last_helix_ok_ms_ = NowMs();
+        }
+
+        out["ws_state"] = ws_state_;
+        out["connected"] = connected_;
+        out["session_id"] = session_id_;
+        out["subscribed"] = subscribed_;
+        out["broadcaster_user_id"] = broadcaster_user_id_;
+        out["last_ws_message_ms"] = last_ws_message_ms_;
+        out["last_keepalive_ms"] = last_keepalive_ms_;
+        out["last_helix_ok_ms"] = last_helix_ok_ms_;
+        out["last_error"] = last_error_;
+        out["subscriptions"] = subscriptions_;
+    }
+
+    on_status_(out);
+}
+
+void TwitchEventSubWsClient::RequestReconnectvoid TwitchEventSubWsClient::RequestReconnect(const std::wstring& wssUrl)
 {
     std::wstring host, path;
     if (!ParseWssUrl(wssUrl, host, path)) {
@@ -236,6 +319,16 @@ void TwitchEventSubWsClient::Run()
             path = ws_path_;
             reconnect_requested_ = false;
         }
+
+        // (Re)connecting...
+        {
+            std::lock_guard<std::mutex> lk(status_mu_);
+            ws_state_ = "connecting";
+            connected_ = false;
+            subscribed_ = false;
+            session_id_.clear();
+        }
+        EmitStatus();
 
         HINTERNET hSession = nullptr;
         HINTERNET hConnect = nullptr;
@@ -322,6 +415,12 @@ void TwitchEventSubWsClient::Run()
         }
 
         DebugLog(L"connected");
+        {
+            std::lock_guard<std::mutex> lk(status_mu_);
+            ws_state_ = "connected";
+            connected_ = true;
+        }
+        EmitStatus();
         ReceiveLoop(hWebSocket);
 
         {
@@ -405,6 +504,12 @@ void TwitchEventSubWsClient::HandleMessage(const std::string& payload)
         return;
     }
 
+    {
+        std::lock_guard<std::mutex> lk(status_mu_);
+        last_ws_message_ms_ = NowMs();
+    }
+    EmitStatus();
+
     if (!j.contains("metadata") || !j.contains("payload"))
         return;
 
@@ -416,15 +521,33 @@ void TwitchEventSubWsClient::HandleMessage(const std::string& payload)
         const std::string sessionId = pl.contains("session") ? pl["session"].value("id", "") : "";
         if (!sessionId.empty())
         {
+            {
+                std::lock_guard<std::mutex> lk(status_mu_);
+                session_id_ = sessionId;
+                subscribed_ = false;
+                subscriptions_ = json::array();
+                last_error_.clear();
+            }
+            EmitStatus();
+
             DebugLog(L"session_welcome: subscribing");
-            SubscribeAll(sessionId);
+            const bool ok = SubscribeAll(sessionId);
+            {
+                std::lock_guard<std::mutex> lk(status_mu_);
+                subscribed_ = ok;
+            }
+            EmitStatus(ok /*helix ok tick if any*/);
         }
         return;
     }
 
     if (type == "session_keepalive")
     {
-        // No action required; keepalive indicates connection is healthy.
+        {
+            std::lock_guard<std::mutex> lk(status_mu_);
+            last_keepalive_ms_ = NowMs();
+        }
+        EmitStatus();
         return;
     }
 
@@ -444,6 +567,11 @@ void TwitchEventSubWsClient::HandleMessage(const std::string& payload)
         // Subscription revoked (permissions/expired/etc.). We don't know which ones will still succeed,
         // but we can attempt to resubscribe on the next welcome/reconnect.
         DebugLog(L"revocation received");
+        {
+            std::lock_guard<std::mutex> lk(status_mu_);
+            last_error_ = "revocation";
+        }
+        EmitStatus();
         return;
     }
 
@@ -527,6 +655,22 @@ bool TwitchEventSubWsClient::CreateSubscription(const std::string& type,
         L"/helix/eventsub/subscriptions",
         headers,
         body.dump(),
+
+    // Track subscription attempts for /api/twitch/eventsub/status
+    {
+        std::lock_guard<std::mutex> lk(status_mu_);
+        json attempt;
+        attempt["type"] = type;
+        attempt["version"] = version;
+        attempt["status"] = r.status;
+        attempt["ok"] = (r.status == 202 || (r.status >= 200 && r.status < 300));
+        if (!r.body.empty()) attempt["body"] = r.body;
+        subscriptions_.push_back(attempt);
+        if (attempt["ok"].get<bool>()) {
+            last_helix_ok_ms_ = NowMs();
+        }
+    }
+    EmitStatus();
         true);
 
     if (r.status == 202 || (r.status >= 200 && r.status < 300)) {
@@ -609,6 +753,18 @@ void TwitchEventSubWsClient::HandleNotification(const void* payloadPtr)
     else
     {
         return;
+    }
+
+    msg.ts_ms = NowMs();
+
+    if (on_event_) {
+        json evOut;
+        evOut["ts_ms"] = msg.ts_ms;
+        evOut["platform"] = "twitch";
+        evOut["type"] = subType;
+        evOut["user"] = msg.user;
+        evOut["message"] = msg.message;
+        on_event_(evOut);
     }
 
     if (on_chat_event_)
