@@ -1,4 +1,5 @@
 #include "HttpServer.h"
+#include <Windows.h>
 
 #include <fstream>
 #include <sstream>
@@ -6,13 +7,24 @@
 #include <cctype>
 #include <chrono>
 #include <thread>
-#include <cstring>
 
 #include "json.hpp"
 #include "../AppState.h"
 #include "../chat/ChatAggregator.h"
 #include "../../integrations/euroscope/EuroScopeIngestService.h"
 #include "../AppConfig.h"
+
+namespace {
+inline void SafeOutputLog(std::function<void(const std::wstring&)>& log, const std::wstring& msg) {
+    ::OutputDebugStringW((msg + L"\n").c_str());
+    try {
+        log(msg);
+    } catch (...) {
+        // Never allow logging to break server threads
+    }
+}
+}
+
 
 using json = nlohmann::json;
 
@@ -99,10 +111,10 @@ void HttpServer::Start() {
 
     thread_ = std::thread([this]() {
         try {
-            log_(L"HTTP: listening on http://127.0.0.1:" + std::to_wstring(opt_.port));
+            SafeOutputLog(log_, L"HTTP: listening on http://127.0.0.1:" + std::to_wstring(opt_.port));
             svr_->listen(opt_.bind_host.c_str(), opt_.port);
         } catch (...) {
-            log_(L"HTTP: server thread crashed");
+            SafeOutputLog(log_, L"HTTP: server thread crashed");
         }
     });
 }
@@ -193,16 +205,6 @@ void HttpServer::ApplyOverlayTokens(std::string& html)
 void HttpServer::RegisterRoutes() {
     auto& svr = *svr_;
 
-    // Safe logger: never throws into the HTTP thread (prevents std::bad_function_call / other exceptions from bubbling).
-    auto SafeLog = [&](const std::wstring& msg) {
-        try {
-            log_(msg);
-        } catch (...) {
-            // logging must never crash request handling
-        }
-    };
-
-
     // --- API: metrics ---
     svr.Get("/api/metrics", [&](const httplib::Request&, httplib::Response& res) {
         auto j = state_.metrics_json();
@@ -254,9 +256,7 @@ auto handle_settings_save = [&](const httplib::Request& req, httplib::Response& 
     const std::string  cfg_path   = WideToUtf8(cfg_path_w);
 
     if (!config_.Save()) {
-        if (log_) {
-            SafeLog(L"settingssave: FAILED writing " + cfg_path_w);
-        }
+        SafeOutputLog(log_, L"settingssave: FAILED writing " + cfg_path_w);
         res.status = 500;
         json out;
         out["ok"] = false;
@@ -266,9 +266,7 @@ auto handle_settings_save = [&](const httplib::Request& req, httplib::Response& 
         return;
     }
 
-    if (log_) {
-        SafeLog(L"settingssave: wrote " + cfg_path_w);
-    }
+    SafeOutputLog(log_, L"settingssave: wrote " + cfg_path_w);
 
     json out;
     out["ok"] = true;
@@ -279,120 +277,6 @@ auto handle_settings_save = [&](const httplib::Request& req, httplib::Response& 
 
 svr.Post("/api/settingssave", handle_settings_save);
 svr.Post("/api/settings/save", handle_settings_save);
-    // Read current settings/config for the Web UI
-    svr.Get("/api/settings", [&](const httplib::Request& /*req*/, httplib::Response& res) {
-        json j = json::object();
-        j["ok"] = true;
-
-        // Primary identifiers shown/edited in the UI
-        j["tiktok_unique_id"] = config_.tiktok_unique_id;
-        j["twitch_login"]     = config_.twitch_login;
-        j["youtube_handle"]   = config_.youtube_handle;
-
-        // Optional fields used elsewhere
-        j["metrics_json_path"]      = config_.metrics_json_path;
-        j["overlay_font_family"]    = config_.overlay_font_family;
-        j["overlay_font_size"]      = config_.overlay_font_size;
-        j["overlay_text_shadow"]    = config_.overlay_text_shadow;
-
-        // Helpful for debugging where config is resolved to
-        try {
-            j["config_path"] = WideToUtf8(config_.ConfigPath());
-        } catch (...) {
-            j["config_path"] = "";
-        }
-
-        res.set_content(j.dump(), "application/json; charset=utf-8");
-    });
-
-    // --- API: platform control (used by /app UI) ---
-    // These endpoints are optional; they call callbacks provided via HttpServer::Options.
-    auto handle_platform = [&](const httplib::Request& /*req*/, httplib::Response& res,
-                               const char* platform, const char* action,
-                               const std::function<bool()>& fn) {
-        if (!fn) {
-            res.status = 404;
-            json out;
-            out["ok"] = false;
-            out["error"] = "not_implemented";
-            out["platform"] = platform;
-            out["action"] = action;
-            out["state"] = "not_implemented";
-            res.set_content(out.dump(), "application/json; charset=utf-8");
-            if (log_) {
-                std::wstring wp = std::wstring(platform, platform + std::strlen(platform));
-                std::wstring wa = std::wstring(action, action + std::strlen(action));
-                SafeLog(L"/api/platform/" + wp + L"/" + wa + L": not implemented");
-            }
-            return;
-        }
-
-        bool ok = false;
-        try {
-            ok = fn();
-        } catch (const std::exception& e) {
-            ok = false;
-            if (log_) {
-                std::wstring wp(platform, platform + std::strlen(platform));
-                std::wstring wa(action, action + std::strlen(action));
-                // best-effort narrow->wide
-                std::string what = e.what() ? e.what() : "";
-                std::wstring wwhat(what.begin(), what.end());
-                SafeLog(L"/api/platform/" + wp + L"/" + wa + L": exception: " + wwhat);
-            }
-        } catch (...) {
-            ok = false;
-            if (log_) {
-                std::wstring wp(platform, platform + std::strlen(platform));
-                std::wstring wa(action, action + std::strlen(action));
-                SafeLog(L"/api/platform/" + wp + L"/" + wa + L": unknown exception");
-            }
-        }
-
-        json out;
-        out["ok"] = ok;
-        out["platform"] = platform;
-        out["action"] = action;
-        out["state"] = ok ? (std::string(action) == "start" ? "started" : "stopped") : "failed";
-
-        if (!ok) {
-            res.status = 500;
-            out["error"] = "failed";
-        }
-
-        res.set_content(out.dump(), "application/json; charset=utf-8");
-
-        if (log_) {
-            std::wstring wp = std::wstring(platform, platform + std::strlen(platform));
-            std::wstring wa = std::wstring(action, action + std::strlen(action));
-            SafeLog(L"/api/platform/" + wp + L"/" + wa + (ok ? L": ok" : L": failed"));
-        }
-    };
-
-svr.Post("/api/platform/tiktok/start", [&](const httplib::Request& req, httplib::Response& res) {
-        handle_platform(req, res, "tiktok", "start", opt_.start_tiktok);
-    });
-    svr.Post("/api/platform/tiktok/stop", [&](const httplib::Request& req, httplib::Response& res) {
-        handle_platform(req, res, "tiktok", "stop", opt_.stop_tiktok);
-    });
-
-    svr.Post("/api/platform/twitch/start", [&](const httplib::Request& req, httplib::Response& res) {
-        handle_platform(req, res, "twitch", "start", opt_.start_twitch);
-    });
-    svr.Post("/api/platform/twitch/stop", [&](const httplib::Request& req, httplib::Response& res) {
-        handle_platform(req, res, "twitch", "stop", opt_.stop_twitch);
-    });
-
-    svr.Post("/api/platform/youtube/start", [&](const httplib::Request& req, httplib::Response& res) {
-        handle_platform(req, res, "youtube", "start", opt_.start_youtube);
-    });
-    svr.Post("/api/platform/youtube/stop", [&](const httplib::Request& req, httplib::Response& res) {
-        handle_platform(req, res, "youtube", "stop", opt_.stop_youtube);
-    });
-
-
-
-
 
 
     // EuroScope plugin ingest endpoint (expects JSON with ts_ms)
