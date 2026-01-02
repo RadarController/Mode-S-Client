@@ -28,42 +28,6 @@ async function apiPost(url, body){
   try { return JSON.parse(text); } catch { return { ok:true, raw:text }; }
 }
 
-async function loadSettings(){
-  try{
-    const j = await apiGet("/api/settings");
-    if (!j || !j.ok) return;
-    if ($("#tiktokUser"))  $("#tiktokUser").value  = j.tiktok_unique_id || "";
-    if ($("#twitchUser"))  $("#twitchUser").value  = j.twitch_login || "";
-    if ($("#youtubeUser")) $("#youtubeUser").value = j.youtube_handle || "";
-    logLine("settings", "loaded");
-  }catch(e){
-    logLine("settings", `load failed (${e.message})`);
-  }
-}
-
-async function saveSettings(){
-  const payload = {
-    tiktok_unique_id: $("#tiktokUser")?.value || "",
-    twitch_login: $("#twitchUser")?.value || "",
-    youtube_handle: $("#youtubeUser")?.value || ""
-  };
-  try{
-    // support both endpoints
-    try{
-      await apiPost("/api/settings/save", payload);
-    }catch(_){
-      await apiPost("/api/settingssave", payload);
-    }
-    logLine("settings", "saved");
-    await loadSettings();
-    return true;
-  }catch(e){
-    logLine("settings", `save failed (${e.message})`);
-    return false;
-  }
-}
-
-
 function logLine(tag, msg){
   const log = $("#log");
   if (!log) return;
@@ -199,55 +163,23 @@ async function pollLog(){
   }
 }
 
-function wireActions(){
-  $("#btnOpenChat")?.addEventListener("click", () => {
-    window.open("/overlay/chat.html", "_blank", "noopener");
-  });
-
-  $("#btnSave")?.addEventListener("click", async () => {
-    await saveSettings();
-  });
-
-  $$(".platform").forEach(card => {
-    const platform = card.dataset.platform;
-    card.addEventListener("click", async (ev) => {
-      const btn = ev.target.closest("button[data-action]");
-      if (!btn) return;
-
-      const action = btn.getAttribute("data-action");
-      
-if (action === "set"){
-  const ok = await saveSettings();
-  if (ok) logLine(platform, "config saved");
-  return;
+function disableAllButtons(){
+  const buttons = Array.from(document.querySelectorAll('button'));
+  for (const b of buttons){
+    b.disabled = true;
+    b.setAttribute('aria-disabled', 'true');
+    // Provide a tooltip so it's obvious during testing
+    if (!b.title) b.title = 'Disabled (UI/API rebuild in progress)';
+  }
 }
-if (action === "start"){
-        try{
-          await apiPost(`/api/platform/${platform}/start`);
-          logLine(platform, "start requested");
-        }catch(e){
-          logLine(platform, `start failed (${e.message})`);
-        }
-        return;
-      }
 
-      if (action === "stop"){
-        try{
-          await apiPost(`/api/platform/${platform}/stop`);
-          logLine(platform, "stop requested");
-        }catch(e){
-          logLine(platform, `stop failed (${e.message})`);
-        }
-        return;
-      }
-    });
-  });
+function wireActions(){
+  // Intentionally no-op: UI is disconnected from API for stability.
+  disableAllButtons();
 }
 
 wireActions();
-loadSettings();
-
+// Keep read-only polls (safe GETs) so the UI still shows data.
 pollMetrics();
 setInterval(pollMetrics, 2000);
-pollLog();
-setInterval(pollLog, 1000);
+// Disable log polling to avoid stressing the logging subsystem while rebuilding.

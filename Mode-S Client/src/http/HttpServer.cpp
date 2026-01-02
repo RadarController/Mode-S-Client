@@ -1,5 +1,4 @@
 #include "HttpServer.h"
-#include <windows.h>
 
 #include <fstream>
 #include <sstream>
@@ -83,9 +82,6 @@ HttpServer::HttpServer(AppState& state,
       config_(config),
       opt_(std::move(options)),
       log_(std::move(log)) {
-    // Ensure logger is always callable (avoid std::bad_function_call)
-    if (!log_) log_ = [](const std::wstring&) {};
-
     if (!log_) {
         log_ = [](const std::wstring&) {};
     }
@@ -103,12 +99,10 @@ void HttpServer::Start() {
 
     thread_ = std::thread([this]() {
         try {
-            if (log_) {
-                log_(L"HTTP: listening on http://127.0.0.1:" + std::to_wstring(opt_.port));
-            }
+            log_(L"HTTP: listening on http://127.0.0.1:" + std::to_wstring(opt_.port));
             svr_->listen(opt_.bind_host.c_str(), opt_.port);
         } catch (...) {
-            if (log_) log_(L"HTTP: server thread crashed");
+            log_(L"HTTP: server thread crashed");
         }
     });
 }
@@ -201,14 +195,11 @@ void HttpServer::RegisterRoutes() {
 
     // Safe logger: never throws into the HTTP thread (prevents std::bad_function_call / other exceptions from bubbling).
     auto SafeLog = [&](const std::wstring& msg) {
-        // Always emit to debugger output.
-        ::OutputDebugStringW((msg + L"\n").c_str());
-
-        // Record for Web UI (/api/log)
-        try { logbuf_.PushNow(WideToUtf8(msg)); } catch (...) {}
-
-        // Call app logger (never let it throw into HTTP thread)
-        try { log_(msg); } catch (...) {}
+        try {
+            log_(msg);
+        } catch (...) {
+            // logging must never crash request handling
+        }
     };
 
 
@@ -313,37 +304,6 @@ svr.Post("/api/settings/save", handle_settings_save);
 
         res.set_content(j.dump(), "application/json; charset=utf-8");
     });
-
-    // --- API: server log buffer for Web UI ---
-    // GET /api/log?since=<id>&limit=<n>
-    svr.Get("/api/log", [&](const httplib::Request& req, httplib::Response& res) {
-        uint64_t since = 0;
-        size_t limit = 200;
-        try {
-            if (req.has_param("since")) since = std::stoull(req.get_param_value("since"));
-            if (req.has_param("limit")) limit = (size_t)std::stoul(req.get_param_value("limit"));
-        } catch (...) {}
-
-        if (limit < 1) limit = 1;
-        if (limit > 1000) limit = 1000;
-
-        auto entries = logbuf_.ReadSince(since, limit);
-
-        json out;
-        out["ok"] = true;
-        out["since"] = since;
-        out["latest"] = logbuf_.LatestId();
-        out["entries"] = json::array();
-        for (const auto& e : entries) {
-            json je;
-            je["id"] = e.id;
-            je["ts_ms"] = e.ts_ms;
-            je["msg"] = e.msg;
-            out["entries"].push_back(std::move(je));
-        }
-        res.set_content(out.dump(), "application/json; charset=utf-8");
-    });
-
 
     // --- API: platform control (used by /app UI) ---
     // These endpoints are optional; they call callbacks provided via HttpServer::Options.
