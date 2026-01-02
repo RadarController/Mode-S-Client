@@ -83,6 +83,10 @@ function setBadge(platform, live, label){
   if (!b) return;
   b.textContent = label || (live ? "Live" : "Offline");
   b.classList.toggle("badge--live", !!live);
+
+  // Also mark the platform card so CSS can tint the icon subtly when live.
+  const card = document.querySelector(`.platform[data-platform="${platform}"]`);
+  if (card) card.classList.toggle("platform--live", !!live);
 }
 
 function setState(platform, text){
@@ -138,8 +142,10 @@ function applyMetrics(m){
   const isLive = (tw_live === true || tw_live === 1 || tw_live === "true");
   const hasData = (tw_viewers !== null && tw_viewers !== undefined) || (tw_followers !== null && tw_followers !== undefined);
 
-  if (twBadge) twBadge.textContent = isLive ? "Live" : "Offline";
-  if (twState) twState.textContent = isLive ? "Live" : (hasData ? "Connected" : "Disconnected");
+  // IMPORTANT: toggle both label and CSS class so the badge can turn green when live.
+  // (Previously we only changed text, leaving the badge blue.)
+  setBadge("twitch", isLive);
+  setState("twitch", isLive ? "Live" : (hasData ? "Connected" : "Disconnected"));
 
   
 
@@ -156,8 +162,8 @@ function applyMetrics(m){
   const ttIsLive = (tt_live === true || tt_live === 1 || tt_live === "true");
   const ttHasData = (tt_viewers !== null && tt_viewers !== undefined) || (tt_followers !== null && tt_followers !== undefined);
 
-  if (ttBadge) ttBadge.textContent = ttIsLive ? "Live" : "Offline";
-  if (ttState) ttState.textContent = ttIsLive ? "Live" : (ttHasData ? "Connected" : "Disconnected");
+  setBadge("tiktok", ttIsLive);
+  setState("tiktok", ttIsLive ? "Live" : (ttHasData ? "Connected" : "Disconnected"));
 
   // YouTube (top-level fields in /api/metrics)
   const yt_viewers = m.youtube_viewers ?? (s.youtube && (s.youtube.viewers ?? s.youtube.viewer_count ?? s.youtube.live_viewers ?? s.youtube.concurrent_viewers));
@@ -172,8 +178,8 @@ function applyMetrics(m){
   const ytIsLive = (yt_live === true || yt_live === 1 || yt_live === "true");
   const ytHasData = (yt_viewers !== null && yt_viewers !== undefined) || (yt_followers !== null && yt_followers !== undefined);
 
-  if (ytBadge) ytBadge.textContent = ytIsLive ? "Live" : "Offline";
-  if (ytState) ytState.textContent = ytIsLive ? "Live" : (ytHasData ? "Connected" : "Disconnected");
+  setBadge("youtube", ytIsLive);
+  setState("youtube", ytIsLive ? "Live" : (ytHasData ? "Connected" : "Disconnected"));
 
 // status dot (best effort)
   const dot = $("#mDot");
@@ -183,14 +189,18 @@ function applyMetrics(m){
       (s.twitch && (s.twitch.live || s.twitch.is_live)) ||
       (s.youtube && (s.youtube.live || s.youtube.is_live))
     );
-    dot.style.background = liveAny ? "#3b82f6" : "#64748b";
+    // Match the UI: green when any channel is live
+    dot.style.background = liveAny ? "var(--green)" : "#64748b";
   }
 
   const applyPlatform = (name, bucket) => {
     if (!bucket) return;
-    const live = Boolean(bucket.live ?? bucket.is_live ?? bucket.streaming ?? bucket.connected ?? false);
+    // NOTE: "connected" is not the same as "live".
+    // Only consider explicit live/streaming flags as live.
+    const live = Boolean(bucket.live ?? bucket.is_live ?? bucket.streaming ?? false);
+    const connected = Boolean(bucket.connected ?? bucket.ok ?? bucket.running ?? false);
     setBadge(name, live, live ? "Live" : "Offline");
-    setState(name, live ? "Connected" : "Disconnected");
+    setState(name, live ? "Live" : (connected ? "Connected" : "Disconnected"));
 
     // stats
     const v = bucket.viewers ?? bucket.viewer_count ?? bucket.live_viewers ?? bucket.concurrent_viewers;

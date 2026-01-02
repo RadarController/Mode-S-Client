@@ -132,6 +132,10 @@ static std::unique_ptr<class FloatingChat> gFloatingChat;
 
 static std::atomic<bool> gRunning{ true };
 
+
+// Helix poller is restartable independently of full app shutdown.
+static std::atomic<bool> gTwitchHelixRunning{ true };
+static std::string gTwitchHelixBoundLogin;
 // --- Platform status widgets ---
 static HWND gTikTokStatus = nullptr, gTikTokViewers = nullptr, gTikTokFollowers = nullptr;
 static HWND gTwitchStatus = nullptr, gTwitchViewers = nullptr, gTwitchFollowers = nullptr, gTwitchHelix = nullptr;
@@ -1230,7 +1234,55 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     static EuroScopeIngestService euroscope;
     static ObsWsClient obs;
 
-    switch (msg) {
+    // Restartable Helix poller (needed when Twitch channel/login changes).
+    auto RestartTwitchHelixPoller = [&](const std::string& reason) {
+        const std::string login = config.twitch_login;
+        if (login.empty()) return;
+
+        // Avoid unnecessary restarts.
+        if (gTwitchHelixBoundLogin == login && twitchHelixThread.joinable()) return;
+
+        LogLine(L\"TWITCH: restarting Helix poller (\" + ToW(reason) + L\")\");
+
+        // Stop existing poller thread if running.
+        if (twitchHelixThread.joinable()) {
+            gTwitchHelixRunning = false;
+            twitchHelixThread.join();
+        }
+
+        // Reset UI + metrics immediately so we don't show previous channel values.
+        state.set_twitch_viewers(0);
+        state.set_twitch_followers(0);
+        state.set_twitch_live(false);
+        gTwitchViewerCount = 0;
+        gTwitchFollowerCount = 0;
+        gTwitchLive = false;
+        gTwitchHelixStatus = L\"Helix: restarting...\";
+        PostMessageW(hwnd, WM_APP + 41, 0, 0);
+
+        gTwitchHelixRunning = true;
+        gTwitchHelixBoundLogin = login;
+
+        twitchHelixThread = StartTwitchHelixPoller(
+            hwnd,
+            config,
+            state,
+            gTwitchHelixRunning,
+            (UINT)(WM_APP + 41),
+            TwitchHelixUiCallbacks{
+                /*log*/          [](const std::wstring& s) { LogLine(s); },
+                /*set_status*/   [&](const std::wstring& s) {
+                    gTwitchHelixStatus = s;
+                    PostMessageW(hwnd, WM_APP + 41, 0, 0);
+                },
+                /*set_live*/     [&](bool live) { gTwitchLive = live; },
+                /*set_viewers*/  [&](int v) { gTwitchViewerCount = v; },
+                /*set_followers*/[&](int f) { gTwitchFollowerCount = f; }
+            }
+        );
+    };
+
+switch (msg) {
 
     case WM_CREATE:
     {
@@ -1519,26 +1571,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
         LogLine(L"TWITCH: starting Helix poller thread");
 
-        twitchHelixThread = StartTwitchHelixPoller(
-            hwnd,
-            config,
-            state,
-            gRunning,
-            (UINT)(WM_APP + 41),
-            TwitchHelixUiCallbacks{
-                /*log*/          [](const std::wstring& s) { LogLine(s); },
-                /*set_status*/   [&](const std::wstring& s) {
-                    gTwitchHelixStatus = s;
-                    PostMessageW(hwnd, WM_APP + 41, 0, 0);
-                },
-            /*set_live*/     [&](bool live) { gTwitchLive = live; },
-            /*set_viewers*/  [&](int v) { gTwitchViewerCount = v; },
-            /*set_followers*/[&](int f) { gTwitchFollowerCount = f; }
-            }
-        );
-        twitchHelixThread.detach();
-
-        LogLine(L"TIKTOK: starting followers poller thread");
+        // Bind the poller to the current config.twitch_login.
+        RestartTwitchHelixPoller("init");
+LogLine(L"TIKTOK: starting followers poller thread");
         tiktokFollowersThread = StartTikTokFollowersPoller(
             hwnd,
             config,
@@ -1623,6 +1658,15 @@ case WM_COMMAND:
             // Ensure existing Twitch client is stopped before starting to allow restart or channel change
             twitch.stop();
 
+
+            // Apply current UI channel login into config so Helix poller + web UI use the same channel.
+            {
+                std::string newLogin = SanitizeTwitchLogin(ToUtf8(GetWindowTextWString(hTwitch)));
+                if (newLogin != config.twitch_login) {
+                    config.twitch_login = newLogin;
+                    RestartTwitchHelixPoller("channel change");
+                }
+            }
             // Use overload that sinks directly into ChatAggregator
             bool ok = twitch.start("SCHMOOPIIE",
                 std::string("justinfan" + std::to_string(10000 + (GetTickCount() % 50000))),
@@ -1673,7 +1717,11 @@ if (id == IDC_START_YOUTUBE) {
 
                 SetWindowTextW(hTwitch, ToW(config.twitch_login).c_str());
                 LogLine(L"Twitch settings updated (not saved yet). Click Save settings to persist.");
-            }
+            
+
+                // If the channel login changed, rebound the Helix poller immediately.
+                RestartTwitchHelixPoller("settings");
+}
             return 0;
         }
 
@@ -1684,7 +1732,11 @@ if (id == IDC_START_YOUTUBE) {
             config.twitch_login = SanitizeTwitchLogin(ToUtf8(GetWindowTextWString(hTwitch)));
             SetWindowTextW(hTwitch, ToW(config.twitch_login).c_str());
 
-            config.youtube_handle = ToUtf8(GetWindowTextWString(hYouTube));
+            
+
+            // Rebind Helix poller if login changed and user clicked Save.
+            RestartTwitchHelixPoller("save");
+config.youtube_handle = ToUtf8(GetWindowTextWString(hYouTube));
             config.youtube_handle = Trim(config.youtube_handle);
             config.youtube_handle = SanitizeYouTubeHandle(config.youtube_handle);
             SetWindowTextW(hYouTube, ToW(config.youtube_handle).c_str());
@@ -1787,6 +1839,12 @@ if (id == IDC_START_YOUTUBE) {
     case WM_DESTROY:
         gRunning = false;
 
+
+        // Stop Helix poller thread cleanly.
+        if (twitchHelixThread.joinable()) {
+            gTwitchHelixRunning = false;
+            twitchHelixThread.join();
+        }
         // Stop platform services first (they may still be producing events)
         tiktok.stop();
         youtube.stop();
