@@ -61,9 +61,12 @@ function setStopEnabled(platform, enabled){
 function guessMetricsShape(m){
   // We intentionally support multiple possible shapes, since the project evolved.
   // Top-level convenience
-  const viewers = m.viewers ?? m.viewer_count ?? m.live_viewers ?? m.concurrent_viewers;
-  const followers = m.followers ?? m.follower_count ?? m.subscribers ?? m.subscriber_count;
-  const aircraft = m.aircraft ?? m.aircraft_count ?? m.euroscope_aircraft ?? m.aircrafts;
+  const viewers = m.total_viewers ?? m.viewers ?? m.viewer_count ?? m.live_viewers ?? m.concurrent_viewers;
+  const followers = m.total_followers ?? m.followers ?? m.follower_count ?? m.subscribers ?? m.subscriber_count;
+  // Aircraft is displayed as "assumed_now/handled_session" when EuroScope data is available.
+  const aircraft = (m.euroscope && (m.euroscope.assumed_now !== undefined || m.euroscope.handled_session !== undefined))
+    ? `${m.euroscope.assumed_now ?? 0}/${m.euroscope.handled_session ?? 0}`
+    : (m.aircraft ?? m.aircraft_count ?? m.euroscope_aircraft ?? m.aircrafts);
 
   // Per-platform buckets (common patterns: m.tiktok.viewers, m.platforms.tiktok.viewers, etc.)
   const getP = (p) => (m[p] || (m.platforms && m.platforms[p]) || (m.metrics && m.metrics[p]) || null);
@@ -81,9 +84,59 @@ function applyMetrics(m){
 
   setText("mViewers", fmtNum(s.viewers));
   setText("mFollowers", fmtNum(s.followers));
-  setText("mAircraft", fmtNum(s.aircraft));
+  setText("mAircraft", (typeof s.aircraft === "string") ? s.aircraft : fmtNum(s.aircraft));
 
-  // status dot (best effort)
+  // Twitch (top-level fields in /api/metrics)
+  const tw_viewers = m.twitch_viewers ?? (s.twitch && (s.twitch.viewers ?? s.twitch.viewer_count ?? s.twitch.live_viewers));
+  const tw_followers = m.twitch_followers ?? (s.twitch && (s.twitch.followers ?? s.twitch.follower_count));
+  const tw_live = (m.twitch_live !== undefined) ? m.twitch_live : (s.twitch && (s.twitch.live ?? s.twitch.is_live));
+
+  setText("twitchViewers", fmtNum(tw_viewers));
+  setText("twitchFollowers", fmtNum(tw_followers));
+
+  const twBadge = $("#twitchBadge");
+  const twState = $("#twitchState");
+  const isLive = (tw_live === true || tw_live === 1 || tw_live === "true");
+  const hasData = (tw_viewers !== null && tw_viewers !== undefined) || (tw_followers !== null && tw_followers !== undefined);
+
+  if (twBadge) twBadge.textContent = isLive ? "Live" : "Offline";
+  if (twState) twState.textContent = isLive ? "Live" : (hasData ? "Connected" : "Disconnected");
+
+  
+
+  // TikTok (top-level fields in /api/metrics)
+  const tt_viewers = m.tiktok_viewers ?? (s.tiktok && (s.tiktok.viewers ?? s.tiktok.viewer_count ?? s.tiktok.live_viewers ?? s.tiktok.concurrent_viewers));
+  const tt_followers = m.tiktok_followers ?? (s.tiktok && (s.tiktok.followers ?? s.tiktok.follower_count));
+  const tt_live = (m.tiktok_live !== undefined) ? m.tiktok_live : (s.tiktok && (s.tiktok.live ?? s.tiktok.is_live));
+
+  setText("tiktokViewers", fmtNum(tt_viewers));
+  setText("tiktokFollowers", fmtNum(tt_followers));
+
+  const ttBadge = $("#tiktokBadge");
+  const ttState = $("#tiktokState");
+  const ttIsLive = (tt_live === true || tt_live === 1 || tt_live === "true");
+  const ttHasData = (tt_viewers !== null && tt_viewers !== undefined) || (tt_followers !== null && tt_followers !== undefined);
+
+  if (ttBadge) ttBadge.textContent = ttIsLive ? "Live" : "Offline";
+  if (ttState) ttState.textContent = ttIsLive ? "Live" : (ttHasData ? "Connected" : "Disconnected");
+
+  // YouTube (top-level fields in /api/metrics)
+  const yt_viewers = m.youtube_viewers ?? (s.youtube && (s.youtube.viewers ?? s.youtube.viewer_count ?? s.youtube.live_viewers ?? s.youtube.concurrent_viewers));
+  const yt_followers = m.youtube_followers ?? (s.youtube && (s.youtube.followers ?? s.youtube.follower_count ?? s.youtube.subscribers ?? s.youtube.subscriber_count));
+  const yt_live = (m.youtube_live !== undefined) ? m.youtube_live : (s.youtube && (s.youtube.live ?? s.youtube.is_live));
+
+  setText("youtubeViewers", fmtNum(yt_viewers));
+  setText("youtubeFollowers", fmtNum(yt_followers));
+
+  const ytBadge = $("#youtubeBadge");
+  const ytState = $("#youtubeState");
+  const ytIsLive = (yt_live === true || yt_live === 1 || yt_live === "true");
+  const ytHasData = (yt_viewers !== null && yt_viewers !== undefined) || (yt_followers !== null && yt_followers !== undefined);
+
+  if (ytBadge) ytBadge.textContent = ytIsLive ? "Live" : "Offline";
+  if (ytState) ytState.textContent = ytIsLive ? "Live" : (ytHasData ? "Connected" : "Disconnected");
+
+// status dot (best effort)
   const dot = $("#mDot");
   if (dot){
     const liveAny = Boolean(
@@ -110,6 +163,7 @@ function applyMetrics(m){
     setStopEnabled(name, live);
   };
 
+  applyPlatform("tiktok", s.tiktok);
   applyPlatform("tiktok", s.tiktok);
   applyPlatform("twitch", s.twitch);
   applyPlatform("youtube", s.youtube);
@@ -163,23 +217,87 @@ async function pollLog(){
   }
 }
 
-function disableAllButtons(){
-  const buttons = Array.from(document.querySelectorAll('button'));
-  for (const b of buttons){
-    b.disabled = true;
-    b.setAttribute('aria-disabled', 'true');
-    // Provide a tooltip so it's obvious during testing
-    if (!b.title) b.title = 'Disabled (UI/API rebuild in progress)';
-  }
-}
-
 function wireActions(){
-  // Intentionally no-op: UI is disconnected from API for stability.
-  disableAllButtons();
+  $("#btnOpenChat")?.addEventListener("click", () => {
+    window.open("/overlay/chat.html", "_blank", "noopener");
+  });
+
+  $("#btnStartAll")?.addEventListener("click", async () => {
+    logLine("start-all", "starting all platforms");
+    const platforms = ["tiktok", "twitch", "youtube"];
+    for (const p of platforms) {
+      try {
+        await apiPost(`/api/platform/${p}/start`, {});
+        logLine("start-all", `${p} start requested`);
+      } catch (e) {
+        logLine("start-all", `${p} start failed (${e.message})`);
+      }
+    }
+    logLine("start-all", "done");
+  });
+
+
+  $("#btnSave")?.addEventListener("click", async () => {
+    // If you already have a save endpoint, update this URL.
+    // For now, we log intent and attempt POST /api/settings/save (optional).
+    const payload = {
+      tiktok_user: $("#tiktokUser")?.value || "",
+      twitch_user: $("#twitchUser")?.value || "",
+      youtube_user: $("#youtubeUser")?.value || ""
+    };
+    try{
+      await apiPost("/api/settings/save", payload);
+      logLine("settings", "saved");
+    }catch(e){
+      logLine("settings", `save failed (${e.message})`);
+    }
+  });
+
+  $$(".platform").forEach(card => {
+    const platform = card.dataset.platform;
+    card.addEventListener("click", async (ev) => {
+      const btn = ev.target.closest("button[data-action]");
+      if (!btn) return;
+
+      const action = btn.getAttribute("data-action");
+      if (action === "set"){
+        const input = card.querySelector("input");
+        const val = input?.value || "";
+        try{
+          await apiPost(`/api/platform/${platform}/config`, { value: val });
+          logLine(platform, `config set`);
+        }catch(e){
+          // Non-fatal; many builds won't have this yet.
+          logLine(platform, `config set failed (${e.message})`);
+        }
+        return;
+      }
+
+      if (action === "start"){
+        try{
+          await apiPost(`/api/platform/${platform}/start`);
+          logLine(platform, "start requested");
+        }catch(e){
+          logLine(platform, `start failed (${e.message})`);
+        }
+        return;
+      }
+
+      if (action === "stop"){
+        try{
+          await apiPost(`/api/platform/${platform}/stop`);
+          logLine(platform, "stop requested");
+        }catch(e){
+          logLine(platform, `stop failed (${e.message})`);
+        }
+        return;
+      }
+    });
+  });
 }
 
 wireActions();
-// Keep read-only polls (safe GETs) so the UI still shows data.
 pollMetrics();
 setInterval(pollMetrics, 2000);
-// Disable log polling to avoid stressing the logging subsystem while rebuilding.
+pollLog();
+setInterval(pollLog, 1000);
