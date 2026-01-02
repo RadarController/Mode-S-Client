@@ -69,7 +69,7 @@ def load_config() -> Dict[str, Any]:
 
 # ---------------- TikTokLive ----------------
 from TikTokLive import TikTokLiveClient
-from TikTokLive.events import ConnectEvent, DisconnectEvent, CommentEvent
+from TikTokLive.events import ConnectEvent, DisconnectEvent, CommentEvent, FollowEvent, GiftEvent, SubscribeEvent
 
 try:
     from TikTokLive.client.errors import SignAPIError  # type: ignore
@@ -332,3 +332,73 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+    # --- stream events (normalized into chat feed) ---
+    # Emit these as tiktok.chat so the existing C++ ingestion path can display them
+    # without requiring a new event API yet.
+    #
+    # Gifts are emitted only once when finalized (repeat_end) to avoid spam.
+
+    @client.on(FollowEvent)
+    async def on_follow(event: FollowEvent):
+        user_obj = getattr(event, "user", None)
+        user = getattr(user_obj, "nickname", None) or getattr(user_obj, "unique_id", None) or "Someone"
+        emit({
+            "type": "tiktok.chat",
+            "platform": "tiktok",
+            "user": user,
+            "message": "followed",
+            "ts_ms": now_ms(),
+            "id": f"tt_follow|{now_ms()}|{user}"
+        })
+
+    # gift aggregation: (user, gift_id) -> {name, count}
+    gift_state = {}
+
+    @client.on(GiftEvent)
+    async def on_gift(event: GiftEvent):
+        try:
+            user_obj = getattr(event, "user", None)
+            user = getattr(user_obj, "nickname", None) or getattr(user_obj, "unique_id", None) or "Someone"
+
+            gift = getattr(event, "gift", None)
+            gift_id = int(getattr(gift, "id", 0) or getattr(gift, "gift_id", 0) or 0)
+            gift_name = getattr(gift, "name", None) or "gift"
+
+            repeat_count = int(getattr(event, "repeat_count", 1) or 1)
+            repeat_end = bool(getattr(event, "repeat_end", True))
+            streaking = bool(getattr(gift, "streaking", False))
+
+            key = (user, gift_id)
+            st = gift_state.get(key, {"name": gift_name, "count": 0})
+            st["name"] = gift_name
+            st["count"] += repeat_count
+            gift_state[key] = st
+
+            if repeat_end or (not streaking):
+                total = st["count"]
+                gift_state.pop(key, None)
+
+                emit({
+                    "type": "tiktok.chat",
+                    "platform": "tiktok",
+                    "user": user,
+                    "message": f"sent {gift_name} x{total}",
+                    "ts_ms": now_ms(),
+                    "id": f"tt_gift|{now_ms()}|{user}|{gift_id}"
+                })
+        except Exception as e:
+            emit({"type": "tiktok.warn", "ts": now_ts(), "message": f"gift handler error: {e}"})
+
+    @client.on(SubscribeEvent)
+    async def on_subscribe(event: SubscribeEvent):
+        user_obj = getattr(event, "user", None)
+        user = getattr(user_obj, "nickname", None) or getattr(user_obj, "unique_id", None) or "Someone"
+        emit({
+            "type": "tiktok.chat",
+            "platform": "tiktok",
+            "user": user,
+            "message": "subscribed",
+            "ts_ms": now_ms(),
+            "id": f"tt_sub|{now_ms()}|{user}"
+        })
