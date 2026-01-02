@@ -30,6 +30,7 @@
 #include "chat/ChatAggregator.h"
 #include "twitch/TwitchHelixService.h"
 #include "twitch/TwitchIrcWsClient.h"
+#include "twitch/TwitchEventSubWsClient.h"
 #include "tiktok/TikTokSidecar.h"
 #include "tiktok/TikTokFollowersService.h"
 #include "euroscope/EuroScopeIngestService.h"
@@ -161,6 +162,31 @@ static std::wstring GetExeDir()
     return (pos == std::wstring::npos) ? L"." : p.substr(0, pos);
 }
 
+// Read Twitch user access token from config.json.
+// Stored at: { "twitch": { "user_access_token": "..." } }
+static std::string ReadTwitchUserAccessToken()
+{
+    auto try_path = [](const std::filesystem::path& p) -> std::string {
+        try {
+            std::ifstream f(p);
+            if (!f.is_open()) return {};
+            nlohmann::json j;
+            f >> j;
+            return j.value("twitch", nlohmann::json::object()).value("user_access_token", "");
+        } catch (...) {
+            return {};
+        }
+    };
+
+    // Prefer config.json next to the exe
+    std::filesystem::path p1 = std::filesystem::path(GetExeDir()) / "config.json";
+    std::string tok = try_path(p1);
+    if (!tok.empty()) return tok;
+
+    // Fallback: current working directory
+    return try_path(std::filesystem::path("config.json"));
+}
+
 static void AppendLogOnUiThread(const std::wstring& s)
 {
     if (!gLog && !gSplashLog) return;
@@ -232,6 +258,11 @@ static HttpResult WinHttpRequest(const std::wstring& method,
     HINTERNET hSession = WinHttpOpen(L"Mode-S Client/1.0",
         WINHTTP_ACCESS_TYPE_NO_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!hSession) { r.winerr = GetLastError(); return r; }
+
+// --------------------------- Twitch EventSub (WebSocket) --------------------
+// Receives on-stream events (follow, sub, gift sub) and forwards them into ChatAggregator
+// as synthetic chat messages so the overlay can render them interleaved with chat.
+
 
     HINTERNET hConnect = WinHttpConnect(hSession, host.c_str(), port, 0);
     if (!hConnect) { r.winerr = GetLastError(); WinHttpCloseHandle(hSession); return r; }
@@ -1227,6 +1258,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     static TikTokSidecar tiktok;
     static TikTokSidecar youtube;
     static TwitchIrcWsClient twitch;
+    static TwitchEventSubWsClient twitchEventSub;
     static std::unique_ptr<HttpServer> gHttp;
     static std::thread metricsThread;
     static std::thread twitchHelixThread;
@@ -1520,12 +1552,55 @@ switch (msg) {
             };
 
             opt.start_twitch = [&]() -> bool {
-                return PlatformControl::StartOrRestartTwitchIrc(
+                const bool ok = PlatformControl::StartOrRestartTwitchIrc(
                     twitch, state, chat,
                     config.twitch_login,
                     [](const std::wstring& s) { LogLine(s); });
+
+                if (ok) {
+                    // Start EventSub (follows/subs/gifts) using OAuth token in config.json
+                    const std::string userToken = ReadTwitchUserAccessToken();
+                    if (!config.twitch_client_id.empty() && !userToken.empty() && !config.twitch_login.empty()) {
+                        twitchEventSub.Start(
+                            config.twitch_client_id,
+                            userToken,
+                            config.twitch_login,   // login is resolved to broadcaster_user_id via Helix
+                            [&](const ChatMessage& msg)
+                            {
+                                chat.Add(msg);
+                            },
+                            // Separate EventSub events feed (debug/testing)
+                            [&](const nlohmann::json& ev)
+                            {
+                                state.add_twitch_eventsub_event(ev);
+                            },
+                            // Status snapshots (for /api/twitch/eventsub/status)
+                            [&](const nlohmann::json& st)
+                            {
+                                state.set_twitch_eventsub_status(st);
+                            });
+                    }
+                    else {
+                        // Keep IRC working even if EventSub can't start.
+                        nlohmann::json st;
+                        st["ws_state"] = "stopped";
+                        st["connected"] = false;
+                        st["session_id"] = "";
+                        st["subscribed"] = false;
+                        st["last_ws_message_ms"] = 0;
+                        st["last_keepalive_ms"] = 0;
+                        st["last_helix_ok_ms"] = 0;
+                        st["subscriptions"] = nlohmann::json::array();
+                        st["last_error"] = "eventsub_missing_config_or_token";
+                        state.set_twitch_eventsub_status(st);
+                        LogLine(L"TWITCH: EventSub not started (missing twitch_client_id, twitch_login, or twitch.user_access_token)");
+                    }
+                }
+                return ok;
             };
             opt.stop_twitch = [&]() -> bool {
+                // Stop EventSub first so it doesn't keep reporting events after IRC is stopped.
+                twitchEventSub.Stop();
                 PlatformControl::StopTwitch(twitch, state, hwnd, (UINT)(WM_APP + 41), [](const std::wstring& s) { LogLine(s); });
                 return true;
             };
@@ -1657,6 +1732,8 @@ case WM_COMMAND:
         if (id == IDC_START_TWITCH) {
             // Ensure existing Twitch client is stopped before starting to allow restart or channel change
             twitch.stop();
+            twitchEventSub.Stop();
+
 
 
             // Apply current UI channel login into config so Helix poller + web UI use the same channel.
@@ -1675,6 +1752,29 @@ case WM_COMMAND:
 
             if (ok) {
                 LogLine(L"TWITCH: started/restarted IRC client.");
+
+                // Start EventSub (follows/subs/gifts). This connects to EventSub WS, waits for session_welcome,
+                // then creates Helix subscriptions bound to that WebSocket session.
+                const std::string token = ReadTwitchUserAccessToken();
+                if (config.twitch_client_id.empty()) {
+                    LogLine(L"TWITCH: EventSub not started (twitch_client_id missing in config.json).");
+                }
+                else if (token.empty()) {
+                    LogLine(L"TWITCH: EventSub not started (twitch.user_access_token missing in config.json).");
+                }
+                else if (config.twitch_login.empty()) {
+                    LogLine(L"TWITCH: EventSub not started (twitch_login missing).");
+                }
+                else {
+                    twitchEventSub.Start(
+                        config.twitch_client_id,
+                        token,
+                        config.twitch_login,
+                        [&](const ChatMessage& msg)
+                        {
+                            chat.Add(msg);
+                        });
+                }
             }
             else {
                 LogLine(L"TWITCH: failed to start IRC client (already running or invalid parameters). Consider checking the channel name.");
@@ -1849,6 +1949,7 @@ config.youtube_handle = ToUtf8(GetWindowTextWString(hYouTube));
         tiktok.stop();
         youtube.stop();
         twitch.stop();
+        twitchEventSub.Stop();
 
 #if HAVE_WEBVIEW2
         // Tear down WebView2 last to avoid any late WM_SIZE/paint touching released objects.
