@@ -1242,7 +1242,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         // Avoid unnecessary restarts.
         if (gTwitchHelixBoundLogin == login && twitchHelixThread.joinable()) return;
 
-        LogLine(L\"TWITCH: restarting Helix poller (\" + ToW(reason) + L\")\");
+        LogLine(L"TWITCH: restarting Helix poller (" + ToW(reason) + L")");
 
         // Stop existing poller thread if running.
         if (twitchHelixThread.joinable()) {
@@ -1257,7 +1257,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         gTwitchViewerCount = 0;
         gTwitchFollowerCount = 0;
         gTwitchLive = false;
-        gTwitchHelixStatus = L\"Helix: restarting...\";
+        gTwitchHelixStatus = L"Helix: restarting...";
         PostMessageW(hwnd, WM_APP + 41, 0, 0);
 
         gTwitchHelixRunning = true;
