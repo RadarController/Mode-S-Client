@@ -87,7 +87,7 @@ bool StartOrRestartTikTokSidecar(
 
     _wputenv_s(L"WHITELIST_AUTHENTICATED_SESSION_ID_HOST", L"tiktok.eulerstream.com");
 
-    bool ok = tiktok.start(L"python", sidecarPath, [&](const json& j) {
+    bool ok = tiktok.start(L"python", sidecarPath, [log, hwndMain, &state, &chat](const json& j) {
         std::string type = j.value("type", "");
         std::string msg = j.value("message", "");
         if (type.rfind("tiktok.", 0) == 0 && log) {
@@ -96,7 +96,7 @@ bool StartOrRestartTikTokSidecar(
             log(ToW("TIKTOK: " + type + extra));
         }
 
-        auto uiPing = [&](){
+        auto uiPing = [hwndMain](){
             if (hwndMain) PostMessageW(hwndMain, WM_APP + 41, 0, 0);
         };
 
@@ -159,7 +159,7 @@ bool StartOrRestartYouTubeSidecar(
     std::wstring sidecarPath = exeDir + L"\\sidecar\\youtube_sidecar.py";
     if (log) log(L"Starting python sidecar: " + sidecarPath);
 
-    bool ok = youtube.start(L"python", sidecarPath, [&](const json& j) {
+    bool ok = youtube.start(L"python", sidecarPath, [log, hwndMain, &state, &chat](const json& j) {
         std::string type = j.value("type", "");
         std::string msg = j.value("message", "");
 
@@ -169,7 +169,7 @@ bool StartOrRestartYouTubeSidecar(
             log(ToW("YOUTUBE: " + type + extra));
         }
 
-        auto uiPing = [&](){
+        auto uiPing = [hwndMain](){
             if (hwndMain) PostMessageW(hwndMain, WM_APP + 41, 0, 0);
         };
 

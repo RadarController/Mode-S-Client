@@ -6,6 +6,7 @@
 #include <functional>
 
 #include "httplib.h"
+#include "LogBuffer.h"
 
 class AppState;
 class ChatAggregator;
@@ -53,6 +54,9 @@ private:
     AppConfig& config_;
     Options opt_;
     LogFn log_;
+
+    // Thread-safe log buffer for the Web UI (/api/log)
+    LogBuffer logbuf_;
 
     std::unique_ptr<httplib::Server> svr_;
     std::thread thread_;

@@ -1,4 +1,5 @@
 #include "HttpServer.h"
+#include <windows.h>
 
 #include <fstream>
 #include <sstream>
@@ -81,7 +82,14 @@ HttpServer::HttpServer(AppState& state,
       euroscope_(euroscope),
       config_(config),
       opt_(std::move(options)),
-      log_(std::move(log)) {}
+      log_(std::move(log)) {
+    // Ensure logger is always callable (avoid std::bad_function_call)
+    if (!log_) log_ = [](const std::wstring&) {};
+
+    if (!log_) {
+        log_ = [](const std::wstring&) {};
+    }
+}
 
 HttpServer::~HttpServer() {
     Stop();
@@ -193,11 +201,14 @@ void HttpServer::RegisterRoutes() {
 
     // Safe logger: never throws into the HTTP thread (prevents std::bad_function_call / other exceptions from bubbling).
     auto SafeLog = [&](const std::wstring& msg) {
-        try {
-            if (log_) log_(msg);
-        } catch (...) {
-            // logging must never crash request handling
-        }
+        // Always emit to debugger output.
+        ::OutputDebugStringW((msg + L"\n").c_str());
+
+        // Record for Web UI (/api/log)
+        try { logbuf_.PushNow(WideToUtf8(msg)); } catch (...) {}
+
+        // Call app logger (never let it throw into HTTP thread)
+        try { log_(msg); } catch (...) {}
     };
 
 
@@ -302,6 +313,37 @@ svr.Post("/api/settings/save", handle_settings_save);
 
         res.set_content(j.dump(), "application/json; charset=utf-8");
     });
+
+    // --- API: server log buffer for Web UI ---
+    // GET /api/log?since=<id>&limit=<n>
+    svr.Get("/api/log", [&](const httplib::Request& req, httplib::Response& res) {
+        uint64_t since = 0;
+        size_t limit = 200;
+        try {
+            if (req.has_param("since")) since = std::stoull(req.get_param_value("since"));
+            if (req.has_param("limit")) limit = (size_t)std::stoul(req.get_param_value("limit"));
+        } catch (...) {}
+
+        if (limit < 1) limit = 1;
+        if (limit > 1000) limit = 1000;
+
+        auto entries = logbuf_.ReadSince(since, limit);
+
+        json out;
+        out["ok"] = true;
+        out["since"] = since;
+        out["latest"] = logbuf_.LatestId();
+        out["entries"] = json::array();
+        for (const auto& e : entries) {
+            json je;
+            je["id"] = e.id;
+            je["ts_ms"] = e.ts_ms;
+            je["msg"] = e.msg;
+            out["entries"].push_back(std::move(je));
+        }
+        res.set_content(out.dump(), "application/json; charset=utf-8");
+    });
+
 
     // --- API: platform control (used by /app UI) ---
     // These endpoints are optional; they call callbacks provided via HttpServer::Options.
