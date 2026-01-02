@@ -1,0 +1,325 @@
+
+const $ = (sel, root=document) => root.querySelector(sel);
+const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
+
+function fmtNum(n){
+  if (n === null || n === undefined) return "—";
+  const x = Number(n);
+  if (!Number.isFinite(x)) return "—";
+  return x.toLocaleString();
+}
+
+function setText(id, v){ const el = document.getElementById(id); if (el) el.textContent = v; }
+
+async function apiGet(url){
+  const r = await fetch(url, {cache:"no-store"});
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  return await r.json();
+}
+
+async function apiPost(url, body){
+  const r = await fetch(url, {
+    method:"POST",
+    headers: {"Content-Type":"application/json"},
+    body: body ? JSON.stringify(body) : ""
+  });
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  const text = await r.text();
+  try { return JSON.parse(text); } catch { return { ok:true, raw:text }; }
+}
+
+async function loadSettings(){
+  try{
+    const s = await apiGet("/api/settings");
+    if (!s || s.ok !== true) throw new Error("ok=false");
+    const t = $("#tiktokUser"); if (t) t.value = s.tiktok_unique_id ?? "";
+    const tw = $("#twitchUser"); if (tw) tw.value = s.twitch_login ?? "";
+    const y = $("#youtubeUser"); if (y) y.value = s.youtube_handle ?? "";
+    logLine("settings", `loaded (${s.config_path || "unknown path"})`);
+  }catch(e){
+    logLine("settings", `load failed (${e.message})`);
+  }
+}
+
+async function saveSettingsFromInputs(){
+  const payload = {
+    tiktok_unique_id: $("#tiktokUser")?.value || "",
+    twitch_login: $("#twitchUser")?.value || "",
+    youtube_handle: $("#youtubeUser")?.value || ""
+  };
+
+  // Support both endpoints (older builds used /api/settingssave)
+  try{
+    await apiPost("/api/settings/save", payload);
+    logLine("settings", "saved");
+    await loadSettings();
+    return true;
+  }catch(e1){
+    try{
+      await apiPost("/api/settingssave", payload);
+      logLine("settings", "saved");
+      await loadSettings();
+      return true;
+    }catch(e2){
+      logLine("settings", `save failed (${e2.message})`);
+      return false;
+    }
+  }
+}
+
+function logLine(tag, msg){
+  const log = $("#log");
+  if (!log) return;
+  const line = document.createElement("div");
+  line.className = "log__line";
+  const ts = new Date().toLocaleTimeString();
+  line.innerHTML = `<span class="log__ts">[${ts}]</span><span class="log__tag">${tag}</span><span class="log__msg"></span>`;
+  line.querySelector(".log__msg").textContent = msg;
+  log.prepend(line);
+}
+
+function setBadge(platform, live, label){
+  const b = document.getElementById(`${platform}Badge`);
+  if (!b) return;
+  b.textContent = label || (live ? "Live" : "Offline");
+  b.classList.toggle("badge--live", !!live);
+}
+
+function setState(platform, text){
+  const el = document.getElementById(`${platform}State`);
+  if (el) el.textContent = text;
+}
+
+function setStopEnabled(platform, enabled){
+  const card = document.querySelector(`.platform[data-platform="${platform}"]`);
+  if (!card) return;
+  const stop = card.querySelector(`button[data-action="stop"]`);
+  if (stop) stop.disabled = !enabled;
+}
+
+function guessMetricsShape(m){
+  // We intentionally support multiple possible shapes, since the project evolved.
+  // Top-level convenience
+  const viewers = m.total_viewers ?? m.viewers ?? m.viewer_count ?? m.live_viewers ?? m.concurrent_viewers;
+  const followers = m.total_followers ?? m.followers ?? m.follower_count ?? m.subscribers ?? m.subscriber_count;
+  // Aircraft is displayed as "assumed_now/handled_session" when EuroScope data is available.
+  const aircraft = (m.euroscope && (m.euroscope.assumed_now !== undefined || m.euroscope.handled_session !== undefined))
+    ? `${m.euroscope.assumed_now ?? 0}/${m.euroscope.handled_session ?? 0}`
+    : (m.aircraft ?? m.aircraft_count ?? m.euroscope_aircraft ?? m.aircrafts);
+
+  // Per-platform buckets (common patterns: m.tiktok.viewers, m.platforms.tiktok.viewers, etc.)
+  const getP = (p) => (m[p] || (m.platforms && m.platforms[p]) || (m.metrics && m.metrics[p]) || null);
+
+  return {
+    viewers, followers, aircraft,
+    tiktok: getP("tiktok"),
+    twitch: getP("twitch"),
+    youtube: getP("youtube"),
+  };
+}
+
+function applyMetrics(m){
+  const s = guessMetricsShape(m);
+
+  setText("mViewers", fmtNum(s.viewers));
+  setText("mFollowers", fmtNum(s.followers));
+  setText("mAircraft", (typeof s.aircraft === "string") ? s.aircraft : fmtNum(s.aircraft));
+
+  // Twitch (top-level fields in /api/metrics)
+  const tw_viewers = m.twitch_viewers ?? (s.twitch && (s.twitch.viewers ?? s.twitch.viewer_count ?? s.twitch.live_viewers));
+  const tw_followers = m.twitch_followers ?? (s.twitch && (s.twitch.followers ?? s.twitch.follower_count));
+  const tw_live = (m.twitch_live !== undefined) ? m.twitch_live : (s.twitch && (s.twitch.live ?? s.twitch.is_live));
+
+  setText("twitchViewers", fmtNum(tw_viewers));
+  setText("twitchFollowers", fmtNum(tw_followers));
+
+  const twBadge = $("#twitchBadge");
+  const twState = $("#twitchState");
+  const isLive = (tw_live === true || tw_live === 1 || tw_live === "true");
+  const hasData = (tw_viewers !== null && tw_viewers !== undefined) || (tw_followers !== null && tw_followers !== undefined);
+
+  if (twBadge) twBadge.textContent = isLive ? "Live" : "Offline";
+  if (twState) twState.textContent = isLive ? "Live" : (hasData ? "Connected" : "Disconnected");
+
+  
+
+  // TikTok (top-level fields in /api/metrics)
+  const tt_viewers = m.tiktok_viewers ?? (s.tiktok && (s.tiktok.viewers ?? s.tiktok.viewer_count ?? s.tiktok.live_viewers ?? s.tiktok.concurrent_viewers));
+  const tt_followers = m.tiktok_followers ?? (s.tiktok && (s.tiktok.followers ?? s.tiktok.follower_count));
+  const tt_live = (m.tiktok_live !== undefined) ? m.tiktok_live : (s.tiktok && (s.tiktok.live ?? s.tiktok.is_live));
+
+  setText("tiktokViewers", fmtNum(tt_viewers));
+  setText("tiktokFollowers", fmtNum(tt_followers));
+
+  const ttBadge = $("#tiktokBadge");
+  const ttState = $("#tiktokState");
+  const ttIsLive = (tt_live === true || tt_live === 1 || tt_live === "true");
+  const ttHasData = (tt_viewers !== null && tt_viewers !== undefined) || (tt_followers !== null && tt_followers !== undefined);
+
+  if (ttBadge) ttBadge.textContent = ttIsLive ? "Live" : "Offline";
+  if (ttState) ttState.textContent = ttIsLive ? "Live" : (ttHasData ? "Connected" : "Disconnected");
+
+  // YouTube (top-level fields in /api/metrics)
+  const yt_viewers = m.youtube_viewers ?? (s.youtube && (s.youtube.viewers ?? s.youtube.viewer_count ?? s.youtube.live_viewers ?? s.youtube.concurrent_viewers));
+  const yt_followers = m.youtube_followers ?? (s.youtube && (s.youtube.followers ?? s.youtube.follower_count ?? s.youtube.subscribers ?? s.youtube.subscriber_count));
+  const yt_live = (m.youtube_live !== undefined) ? m.youtube_live : (s.youtube && (s.youtube.live ?? s.youtube.is_live));
+
+  setText("youtubeViewers", fmtNum(yt_viewers));
+  setText("youtubeFollowers", fmtNum(yt_followers));
+
+  const ytBadge = $("#youtubeBadge");
+  const ytState = $("#youtubeState");
+  const ytIsLive = (yt_live === true || yt_live === 1 || yt_live === "true");
+  const ytHasData = (yt_viewers !== null && yt_viewers !== undefined) || (yt_followers !== null && yt_followers !== undefined);
+
+  if (ytBadge) ytBadge.textContent = ytIsLive ? "Live" : "Offline";
+  if (ytState) ytState.textContent = ytIsLive ? "Live" : (ytHasData ? "Connected" : "Disconnected");
+
+// status dot (best effort)
+  const dot = $("#mDot");
+  if (dot){
+    const liveAny = Boolean(
+      (s.tiktok && (s.tiktok.live || s.tiktok.is_live)) ||
+      (s.twitch && (s.twitch.live || s.twitch.is_live)) ||
+      (s.youtube && (s.youtube.live || s.youtube.is_live))
+    );
+    dot.style.background = liveAny ? "#3b82f6" : "#64748b";
+  }
+
+  const applyPlatform = (name, bucket) => {
+    if (!bucket) return;
+    const live = Boolean(bucket.live ?? bucket.is_live ?? bucket.streaming ?? bucket.connected ?? false);
+    setBadge(name, live, live ? "Live" : "Offline");
+    setState(name, live ? "Connected" : "Disconnected");
+
+    // stats
+    const v = bucket.viewers ?? bucket.viewer_count ?? bucket.live_viewers ?? bucket.concurrent_viewers;
+    const f = bucket.followers ?? bucket.follower_count ?? bucket.subscribers ?? bucket.subscriber_count;
+    setText(`${name}Viewers`, fmtNum(v));
+    setText(`${name}Followers`, fmtNum(f));
+
+    // stop button enabled when "live" (best effort)
+    setStopEnabled(name, live);
+  };
+
+  applyPlatform("tiktok", s.tiktok);
+  applyPlatform("twitch", s.twitch);
+  applyPlatform("youtube", s.youtube);
+
+  // overall status label
+  const status = $("#mStatus");
+  if (status){
+    const anyLive = Boolean(
+      (s.tiktok && (s.tiktok.live || s.tiktok.is_live)) ||
+      (s.twitch && (s.twitch.live || s.twitch.is_live)) ||
+      (s.youtube && (s.youtube.live || s.youtube.is_live))
+    );
+    status.textContent = anyLive ? "Live" : "Idle";
+  }
+
+  const build = $("#buildInfo");
+  if (build){
+    // if you include build fields in metrics payload, they'll show here
+    const ver = m.version || (m.app && m.app.version) || null;
+    const port = m.port || (m.http && m.http.port) || null;
+    const parts = [];
+    if (ver) parts.push(`v${ver}`);
+    if (port) parts.push(`:${port}`);
+    build.textContent = parts.length ? parts.join(" ") : "—";
+  }
+}
+
+async function pollMetrics(){
+  try{
+    const m = await apiGet("/api/metrics");
+    applyMetrics(m);
+  }catch(e){
+    // avoid spamming
+    console.debug("metrics poll failed", e);
+  }
+}
+
+let _logSince = 0;
+async function pollLog(){
+  try{
+    const j = await apiGet(`/api/log?since=${_logSince}&limit=200`);
+    if (!j || !j.ok) return;
+    const entries = j.entries || [];
+    for (const e of entries){
+      const id = Number(e.id)||0;
+      if (id>_logSince) _logSince = id;
+      logLine("srv", e.msg);
+    }
+  }catch(e){
+    // ignore
+  }
+}
+
+function wireActions(){
+  $("#btnOpenChat")?.addEventListener("click", () => {
+    window.open("/app/chat.html", "_blank", "noopener");
+  });
+
+  $("#btnStartAll")?.addEventListener("click", async () => {
+    logLine("start-all", "starting all platforms");
+    const platforms = ["tiktok", "twitch", "youtube"];
+    for (const p of platforms) {
+      try {
+        await apiPost(`/api/platform/${p}/start`, {});
+        logLine("start-all", `${p} start requested`);
+      } catch (e) {
+        logLine("start-all", `${p} start failed (${e.message})`);
+      }
+    }
+    logLine("start-all", "done");
+  });
+
+
+  $("#btnSave")?.addEventListener("click", async () => {
+    await saveSettingsFromInputs();
+  });
+
+  $$(".platform").forEach(card => {
+    const platform = card.dataset.platform;
+    card.addEventListener("click", async (ev) => {
+      const btn = ev.target.closest("button[data-action]");
+      if (!btn) return;
+
+      const action = btn.getAttribute("data-action");
+      if (action === "set"){
+        // For now: SET just saves the current usernames via /api/settings/save.
+        await saveSettingsFromInputs();
+        return;
+      }
+
+      if (action === "start"){
+        try{
+          await apiPost(`/api/platform/${platform}/start`);
+          logLine(platform, "start requested");
+        }catch(e){
+          logLine(platform, `start failed (${e.message})`);
+        }
+        return;
+      }
+
+      if (action === "stop"){
+        try{
+          await apiPost(`/api/platform/${platform}/stop`);
+          logLine(platform, "stop requested");
+        }catch(e){
+          logLine(platform, `stop failed (${e.message})`);
+        }
+        return;
+      }
+    });
+  });
+}
+
+document.addEventListener("DOMContentLoaded", async () => {
+  wireActions();
+  await loadSettings();
+  await pollMetrics();
+  setInterval(pollMetrics, 2000);
+  await pollLog();
+  setInterval(pollLog, 1000);
+});

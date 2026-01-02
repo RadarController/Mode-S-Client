@@ -2,7 +2,6 @@
 #include <string>
 #include <windows.h>
 #include <filesystem>
-#include <cstdio>
 #include "json.hpp"
 
 struct AppConfig
@@ -35,31 +34,12 @@ struct AppConfig
         return GetExeDir() + L"\\config.json";
     }
 
-    static void DebugLogConfigLookup(const wchar_t* action, const std::wstring& path)
-    {
-        // Log to both debugger output (Visual Studio Output window) and stderr.
-        // This helps diagnose "works in Release, not in Debug" issues where the working directory differs.
-        wchar_t buf[2048] = {0};
-        _snwprintf_s(buf, _countof(buf), _TRUNCATE, L"[AppConfig] %s config.json at: %s\n", action ? action : L"Looking for", path.c_str());
-        OutputDebugStringW(buf);
-        fwprintf(stderr, L"%s", buf);
-    }
-
     bool Load()
     {
         const auto path = ConfigPath();
-        DebugLogConfigLookup(L"Looking for", path);
         FILE* f = nullptr;
         _wfopen_s(&f, path.c_str(), L"rb");
-        if (!f) {
-            // Helpful: log last error so we know whether it's simply missing vs permissions, etc.
-            const DWORD err = GetLastError();
-            wchar_t buf[256] = {0};
-            _snwprintf_s(buf, _countof(buf), _TRUNCATE, L"[AppConfig] Failed to open config.json (err=%lu)\n", (unsigned long)err);
-            OutputDebugStringW(buf);
-            fwprintf(stderr, L"%s", buf);
-            return false;
-        }
+        if (!f) return false;
 
         fseek(f, 0, SEEK_END);
         long sz = ftell(f);
@@ -94,7 +74,6 @@ struct AppConfig
     bool Save() const
     {
         const auto path = ConfigPath();
-        DebugLogConfigLookup(L"Saving to", path);
 
         // 1) Start with existing JSON (so we preserve keys we don't explicitly manage)
         nlohmann::json j = nlohmann::json::object();

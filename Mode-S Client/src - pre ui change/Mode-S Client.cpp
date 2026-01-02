@@ -35,34 +35,6 @@
 #include "euroscope/EuroScopeIngestService.h"
 #include "obs/ObsWsClient.h"
 #include "floating/FloatingChat.h"
-#include "platform/PlatformControl.h"
-
-// --------------------------- WebView2 (Modern UI host) ----------------------
-#if !defined(HAVE_WEBVIEW2)
-#  if defined(__has_include)
-#    if __has_include("WebView2.h")
-#      include <wrl.h>
-#      include "WebView2.h"
-#      define HAVE_WEBVIEW2 1
-#    else
-#      define HAVE_WEBVIEW2 0
-#    endif
-#  else
-#    define HAVE_WEBVIEW2 0
-#  endif
-#endif
-
-#if HAVE_WEBVIEW2
-using Microsoft::WRL::ComPtr;
-static ComPtr<ICoreWebView2Controller> gMainWebController;
-static ComPtr<ICoreWebView2>           gMainWebView;
-#endif
-
-// Flip this to false to revert to the legacy Win32 control UI.
-static bool gUseModernUi = true;
-static std::atomic<bool> gHttpReady{ false };
-static const wchar_t* kModernUiUrl = L"http://127.0.0.1:17845/app";
-
 
 // --------------------------- Control IDs ------------------------------------
 #define IDC_TIKTOK_EDIT        1001
@@ -105,7 +77,7 @@ static constexpr UINT WM_APP_SPLASH_READY = WM_APP + 201;
 static constexpr UINT_PTR SPLASH_CLOSE_TIMER_ID = 1001;
 static constexpr UINT SPLASH_CLOSE_DELAY_MS = 1 * 1000; // test: keep splash for 1s after ready
 static const wchar_t* kAppDisplayName = L"RadarController Mode-S Client";
-static const wchar_t* kAppVersion = L"v0.3.2"; // TODO: wire to resource/file version
+static const wchar_t* kAppVersion = L"v1.0.0"; // TODO: wire to resource/file version
 
 static HWND hGroupTikTok = nullptr, hGroupTwitch = nullptr, hGroupYouTube = nullptr;
 static HWND hLblTikTok = nullptr, hLblTwitch = nullptr, hLblYouTube = nullptr;
@@ -959,12 +931,86 @@ static bool StartOrRestartTikTokSidecar(TikTokSidecar& tiktok,
     std::string cleaned = SanitizeTikTok(raw);
     SetWindowTextW(hTikTokEdit, ToW(cleaned).c_str());
 
-    return PlatformControl::StartOrRestartTikTokSidecar(
-        tiktok, state, chat,
-        GetExeDir(),
-        cleaned,
-        hwndMain,
-        [](const std::wstring& s) { LogLine(s); });
+    if (cleaned.empty()) {
+        if (hwndLog) LogLine(L"TikTok username is empty. Enter it first.");
+        return false;
+    }
+
+    tiktok.stop();
+
+    std::wstring exeDir = GetExeDir();
+    std::wstring sidecarPath = exeDir + L"\\sidecar\\tiktok_sidecar.py";
+
+    LogLine((L"Starting python sidecar: " + sidecarPath));
+
+    _wputenv_s(L"WHITELIST_AUTHENTICATED_SESSION_ID_HOST", L"tiktok.eulerstream.com");
+
+    bool ok = tiktok.start(L"python", sidecarPath, [&](const nlohmann::json& j) {
+        std::string type = j.value("type", "");
+        std::string msg = j.value("message", "");
+        if (type.rfind("tiktok.", 0) == 0) {
+            std::string extra;
+            if (!msg.empty()) extra = " | " + msg;
+            LogLine(ToW(("TIKTOK: " + type + extra)));
+        }
+
+        if (type == "tiktok.connected") {
+            // If we can connect, we are live.
+            state.set_tiktok_live(true);
+            if (hwndMain) PostMessageW(hwndMain, WM_APP + 41, 0, 0);
+        }
+        else if (type == "tiktok.disconnected" || type == "tiktok.offline") {
+            // Ensure we never show stale "live" state / viewers.
+            state.set_tiktok_live(false);
+            state.set_tiktok_viewers(0);
+            if (hwndMain) PostMessageW(hwndMain, WM_APP + 41, 0, 0);
+        }
+        else if (type == "tiktok.error") {
+            // Treat fatal sidecar errors as offline from the UI/metrics perspective.
+            state.set_tiktok_live(false);
+            state.set_tiktok_viewers(0);
+            if (hwndMain) PostMessageW(hwndMain, WM_APP + 41, 0, 0);
+        }
+        else if (type == "tiktok.chat") {
+            ChatMessage c;
+            c.platform = "TikTok";
+            c.user = j.value("user", "unknown");
+            c.message = j.value("message", "");
+            double ts = j.value("ts", 0.0);
+            c.ts_ms = (std::int64_t)(ts * 1000.0);
+            // Push into aggregator instead of AppState
+            chat.Add(std::move(c));
+        }
+        // NEW: primary stats event from the updated sidecar
+        else if (type == "tiktok.stats") {
+            bool live = j.value("live", false);
+            int viewers = j.value("viewers", 0);
+
+            state.set_tiktok_live(live);
+            state.set_tiktok_viewers(viewers);
+
+            // Followers is optional in the sidecar payload; only apply if present
+            if (j.contains("followers")) {
+                state.set_tiktok_followers(j.value("followers", 0));
+            }
+
+            // Refresh UI (which pulls /api/metrics and updates widgets)
+            if (hwndMain) PostMessageW(hwndMain, WM_APP + 41, 0, 0);
+        }
+        // Backward compatibility (if any old sidecar emits this)
+        else if (type == "tiktok.viewers") {
+            state.set_tiktok_viewers(j.value("viewers", 0));
+            if (hwndMain) PostMessageW(hwndMain, WM_APP + 41, 0, 0);
+        }
+        });
+
+    if (ok) {
+        if (hwndLog) LogLine(L"TikTok sidecar started/restarted.");
+    }
+    else {
+        if (hwndLog) LogLine(L"ERROR: Could not start TikTok sidecar. Check Python + TikTokLive install.");
+    }
+    return ok;
 }
 
 
@@ -979,12 +1025,72 @@ static bool StartOrRestartYouTubeSidecar(TikTokSidecar& youtube,
     std::string cleaned = SanitizeYouTubeHandle(raw);
     SetWindowTextW(hYouTubeEdit, ToW(cleaned).c_str());
 
-    return PlatformControl::StartOrRestartYouTubeSidecar(
-        youtube, state, chat,
-        GetExeDir(),
-        cleaned,
-        hwndMain,
-        [](const std::wstring& s) { LogLine(s); });
+    if (cleaned.empty()) {
+        if (hwndLog) LogLine(L"YouTube handle is empty. Enter it first (e.g. timthetatman).");
+        return false;
+    }
+
+    youtube.stop();
+
+    std::wstring exeDir = GetExeDir();
+    std::wstring sidecarPath = exeDir + L"\\sidecar\\youtube_sidecar.py";
+
+    LogLine((L"Starting python sidecar: " + sidecarPath));
+
+    bool ok = youtube.start(L"python", sidecarPath, [&](const nlohmann::json& j) {
+        std::string type = j.value("type", "");
+        if (type.rfind("youtube.", 0) == 0) {
+            std::string msg = j.value("message", "");
+            std::string extra;
+            if (!msg.empty()) extra = " | " + msg;
+            LogLine(ToW(("YOUTUBE: " + type + extra)));
+        }
+
+        if (type == "youtube.stats") {
+            bool live = j.value("live", false);
+            int viewers = j.value("viewers", 0);
+            int followers = j.value("followers", 0);
+
+            state.set_youtube_live(live);
+            state.set_youtube_viewers(viewers);
+            state.set_youtube_followers(followers);
+
+            if (!live) state.set_youtube_viewers(0);
+
+            // Refresh UI (which pulls /api/metrics and updates widgets)
+            if (hwndMain) PostMessageW(hwndMain, WM_APP + 41, 0, 0);
+        }
+        else if (type == "youtube.chat" || type == "youtube.message" || type == "youtube.msg") {
+            ChatMessage c;
+            c.platform = "youtube";
+            c.user = j.value("user", j.value("author", j.value("username", "unknown")));
+            c.message = j.value("message", j.value("text", j.value("content", "")));
+
+            // sidecar may send ts (seconds) or ts_ms (milliseconds)
+            if (j.contains("ts_ms")) {
+                c.ts_ms = j.value("ts_ms", 0LL);
+            } else {
+                double ts = j.value("ts", 0.0);
+                c.ts_ms = (std::int64_t)(ts * 1000.0);
+            }
+
+            if (!c.message.empty()) {
+                chat.Add(std::move(c));
+                // Refresh UI (chat.html polls /api/chat)
+                if (hwndMain) PostMessageW(hwndMain, WM_APP + 41, 0, 0);
+            }
+        }
+
+    });
+
+    if (ok) {
+        LogLine(L"YOUTUBE: started/restarted sidecar.");
+    }
+    else {
+        LogLine(L"YOUTUBE: failed to start sidecar.");
+    }
+
+    return ok;
 }
 
 // --------------------------- Clipboard helper -------------------------------
@@ -1258,65 +1364,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             snap += L"' twitch_client_secret_len=";
             snap += std::to_wstring(config.twitch_client_secret.size());
             LogLine(snap.c_str());
-        
-        // If enabled, host the new modern UI (HTML/CSS) directly inside the main window via WebView2.
-        // This keeps all existing backend threads + HTTP API intact, but replaces the legacy Win32 control layout.
-#if HAVE_WEBVIEW2
-        if (gUseModernUi) {
-            // Create a hidden log control so existing LogLine() plumbing still works (optional).
-            gLog = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
-                WS_CHILD | ES_MULTILINE | ES_READONLY | WS_VSCROLL, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
-
-            // Init WebView2 (controller + view). Navigation happens once the HTTP server is running.
-            HRESULT hr = CreateCoreWebView2EnvironmentWithOptions(
-                nullptr, nullptr, nullptr,
-                Microsoft::WRL::Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
-                    [hwnd](HRESULT envResult, ICoreWebView2Environment* env) -> HRESULT {
-                        if (FAILED(envResult) || !env) return envResult;
-                        env->CreateCoreWebView2Controller(
-                            hwnd,
-                            Microsoft::WRL::Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
-                                [hwnd](HRESULT ctlResult, ICoreWebView2Controller* controller) -> HRESULT {
-                                    if (FAILED(ctlResult) || !controller) return ctlResult;
-
-                                    gMainWebController = controller;
-
-                                    ICoreWebView2* core = nullptr;
-                                    gMainWebController->get_CoreWebView2(&core);
-                                    if (core) {
-                                        gMainWebView.Attach(core);
-
-                                        // Tidy defaults
-                                        ICoreWebView2Settings* settings = nullptr;
-                                        gMainWebView->get_Settings(&settings);
-                                        if (settings) {
-                                            settings->put_IsStatusBarEnabled(FALSE);
-                                            settings->put_AreDefaultContextMenusEnabled(FALSE);
-                                            settings->put_AreDefaultScriptDialogsEnabled(FALSE);
-                                            settings->Release();
-                                        }
-
-                                        // If the HTTP server is already ready, navigate now.
-                                        if (gHttpReady.load()) {
-                                            gMainWebView->Navigate(kModernUiUrl);
-                                        }
-                                    }
-
-                                    gMainWebController->put_IsVisible(TRUE);
-                                    RECT rc; GetClientRect(hwnd, &rc);
-                                    gMainWebController->put_Bounds(rc);
-                                    return S_OK;
-                                }).Get());
-                        return S_OK;
-                    }).Get());
-            (void)hr;
-
-            // Kick off backend init (HTTP server, pollers, etc.)
-            PostMessageW(hwnd, WM_APP + 1, 0, 0);
-            return 0;
         }
-#endif
-}
 
         // Group boxes
         hGroupTikTok = CreateWindowW(L"BUTTON", L"TikTok", WS_CHILD | WS_VISIBLE | BS_GROUPBOX, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
@@ -1453,58 +1501,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             opt.bind_host = "127.0.0.1";
             opt.port = 17845;
             opt.overlay_root = std::filesystem::path(GetExeDir()) / "assets" / "overlay";
-            // Platform control callbacks for the /app Web UI
-            opt.start_tiktok = [&]() -> bool {
-                return PlatformControl::StartOrRestartTikTokSidecar(
-                    tiktok, state, chat,
-                    GetExeDir(),
-                    config.tiktok_unique_id,
-                    hwnd,
-                    [](const std::wstring& s) { LogLine(s); });
-            };
-            opt.stop_tiktok = [&]() -> bool {
-                PlatformControl::StopTikTok(tiktok, state, hwnd, (UINT)(WM_APP + 41), [](const std::wstring& s) { LogLine(s); });
-                return true;
-            };
-
-            opt.start_twitch = [&]() -> bool {
-                return PlatformControl::StartOrRestartTwitchIrc(
-                    twitch, state, chat,
-                    config.twitch_login,
-                    [](const std::wstring& s) { LogLine(s); });
-            };
-            opt.stop_twitch = [&]() -> bool {
-                PlatformControl::StopTwitch(twitch, state, hwnd, (UINT)(WM_APP + 41), [](const std::wstring& s) { LogLine(s); });
-                return true;
-            };
-
-            opt.start_youtube = [&]() -> bool {
-                return PlatformControl::StartOrRestartYouTubeSidecar(
-                    youtube, state, chat,
-                    GetExeDir(),
-                    config.youtube_handle,
-                    hwnd,
-                    [](const std::wstring& s) { LogLine(s); });
-            };
-            opt.stop_youtube = [&]() -> bool {
-                PlatformControl::StopYouTube(youtube, state, hwnd, (UINT)(WM_APP + 41), [](const std::wstring& s) { LogLine(s); });
-                return true;
-            };
-
 
             gHttp = std::make_unique<HttpServer>(state, chat, euroscope, config, opt,
                 [](const std::wstring& s) { LogLine(s); });
 
             gHttp->Start();
         }
-
-        // Signal that the HTTP server is ready for WebView2 navigation.
-        gHttpReady = true;
-#if HAVE_WEBVIEW2
-        if (gUseModernUi && gMainWebView) {
-            gMainWebView->Navigate(kModernUiUrl);
-        }
-#endif
 
 
         metricsThread = std::thread([&]() {
@@ -1728,13 +1730,6 @@ if (id == IDC_START_YOUTUBE) {
     }
 
     case WM_SIZE:
-#if HAVE_WEBVIEW2
-        if (gUseModernUi && gMainWebController) {
-            RECT rc; GetClientRect(hwnd, &rc);
-            gMainWebController->put_Bounds(rc);
-            return 0;
-        }
-#endif
         LayoutControls(hwnd);
         return 0;
 
@@ -1791,17 +1786,6 @@ if (id == IDC_START_YOUTUBE) {
         tiktok.stop();
         youtube.stop();
         twitch.stop();
-
-#if HAVE_WEBVIEW2
-        // Tear down WebView2 last to avoid any late WM_SIZE/paint touching released objects.
-        if (gMainWebController) {
-            gMainWebController->put_IsVisible(FALSE);
-            gMainWebController.Reset();
-        }
-        if (gMainWebView) {
-            gMainWebView.Reset();
-        }
-#endif
 
         // Stop HTTP server cleanly (stop + join)
         if (gHttp) {

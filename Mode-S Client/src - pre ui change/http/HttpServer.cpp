@@ -1,5 +1,4 @@
 #include "HttpServer.h"
-#include <Windows.h>
 
 #include <fstream>
 #include <sstream>
@@ -13,18 +12,6 @@
 #include "../chat/ChatAggregator.h"
 #include "../../integrations/euroscope/EuroScopeIngestService.h"
 #include "../AppConfig.h"
-
-namespace {
-inline void SafeOutputLog(std::function<void(const std::wstring&)>& log, const std::wstring& msg) {
-    ::OutputDebugStringW((msg + L"\n").c_str());
-    try {
-        log(msg);
-    } catch (...) {
-        // Never allow logging to break server threads
-    }
-}
-}
-
 
 using json = nlohmann::json;
 
@@ -72,16 +59,6 @@ static const char* ContentTypeFor(const std::string& path) {
     return "application/octet-stream";
 }
 
-static std::string WideToUtf8(const std::wstring& ws) {
-    if (ws.empty()) return {};
-    int needed = WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), (int)ws.size(), nullptr, 0, nullptr, nullptr);
-    if (needed <= 0) return {};
-    std::string out;
-    out.resize((size_t)needed);
-    WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), (int)ws.size(), out.data(), needed, nullptr, nullptr);
-    return out;
-}
-
 HttpServer::HttpServer(AppState& state,
                        ChatAggregator& chat,
                        EuroScopeIngestService& euroscope,
@@ -93,11 +70,7 @@ HttpServer::HttpServer(AppState& state,
       euroscope_(euroscope),
       config_(config),
       opt_(std::move(options)),
-      log_(std::move(log)) {
-    if (!log_) {
-        log_ = [](const std::wstring&) {};
-    }
-}
+      log_(std::move(log)) {}
 
 HttpServer::~HttpServer() {
     Stop();
@@ -111,10 +84,12 @@ void HttpServer::Start() {
 
     thread_ = std::thread([this]() {
         try {
-            SafeOutputLog(log_, L"HTTP: listening on http://127.0.0.1:" + std::to_wstring(opt_.port));
+            if (log_) {
+                log_(L"HTTP: listening on http://127.0.0.1:" + std::to_wstring(opt_.port));
+            }
             svr_->listen(opt_.bind_host.c_str(), opt_.port);
         } catch (...) {
-            SafeOutputLog(log_, L"HTTP: server thread crashed");
+            if (log_) log_(L"HTTP: server thread crashed");
         }
     });
 }
@@ -218,66 +193,6 @@ void HttpServer::RegisterRoutes() {
 
         res.set_content(j.dump(2), "application/json; charset=utf-8");
     });
-
-
-// --- API: settings save (used by /app UI) ---
-// Accept both legacy and newer paths.
-auto handle_settings_save = [&](const httplib::Request& req, httplib::Response& res) {
-    // If the UI sends a JSON body, apply it to config_ before saving.
-    if (!req.body.empty()) {
-        try {
-            auto j = json::parse(req.body);
-
-            if (j.contains("tiktok_unique_id"))      config_.tiktok_unique_id      = j.value("tiktok_unique_id", config_.tiktok_unique_id);
-            if (j.contains("twitch_login"))          config_.twitch_login          = j.value("twitch_login", config_.twitch_login);
-            if (j.contains("twitch_client_id"))      config_.twitch_client_id      = j.value("twitch_client_id", config_.twitch_client_id);
-            if (j.contains("twitch_client_secret"))  config_.twitch_client_secret  = j.value("twitch_client_secret", config_.twitch_client_secret);
-            if (j.contains("youtube_handle"))        config_.youtube_handle        = j.value("youtube_handle", config_.youtube_handle);
-
-            // TikTok cookie/session fields (optional)
-            if (j.contains("tiktok_sessionid"))      config_.tiktok_sessionid      = j.value("tiktok_sessionid", config_.tiktok_sessionid);
-            if (j.contains("tiktok_sessionid_ss"))   config_.tiktok_sessionid_ss   = j.value("tiktok_sessionid_ss", config_.tiktok_sessionid_ss);
-            if (j.contains("tiktok_tt_target_idc"))  config_.tiktok_tt_target_idc  = j.value("tiktok_tt_target_idc", config_.tiktok_tt_target_idc);
-
-            // Overlay styling fields (optional)
-            if (j.contains("overlay_font_family"))   config_.overlay_font_family   = j.value("overlay_font_family", config_.overlay_font_family);
-            if (j.contains("overlay_font_size"))     config_.overlay_font_size     = j.value("overlay_font_size", config_.overlay_font_size);
-            if (j.contains("overlay_text_shadow"))   config_.overlay_text_shadow   = j.value("overlay_text_shadow", config_.overlay_text_shadow);
-
-            if (j.contains("metrics_json_path"))     config_.metrics_json_path     = j.value("metrics_json_path", config_.metrics_json_path);
-        } catch (...) {
-            res.status = 400;
-            res.set_content(R"({"ok":false,"error":"invalid_json"})", "application/json; charset=utf-8");
-            return;
-        }
-    }
-
-    const std::wstring cfg_path_w = AppConfig::ConfigPath();
-    const std::string  cfg_path   = WideToUtf8(cfg_path_w);
-
-    if (!config_.Save()) {
-        SafeOutputLog(log_, L"settingssave: FAILED writing " + cfg_path_w);
-        res.status = 500;
-        json out;
-        out["ok"] = false;
-        out["error"] = "save_failed";
-        out["path"] = cfg_path;
-        res.set_content(out.dump(2), "application/json; charset=utf-8");
-        return;
-    }
-
-    SafeOutputLog(log_, L"settingssave: wrote " + cfg_path_w);
-
-    json out;
-    out["ok"] = true;
-    out["path"] = cfg_path;
-    res.set_header("X-Config-Path", cfg_path.c_str());
-    res.set_content(out.dump(2), "application/json; charset=utf-8");
-};
-
-svr.Post("/api/settingssave", handle_settings_save);
-svr.Post("/api/settings/save", handle_settings_save);
-
 
     // EuroScope plugin ingest endpoint (expects JSON with ts_ms)
     svr.Post("/api/euroscope", [&](const httplib::Request& req, httplib::Response& res) {
@@ -447,40 +362,6 @@ svr.Get("/api/chat/diag", [&](const httplib::Request&, httplib::Response& res) {
     // We can infer the assets root from overlay_root: <exe_dir>/assets/overlay -> <exe_dir>/assets
     const std::filesystem::path assetsRoot = opt_.overlay_root.parent_path();
 
-    // --- Modern App UI: /app and /app/* ---
-    // Serves files from <assetsRoot>/app (e.g. assets/app/index.html)
-    svr.Get("/app", [&](const httplib::Request&, httplib::Response& res) {
-        res.set_redirect("/app/index.html");
-    });
-    svr.Get("/app/", [&](const httplib::Request&, httplib::Response& res) {
-        res.set_redirect("/app/index.html");
-    });
-
-    svr.Get(R"(/app/(.*))", [&, assetsRoot](const httplib::Request& req, httplib::Response& res) {
-        std::string rel = req.matches[1].str();
-        if (rel.empty() || rel == "/") rel = "index.html";
-
-        if (rel.find("..") != std::string::npos) {
-            res.status = 400;
-            res.set_content("bad path", "text/plain");
-            return;
-        }
-
-        std::filesystem::path p = assetsRoot / "app" / rel;
-        if (!std::filesystem::exists(p) || std::filesystem::is_directory(p)) {
-            res.status = 404;
-            res.set_content("not found", "text/plain");
-            return;
-        }
-
-        auto bytes = ReadFileUtf8(p);
-        if (rel.size() >= 5 && rel.substr(rel.size() - 5) == ".html") {
-            // Allow token substitution for app pages too.
-            ApplyOverlayTokens(bytes);
-        }
-        res.set_content(std::move(bytes), ContentTypeFor(rel));
-    });
-
     svr.Get(R"(/assets/(.*))", [&, assetsRoot](const httplib::Request& req, httplib::Response& res) {
         std::string rel = req.matches[1].str();
         if (rel.empty()) rel = "index.html";
@@ -505,56 +386,6 @@ svr.Get("/api/chat/diag", [&](const httplib::Request&, httplib::Response& res) {
         }
         res.set_content(std::move(bytes), ContentTypeFor(rel));
     });
-
-
-    // --- API: platform control (start/stop) ---
-    // Called by the modern Web UI (e.g. "Start All" button)
-    // POST /api/platform/{tiktok|twitch|youtube}/{start|stop}
-    svr.Post(R"(/api/platform/(tiktok|twitch|youtube)/(start|stop))",
-        [&](const httplib::Request& req, httplib::Response& res) {
-
-            const std::string platform = req.matches[1];
-            const std::string action   = req.matches[2];
-
-            std::function<bool(void)> fn;
-
-            if (platform == "tiktok") {
-                fn = (action == "start") ? opt_.start_tiktok : opt_.stop_tiktok;
-            } else if (platform == "twitch") {
-                fn = (action == "start") ? opt_.start_twitch : opt_.stop_twitch;
-            } else if (platform == "youtube") {
-                fn = (action == "start") ? opt_.start_youtube : opt_.stop_youtube;
-            }
-
-            if (!fn) {
-                res.status = 404;
-                res.set_content(R"({"ok":false,"error":"not_implemented"})", "application/json");
-                return;
-            }
-
-            bool ok = false;
-            try {
-                ok = fn();
-            } catch (...) {
-                res.status = 500;
-                res.set_content(R"({"ok":false,"error":"exception"})", "application/json");
-                return;
-            }
-
-            if (!ok) {
-                res.status = 500;
-                res.set_content(R"({"ok":false,"error":"failed"})", "application/json");
-                return;
-            }
-
-            const std::string state = (action == "start") ? "started" : "stopped";
-            std::string body = std::string(R"({"ok":true,"platform":")") + platform +
-                               R"(","action":")" + action +
-                               R"(","state":")" + state +
-                               R"("})";
-
-            res.set_content(body, "application/json");
-        });
 
     // Root -> overlay
     svr.Get("/", [&](const httplib::Request&, httplib::Response& res) {
