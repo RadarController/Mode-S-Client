@@ -19,6 +19,14 @@ public:
         std::string bind_host = "127.0.0.1";
         int port = 17845;
         std::filesystem::path overlay_root; // typically <exe_dir>/assets/overlay
+
+        // Optional platform control callbacks (used by /app UI)
+        std::function<bool()> start_tiktok;
+        std::function<bool()> stop_tiktok;
+        std::function<bool()> start_twitch;
+        std::function<bool()> stop_twitch;
+        std::function<bool()> start_youtube;
+        std::function<bool()> stop_youtube;
     };
 
     using LogFn = std::function<void(const std::wstring&)>;

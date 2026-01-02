@@ -266,6 +266,83 @@ auto handle_settings_save = [&](const httplib::Request& req, httplib::Response& 
 
 svr.Post("/api/settingssave", handle_settings_save);
 svr.Post("/api/settings/save", handle_settings_save);
+    // Read current settings/config for the Web UI
+    svr.Get("/api/settings", [&](const httplib::Request& /*req*/, httplib::Response& res) {
+        json j = json::object();
+        j["ok"] = true;
+
+        // Primary identifiers shown/edited in the UI
+        j["tiktok_unique_id"] = config_.tiktok_unique_id;
+        j["twitch_login"]     = config_.twitch_login;
+        j["youtube_handle"]   = config_.youtube_handle;
+
+        // Optional fields used elsewhere
+        j["metrics_json_path"]      = config_.metrics_json_path;
+        j["overlay_font_family"]    = config_.overlay_font_family;
+        j["overlay_font_size"]      = config_.overlay_font_size;
+        j["overlay_text_shadow"]    = config_.overlay_text_shadow;
+
+        // Helpful for debugging where config is resolved to
+        try {
+            j["config_path"] = WideToUtf8(config_.ConfigPath());
+        } catch (...) {
+            j["config_path"] = "";
+        }
+
+        res.set_content(j.dump(), "application/json; charset=utf-8");
+    });
+
+    // --- API: platform control (used by /app UI) ---
+    // These endpoints are optional; they call callbacks provided via HttpServer::Options.
+    auto handle_platform = [&](const httplib::Request& /*req*/, httplib::Response& res,
+                               const char* platform, const char* action,
+                               const std::function<bool()>& fn) {
+        if (!fn) {
+            res.status = 404;
+            json out; out["ok"] = false; out["error"] = "not_implemented";
+            out["platform"] = platform; out["action"] = action;
+            res.set_content(out.dump(), "application/json; charset=utf-8");
+            return;
+        }
+        bool ok = false;
+        try { ok = fn(); } catch (...) { ok = false; }
+
+        json out;
+        out["ok"] = ok;
+        out["platform"] = platform;
+        out["action"] = action;
+
+        if (!ok) {
+            res.status = 500;
+            out["error"] = "failed";
+        }
+        res.set_content(out.dump(), "application/json; charset=utf-8");
+    };
+
+    svr.Post("/api/platform/tiktok/start", [&](const httplib::Request& req, httplib::Response& res) {
+        handle_platform(req, res, "tiktok", "start", opt_.start_tiktok);
+    });
+    svr.Post("/api/platform/tiktok/stop", [&](const httplib::Request& req, httplib::Response& res) {
+        handle_platform(req, res, "tiktok", "stop", opt_.stop_tiktok);
+    });
+
+    svr.Post("/api/platform/twitch/start", [&](const httplib::Request& req, httplib::Response& res) {
+        handle_platform(req, res, "twitch", "start", opt_.start_twitch);
+    });
+    svr.Post("/api/platform/twitch/stop", [&](const httplib::Request& req, httplib::Response& res) {
+        handle_platform(req, res, "twitch", "stop", opt_.stop_twitch);
+    });
+
+    svr.Post("/api/platform/youtube/start", [&](const httplib::Request& req, httplib::Response& res) {
+        handle_platform(req, res, "youtube", "start", opt_.start_youtube);
+    });
+    svr.Post("/api/platform/youtube/stop", [&](const httplib::Request& req, httplib::Response& res) {
+        handle_platform(req, res, "youtube", "stop", opt_.stop_youtube);
+    });
+
+
+
+
 
 
     // EuroScope plugin ingest endpoint (expects JSON with ts_ms)

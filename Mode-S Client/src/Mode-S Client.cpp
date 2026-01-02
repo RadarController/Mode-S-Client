@@ -35,6 +35,7 @@
 #include "euroscope/EuroScopeIngestService.h"
 #include "obs/ObsWsClient.h"
 #include "floating/FloatingChat.h"
+#include "platform/PlatformControl.h"
 
 // --------------------------- WebView2 (Modern UI host) ----------------------
 #if !defined(HAVE_WEBVIEW2)
@@ -958,86 +959,12 @@ static bool StartOrRestartTikTokSidecar(TikTokSidecar& tiktok,
     std::string cleaned = SanitizeTikTok(raw);
     SetWindowTextW(hTikTokEdit, ToW(cleaned).c_str());
 
-    if (cleaned.empty()) {
-        if (hwndLog) LogLine(L"TikTok username is empty. Enter it first.");
-        return false;
-    }
-
-    tiktok.stop();
-
-    std::wstring exeDir = GetExeDir();
-    std::wstring sidecarPath = exeDir + L"\\sidecar\\tiktok_sidecar.py";
-
-    LogLine((L"Starting python sidecar: " + sidecarPath));
-
-    _wputenv_s(L"WHITELIST_AUTHENTICATED_SESSION_ID_HOST", L"tiktok.eulerstream.com");
-
-    bool ok = tiktok.start(L"python", sidecarPath, [&](const nlohmann::json& j) {
-        std::string type = j.value("type", "");
-        std::string msg = j.value("message", "");
-        if (type.rfind("tiktok.", 0) == 0) {
-            std::string extra;
-            if (!msg.empty()) extra = " | " + msg;
-            LogLine(ToW(("TIKTOK: " + type + extra)));
-        }
-
-        if (type == "tiktok.connected") {
-            // If we can connect, we are live.
-            state.set_tiktok_live(true);
-            if (hwndMain) PostMessageW(hwndMain, WM_APP + 41, 0, 0);
-        }
-        else if (type == "tiktok.disconnected" || type == "tiktok.offline") {
-            // Ensure we never show stale "live" state / viewers.
-            state.set_tiktok_live(false);
-            state.set_tiktok_viewers(0);
-            if (hwndMain) PostMessageW(hwndMain, WM_APP + 41, 0, 0);
-        }
-        else if (type == "tiktok.error") {
-            // Treat fatal sidecar errors as offline from the UI/metrics perspective.
-            state.set_tiktok_live(false);
-            state.set_tiktok_viewers(0);
-            if (hwndMain) PostMessageW(hwndMain, WM_APP + 41, 0, 0);
-        }
-        else if (type == "tiktok.chat") {
-            ChatMessage c;
-            c.platform = "TikTok";
-            c.user = j.value("user", "unknown");
-            c.message = j.value("message", "");
-            double ts = j.value("ts", 0.0);
-            c.ts_ms = (std::int64_t)(ts * 1000.0);
-            // Push into aggregator instead of AppState
-            chat.Add(std::move(c));
-        }
-        // NEW: primary stats event from the updated sidecar
-        else if (type == "tiktok.stats") {
-            bool live = j.value("live", false);
-            int viewers = j.value("viewers", 0);
-
-            state.set_tiktok_live(live);
-            state.set_tiktok_viewers(viewers);
-
-            // Followers is optional in the sidecar payload; only apply if present
-            if (j.contains("followers")) {
-                state.set_tiktok_followers(j.value("followers", 0));
-            }
-
-            // Refresh UI (which pulls /api/metrics and updates widgets)
-            if (hwndMain) PostMessageW(hwndMain, WM_APP + 41, 0, 0);
-        }
-        // Backward compatibility (if any old sidecar emits this)
-        else if (type == "tiktok.viewers") {
-            state.set_tiktok_viewers(j.value("viewers", 0));
-            if (hwndMain) PostMessageW(hwndMain, WM_APP + 41, 0, 0);
-        }
-        });
-
-    if (ok) {
-        if (hwndLog) LogLine(L"TikTok sidecar started/restarted.");
-    }
-    else {
-        if (hwndLog) LogLine(L"ERROR: Could not start TikTok sidecar. Check Python + TikTokLive install.");
-    }
-    return ok;
+    return PlatformControl::StartOrRestartTikTokSidecar(
+        tiktok, state, chat,
+        GetExeDir(),
+        cleaned,
+        hwndMain,
+        [](const std::wstring& s) { LogLine(s); });
 }
 
 
@@ -1052,72 +979,12 @@ static bool StartOrRestartYouTubeSidecar(TikTokSidecar& youtube,
     std::string cleaned = SanitizeYouTubeHandle(raw);
     SetWindowTextW(hYouTubeEdit, ToW(cleaned).c_str());
 
-    if (cleaned.empty()) {
-        if (hwndLog) LogLine(L"YouTube handle is empty. Enter it first (e.g. timthetatman).");
-        return false;
-    }
-
-    youtube.stop();
-
-    std::wstring exeDir = GetExeDir();
-    std::wstring sidecarPath = exeDir + L"\\sidecar\\youtube_sidecar.py";
-
-    LogLine((L"Starting python sidecar: " + sidecarPath));
-
-    bool ok = youtube.start(L"python", sidecarPath, [&](const nlohmann::json& j) {
-        std::string type = j.value("type", "");
-        if (type.rfind("youtube.", 0) == 0) {
-            std::string msg = j.value("message", "");
-            std::string extra;
-            if (!msg.empty()) extra = " | " + msg;
-            LogLine(ToW(("YOUTUBE: " + type + extra)));
-        }
-
-        if (type == "youtube.stats") {
-            bool live = j.value("live", false);
-            int viewers = j.value("viewers", 0);
-            int followers = j.value("followers", 0);
-
-            state.set_youtube_live(live);
-            state.set_youtube_viewers(viewers);
-            state.set_youtube_followers(followers);
-
-            if (!live) state.set_youtube_viewers(0);
-
-            // Refresh UI (which pulls /api/metrics and updates widgets)
-            if (hwndMain) PostMessageW(hwndMain, WM_APP + 41, 0, 0);
-        }
-        else if (type == "youtube.chat" || type == "youtube.message" || type == "youtube.msg") {
-            ChatMessage c;
-            c.platform = "youtube";
-            c.user = j.value("user", j.value("author", j.value("username", "unknown")));
-            c.message = j.value("message", j.value("text", j.value("content", "")));
-
-            // sidecar may send ts (seconds) or ts_ms (milliseconds)
-            if (j.contains("ts_ms")) {
-                c.ts_ms = j.value("ts_ms", 0LL);
-            } else {
-                double ts = j.value("ts", 0.0);
-                c.ts_ms = (std::int64_t)(ts * 1000.0);
-            }
-
-            if (!c.message.empty()) {
-                chat.Add(std::move(c));
-                // Refresh UI (chat.html polls /api/chat)
-                if (hwndMain) PostMessageW(hwndMain, WM_APP + 41, 0, 0);
-            }
-        }
-
-    });
-
-    if (ok) {
-        LogLine(L"YOUTUBE: started/restarted sidecar.");
-    }
-    else {
-        LogLine(L"YOUTUBE: failed to start sidecar.");
-    }
-
-    return ok;
+    return PlatformControl::StartOrRestartYouTubeSidecar(
+        youtube, state, chat,
+        GetExeDir(),
+        cleaned,
+        hwndMain,
+        [](const std::wstring& s) { LogLine(s); });
 }
 
 // --------------------------- Clipboard helper -------------------------------
@@ -1586,6 +1453,44 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             opt.bind_host = "127.0.0.1";
             opt.port = 17845;
             opt.overlay_root = std::filesystem::path(GetExeDir()) / "assets" / "overlay";
+            // Platform control callbacks for the /app Web UI
+            opt.start_tiktok = [&]() -> bool {
+                return PlatformControl::StartOrRestartTikTokSidecar(
+                    tiktok, state, chat,
+                    GetExeDir(),
+                    config.tiktok_unique_id,
+                    hwnd,
+                    [](const std::wstring& s) { LogLine(s); });
+            };
+            opt.stop_tiktok = [&]() -> bool {
+                PlatformControl::StopTikTok(tiktok, state, hwnd, (UINT)(WM_APP + 41), [](const std::wstring& s) { LogLine(s); });
+                return true;
+            };
+
+            opt.start_twitch = [&]() -> bool {
+                return PlatformControl::StartOrRestartTwitchIrc(
+                    twitch, state, chat,
+                    config.twitch_login,
+                    [](const std::wstring& s) { LogLine(s); });
+            };
+            opt.stop_twitch = [&]() -> bool {
+                PlatformControl::StopTwitch(twitch, state, hwnd, (UINT)(WM_APP + 41), [](const std::wstring& s) { LogLine(s); });
+                return true;
+            };
+
+            opt.start_youtube = [&]() -> bool {
+                return PlatformControl::StartOrRestartYouTubeSidecar(
+                    youtube, state, chat,
+                    GetExeDir(),
+                    config.youtube_handle,
+                    hwnd,
+                    [](const std::wstring& s) { LogLine(s); });
+            };
+            opt.stop_youtube = [&]() -> bool {
+                PlatformControl::StopYouTube(youtube, state, hwnd, (UINT)(WM_APP + 41), [](const std::wstring& s) { LogLine(s); });
+                return true;
+            };
+
 
             gHttp = std::make_unique<HttpServer>(state, chat, euroscope, config, opt,
                 [](const std::wstring& s) { LogLine(s); });

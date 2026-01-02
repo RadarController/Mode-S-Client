@@ -188,6 +188,7 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClInclude Include="src\floating\FloatingChat.h" />
     <ClInclude Include="src\Mode-S Client.h" />
     <ClInclude Include="src\http\HttpServer.h" />
+    <ClInclude Include="src\platform\PlatformControl.h" />
     <ClInclude Include="targetver.h" />
     <ClInclude Include="ui\Resource.h" />
   </ItemGroup>
@@ -205,11 +206,20 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClCompile Include="src\floating\FloatingChat.cpp" />
     <ClCompile Include="src\Mode-S Client.cpp" />
     <ClCompile Include="src\http\HttpServer.cpp" />
+    <ClCompile Include="src\platform\PlatformControl.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="assets\app\app.css" />
+    <None Include="assets\app\app.js" />
     <None Include="assets\app\chat.html" />
+    <None Include="assets\app\index.html" />
     <None Include="assets\overlay\Common\chat.html" />
+    <None Include="assets\overlay\landscape\26_chat.html" />
+    <None Include="assets\overlay\landscape\26_footer.html" />
     <None Include="assets\overlay\Landscape\26_header.html" />
+    <None Include="assets\overlay\landscape\26_simulator.html" />
+    <None Include="assets\overlay\landscape\26_webcam.html" />
+    <None Include="assets\overlay\landscape\26_webcam_mask.html" />
     <None Include="packages.config" />
     <None Include="scripts\sidecar\tiktok_sidecar.py">
       <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</DeploymentContent>
