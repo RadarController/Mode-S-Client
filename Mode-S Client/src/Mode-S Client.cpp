@@ -1722,15 +1722,29 @@ case WM_COMMAND:
 
             if (ok) {
                 LogLine(L"TWITCH: started/restarted IRC client.");
-                // Start EventSub (follows/subs/gifts) using existing OAuth token in config.json
-                twitchEventSub.Start(
-                    config.twitch_client_id,
-                    ReadTwitchUserAccessToken(),
-                    config.twitch_login,
-                    [&](const ChatMessage& msg)
-                    {
-                        chat.Add(msg);
-                    });
+
+                // Start EventSub (follows/subs/gifts). This connects to EventSub WS, waits for session_welcome,
+                // then creates Helix subscriptions bound to that WebSocket session.
+                const std::string token = ReadTwitchUserAccessToken();
+                if (config.twitch_client_id.empty()) {
+                    LogLine(L"TWITCH: EventSub not started (twitch_client_id missing in config.json).");
+                }
+                else if (token.empty()) {
+                    LogLine(L"TWITCH: EventSub not started (twitch.user_access_token missing in config.json).");
+                }
+                else if (config.twitch_login.empty()) {
+                    LogLine(L"TWITCH: EventSub not started (twitch_login missing).");
+                }
+                else {
+                    twitchEventSub.Start(
+                        config.twitch_client_id,
+                        token,
+                        config.twitch_login,
+                        [&](const ChatMessage& msg)
+                        {
+                            chat.Add(msg);
+                        });
+                }
             }
             else {
                 LogLine(L"TWITCH: failed to start IRC client (already running or invalid parameters). Consider checking the channel name.");
