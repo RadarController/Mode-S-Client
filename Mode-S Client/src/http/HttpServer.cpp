@@ -506,6 +506,56 @@ svr.Get("/api/chat/diag", [&](const httplib::Request&, httplib::Response& res) {
         res.set_content(std::move(bytes), ContentTypeFor(rel));
     });
 
+
+    // --- API: platform control (start/stop) ---
+    // Called by the modern Web UI (e.g. "Start All" button)
+    // POST /api/platform/{tiktok|twitch|youtube}/{start|stop}
+    svr.Post(R"(/api/platform/(tiktok|twitch|youtube)/(start|stop))",
+        [&](const httplib::Request& req, httplib::Response& res) {
+
+            const std::string platform = req.matches[1];
+            const std::string action   = req.matches[2];
+
+            std::function<bool(void)> fn;
+
+            if (platform == "tiktok") {
+                fn = (action == "start") ? opt_.start_tiktok : opt_.stop_tiktok;
+            } else if (platform == "twitch") {
+                fn = (action == "start") ? opt_.start_twitch : opt_.stop_twitch;
+            } else if (platform == "youtube") {
+                fn = (action == "start") ? opt_.start_youtube : opt_.stop_youtube;
+            }
+
+            if (!fn) {
+                res.status = 404;
+                res.set_content(R"({"ok":false,"error":"not_implemented"})", "application/json");
+                return;
+            }
+
+            bool ok = false;
+            try {
+                ok = fn();
+            } catch (...) {
+                res.status = 500;
+                res.set_content(R"({"ok":false,"error":"exception"})", "application/json");
+                return;
+            }
+
+            if (!ok) {
+                res.status = 500;
+                res.set_content(R"({"ok":false,"error":"failed"})", "application/json");
+                return;
+            }
+
+            const std::string state = (action == "start") ? "started" : "stopped";
+            std::string body = std::string(R"({"ok":true,"platform":")") + platform +
+                               R"(","action":")" + action +
+                               R"(","state":")" + state +
+                               R"("})";
+
+            res.set_content(body, "application/json");
+        });
+
     // Root -> overlay
     svr.Get("/", [&](const httplib::Request&, httplib::Response& res) {
         res.set_redirect("/overlay/");

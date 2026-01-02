@@ -28,6 +28,45 @@ async function apiPost(url, body){
   try { return JSON.parse(text); } catch { return { ok:true, raw:text }; }
 }
 
+async function loadSettings(){
+  try{
+    const s = await apiGet("/api/settings");
+    if (!s || s.ok !== true) throw new Error("ok=false");
+    const t = $("#tiktokUser"); if (t) t.value = s.tiktok_unique_id ?? "";
+    const tw = $("#twitchUser"); if (tw) tw.value = s.twitch_login ?? "";
+    const y = $("#youtubeUser"); if (y) y.value = s.youtube_handle ?? "";
+    logLine("settings", `loaded (${s.config_path || "unknown path"})`);
+  }catch(e){
+    logLine("settings", `load failed (${e.message})`);
+  }
+}
+
+async function saveSettingsFromInputs(){
+  const payload = {
+    tiktok_unique_id: $("#tiktokUser")?.value || "",
+    twitch_login: $("#twitchUser")?.value || "",
+    youtube_handle: $("#youtubeUser")?.value || ""
+  };
+
+  // Support both endpoints (older builds used /api/settingssave)
+  try{
+    await apiPost("/api/settings/save", payload);
+    logLine("settings", "saved");
+    await loadSettings();
+    return true;
+  }catch(e1){
+    try{
+      await apiPost("/api/settingssave", payload);
+      logLine("settings", "saved");
+      await loadSettings();
+      return true;
+    }catch(e2){
+      logLine("settings", `save failed (${e2.message})`);
+      return false;
+    }
+  }
+}
+
 function logLine(tag, msg){
   const log = $("#log");
   if (!log) return;
@@ -164,7 +203,6 @@ function applyMetrics(m){
   };
 
   applyPlatform("tiktok", s.tiktok);
-  applyPlatform("tiktok", s.tiktok);
   applyPlatform("twitch", s.twitch);
   applyPlatform("youtube", s.youtube);
 
@@ -219,7 +257,7 @@ async function pollLog(){
 
 function wireActions(){
   $("#btnOpenChat")?.addEventListener("click", () => {
-    window.open("/overlay/chat.html", "_blank", "noopener");
+    window.open("/app/chat.html", "_blank", "noopener");
   });
 
   $("#btnStartAll")?.addEventListener("click", async () => {
@@ -238,19 +276,7 @@ function wireActions(){
 
 
   $("#btnSave")?.addEventListener("click", async () => {
-    // If you already have a save endpoint, update this URL.
-    // For now, we log intent and attempt POST /api/settings/save (optional).
-    const payload = {
-      tiktok_user: $("#tiktokUser")?.value || "",
-      twitch_user: $("#twitchUser")?.value || "",
-      youtube_user: $("#youtubeUser")?.value || ""
-    };
-    try{
-      await apiPost("/api/settings/save", payload);
-      logLine("settings", "saved");
-    }catch(e){
-      logLine("settings", `save failed (${e.message})`);
-    }
+    await saveSettingsFromInputs();
   });
 
   $$(".platform").forEach(card => {
@@ -261,15 +287,8 @@ function wireActions(){
 
       const action = btn.getAttribute("data-action");
       if (action === "set"){
-        const input = card.querySelector("input");
-        const val = input?.value || "";
-        try{
-          await apiPost(`/api/platform/${platform}/config`, { value: val });
-          logLine(platform, `config set`);
-        }catch(e){
-          // Non-fatal; many builds won't have this yet.
-          logLine(platform, `config set failed (${e.message})`);
-        }
+        // For now: SET just saves the current usernames via /api/settings/save.
+        await saveSettingsFromInputs();
         return;
       }
 
@@ -296,8 +315,11 @@ function wireActions(){
   });
 }
 
-wireActions();
-pollMetrics();
-setInterval(pollMetrics, 2000);
-pollLog();
-setInterval(pollLog, 1000);
+document.addEventListener("DOMContentLoaded", async () => {
+  wireActions();
+  await loadSettings();
+  await pollMetrics();
+  setInterval(pollMetrics, 2000);
+  await pollLog();
+  setInterval(pollLog, 1000);
+});
