@@ -118,10 +118,10 @@ body{
   color:var(--muted);
   background:rgba(255,255,255,.04);
 }
-.badge--live{
-  color:#dbeafe;
-  border-color:rgba(59,130,246,.45);
-  background:rgba(59,130,246,.18);
+.badge--live {
+    color: #dbfee6;
+    border-color: rgba(4,156,52,.45);
+    background: rgba(4,156,52,.18);
 }
 
 .platform__body{padding:12px}

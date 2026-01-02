@@ -150,12 +150,17 @@ def is_live_page(html: str) -> bool:
     if not html:
         return False
 
-    # Common markers that indicate a live video page
+    # IMPORTANT:
+    # The channel /live page can still contain a "videoId" even when the
+    # channel is *not* live (YouTube often shows a featured upload/replay).
+    # Heuristics like a raw "LIVE" token or presence of live_chat markup
+    # can produce false positives.
+    #
+    # Prefer explicit JSON booleans used by YouTube's player/microformat.
+    h = html
     return (
-        '"isLiveContent":true' in html or
-        '"LIVE"' in html or
-        'liveChatRenderer' in html or
-        'live_chat' in html
+        '"isLiveNow":true' in h or
+        '"isLiveContent":true' in h
     )
 
 
@@ -163,10 +168,23 @@ def parse_live(html: str) -> bool:
     """Return True if the /live page appears to represent an active live stream."""
     if not html:
         return False
-    # Prefer presence of a videoId plus live markers.
+
+    # YouTube may show scheduled/upcoming streams on /live. Treat those as not-live.
+    # (The UI should not show "Live" for upcoming.)
+    if '"isUpcoming":true' in html or '"upcomingEventData"' in html:
+        return False
+
+    # Prefer presence of a videoId plus explicit "is live" markers.
     vid = extract_video_id(html)
     if not vid:
         return False
+
+    # If YouTube explicitly says not live, trust that (unless we also see a true).
+    if ('"isLiveNow":false' in html and '"isLiveNow":true' not in html) and (
+        '"isLiveContent":true' not in html
+    ):
+        return False
+
     return is_live_page(html)
 
 def to_int_compact(s: str) -> int:

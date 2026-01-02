@@ -278,6 +278,27 @@ auto handle_settings_save = [&](const httplib::Request& req, httplib::Response& 
 svr.Post("/api/settingssave", handle_settings_save);
 svr.Post("/api/settings/save", handle_settings_save);
 
+// --- API: settings (read) ---
+// The /app UI calls this to populate the username fields on load.
+// Keep the payload intentionally small (do not expose secrets by default).
+svr.Get("/api/settings", [&](const httplib::Request&, httplib::Response& res) {
+    const std::wstring cfg_path_w = AppConfig::ConfigPath();
+    const std::string  cfg_path = WideToUtf8(cfg_path_w);
+
+    json out;
+    out["ok"] = true;
+    out["config_path"] = cfg_path;
+
+    // Username / channel identifiers (safe to expose)
+    out["tiktok_unique_id"] = config_.tiktok_unique_id;
+    out["twitch_login"] = config_.twitch_login;
+    out["youtube_handle"] = config_.youtube_handle;
+
+    res.set_header("X-Config-Path", cfg_path.c_str());
+    res.set_content(out.dump(2), "application/json; charset=utf-8");
+    });
+
+// --- API: EuroScope ingest ---
 
     // EuroScope plugin ingest endpoint (expects JSON with ts_ms)
     svr.Post("/api/euroscope", [&](const httplib::Request& req, httplib::Response& res) {

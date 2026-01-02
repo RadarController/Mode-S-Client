@@ -174,7 +174,9 @@ bool StartOrRestartYouTubeSidecar(
         };
 
         if (type == "youtube.connected") {
-            state.set_youtube_live(true);
+            // "connected" just means the sidecar is running / reachable, not that the channel is live.
+            // Live state should come from youtube.stats.
+            state.set_youtube_live(false);
             uiPing();
         } else if (type == "youtube.disconnected" || type == "youtube.offline" || type == "youtube.error") {
             state.set_youtube_live(false);

@@ -181,6 +181,7 @@ std::thread StartTwitchHelixPoller(
         bool firstLoop = true;
         std::string token;
         std::string broadcaster_id;
+        std::string last_login;
         std::int64_t token_expiry_ms = 0;
 
         auto log_http = [&](const char* what, const HttpResult& r) {
@@ -283,8 +284,10 @@ std::thread StartTwitchHelixPoller(
             }
 
             // Resolve broadcaster id once (and re-resolve if login changes).
-            if (broadcaster_id.empty() || config.twitch_login != login) {
+            if (last_login != login) {
                 broadcaster_id.clear();
+                last_login = login;
+                SafeCall(cb.log, L"TWITCH: helix poller rebound to login=" + ToW(login));
             }
 
             if (broadcaster_id.empty()) {

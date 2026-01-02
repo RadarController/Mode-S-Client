@@ -90,6 +90,18 @@
     <ClInclude Include="src\floating\FloatingChat.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="integrations\youtube\YouTubeLiveChatService.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="integrations\youtube\YouTubeSidecar.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\http\LogBuffer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\platform\PlatformControl.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="integrations\obs\ObsWsClient.cpp">
@@ -125,6 +137,18 @@
     <ClCompile Include="src\floating\FloatingChat.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="integrations\youtube\YouTubeLiveChatService.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="integrations\youtube\YouTubeSidecar.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\http\LogBuffer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\platform\PlatformControl.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="ui\Mode-S Client.rc">
@@ -149,6 +173,33 @@
     <None Include="packages.config" />
     <None Include="assets\app\chat.html">
       <Filter>assets\app</Filter>
+    </None>
+    <None Include="assets\app\app.css">
+      <Filter>assets\app</Filter>
+    </None>
+    <None Include="assets\app\app.js">
+      <Filter>assets\app</Filter>
+    </None>
+    <None Include="assets\app\index.html">
+      <Filter>assets\app</Filter>
+    </None>
+    <None Include="scripts\sidecar\youtube_sidecar.py">
+      <Filter>sidecar</Filter>
+    </None>
+    <None Include="assets\overlay\landscape\26_webcam_mask.html">
+      <Filter>assets\overlay\landscape</Filter>
+    </None>
+    <None Include="assets\overlay\landscape\26_chat.html">
+      <Filter>assets\overlay\landscape</Filter>
+    </None>
+    <None Include="assets\overlay\landscape\26_footer.html">
+      <Filter>assets\overlay\landscape</Filter>
+    </None>
+    <None Include="assets\overlay\landscape\26_simulator.html">
+      <Filter>assets\overlay\landscape</Filter>
+    </None>
+    <None Include="assets\overlay\landscape\26_webcam.html">
+      <Filter>assets\overlay\landscape</Filter>
     </None>
   </ItemGroup>
 </Project>
