@@ -20,7 +20,7 @@ public:
         int port = 17845;
         std::filesystem::path overlay_root; // typically <exe_dir>/assets/overlay
 
-        // Optional platform control callbacks (used by /app UI)
+        // Optional platform control callbacks (wired from main app)
         std::function<bool()> start_tiktok;
         std::function<bool()> stop_tiktok;
         std::function<bool()> start_twitch;

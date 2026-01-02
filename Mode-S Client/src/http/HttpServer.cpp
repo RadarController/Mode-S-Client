@@ -6,6 +6,7 @@
 #include <cctype>
 #include <chrono>
 #include <thread>
+#include <cstring>
 
 #include "json.hpp"
 #include "../AppState.h"
@@ -190,6 +191,16 @@ void HttpServer::ApplyOverlayTokens(std::string& html)
 void HttpServer::RegisterRoutes() {
     auto& svr = *svr_;
 
+    // Safe logger: never throws into the HTTP thread (prevents std::bad_function_call / other exceptions from bubbling).
+    auto SafeLog = [&](const std::wstring& msg) {
+        try {
+            if (log_) log_(msg);
+        } catch (...) {
+            // logging must never crash request handling
+        }
+    };
+
+
     // --- API: metrics ---
     svr.Get("/api/metrics", [&](const httplib::Request&, httplib::Response& res) {
         auto j = state_.metrics_json();
@@ -242,7 +253,7 @@ auto handle_settings_save = [&](const httplib::Request& req, httplib::Response& 
 
     if (!config_.Save()) {
         if (log_) {
-            log_(L"settingssave: FAILED writing " + cfg_path_w);
+            SafeLog(L"settingssave: FAILED writing " + cfg_path_w);
         }
         res.status = 500;
         json out;
@@ -254,7 +265,7 @@ auto handle_settings_save = [&](const httplib::Request& req, httplib::Response& 
     }
 
     if (log_) {
-        log_(L"settingssave: wrote " + cfg_path_w);
+        SafeLog(L"settingssave: wrote " + cfg_path_w);
     }
 
     json out;
@@ -299,27 +310,64 @@ svr.Post("/api/settings/save", handle_settings_save);
                                const std::function<bool()>& fn) {
         if (!fn) {
             res.status = 404;
-            json out; out["ok"] = false; out["error"] = "not_implemented";
-            out["platform"] = platform; out["action"] = action;
+            json out;
+            out["ok"] = false;
+            out["error"] = "not_implemented";
+            out["platform"] = platform;
+            out["action"] = action;
+            out["state"] = "not_implemented";
             res.set_content(out.dump(), "application/json; charset=utf-8");
+            if (log_) {
+                std::wstring wp = std::wstring(platform, platform + std::strlen(platform));
+                std::wstring wa = std::wstring(action, action + std::strlen(action));
+                SafeLog(L"/api/platform/" + wp + L"/" + wa + L": not implemented");
+            }
             return;
         }
+
         bool ok = false;
-        try { ok = fn(); } catch (...) { ok = false; }
+        try {
+            ok = fn();
+        } catch (const std::exception& e) {
+            ok = false;
+            if (log_) {
+                std::wstring wp(platform, platform + std::strlen(platform));
+                std::wstring wa(action, action + std::strlen(action));
+                // best-effort narrow->wide
+                std::string what = e.what() ? e.what() : "";
+                std::wstring wwhat(what.begin(), what.end());
+                SafeLog(L"/api/platform/" + wp + L"/" + wa + L": exception: " + wwhat);
+            }
+        } catch (...) {
+            ok = false;
+            if (log_) {
+                std::wstring wp(platform, platform + std::strlen(platform));
+                std::wstring wa(action, action + std::strlen(action));
+                SafeLog(L"/api/platform/" + wp + L"/" + wa + L": unknown exception");
+            }
+        }
 
         json out;
         out["ok"] = ok;
         out["platform"] = platform;
         out["action"] = action;
+        out["state"] = ok ? (std::string(action) == "start" ? "started" : "stopped") : "failed";
 
         if (!ok) {
             res.status = 500;
             out["error"] = "failed";
         }
+
         res.set_content(out.dump(), "application/json; charset=utf-8");
+
+        if (log_) {
+            std::wstring wp = std::wstring(platform, platform + std::strlen(platform));
+            std::wstring wa = std::wstring(action, action + std::strlen(action));
+            SafeLog(L"/api/platform/" + wp + L"/" + wa + (ok ? L": ok" : L": failed"));
+        }
     };
 
-    svr.Post("/api/platform/tiktok/start", [&](const httplib::Request& req, httplib::Response& res) {
+svr.Post("/api/platform/tiktok/start", [&](const httplib::Request& req, httplib::Response& res) {
         handle_platform(req, res, "tiktok", "start", opt_.start_tiktok);
     });
     svr.Post("/api/platform/tiktok/stop", [&](const httplib::Request& req, httplib::Response& res) {
