@@ -14,6 +14,26 @@
 
 using json = nlohmann::json;
 
+static void OutputDebug(const std::wstring& msg)
+{
+    std::wstring line = L"[TwitchEventSub] " + msg + L"\n";
+    ::OutputDebugStringW(line.c_str());
+}
+
+static void OutputDebug(const std::string& msgUtf8)
+{
+    if (msgUtf8.empty()) {
+        OutputDebug(std::wstring());
+        return;
+    }
+    int len = MultiByteToWideChar(CP_UTF8, 0, msgUtf8.c_str(), (int)msgUtf8.size(), nullptr, 0);
+    std::wstring w;
+    w.resize(len);
+    MultiByteToWideChar(CP_UTF8, 0, msgUtf8.c_str(), (int)msgUtf8.size(), w.data(), len);
+    OutputDebug(w);
+}
+
+
 namespace {
 
 static std::wstring Utf8ToWide(const std::string& s)
@@ -33,12 +53,6 @@ static std::string WideToUtf8(const std::wstring& w)
     WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), s.data(), len, nullptr, nullptr);
     return s;
 }
-
-static void DebugLog(const std::wstring& w)
-{
-    OutputDebugStringW((L"[TwitchEventSub] " + w + L"\n").c_str());
-}
-
 
 static std::int64_t NowMs()
 {
@@ -285,7 +299,7 @@ void TwitchEventSubWsClient::RequestReconnect(const std::wstring& wssUrl)
 {
     std::wstring host, path;
     if (!ParseWssUrl(wssUrl, host, path)) {
-        DebugLog(L"session_reconnect: failed to parse reconnect_url");
+        OutputDebug(L"session_reconnect: failed to parse reconnect_url");
         return;
     }
 
@@ -343,18 +357,27 @@ void TwitchEventSubWsClient::Run()
             0);
 
         if (!hSession) {
-            DebugLog(L"WinHttpOpen failed");
+            OutputDebug(L"WinHttpOpen failed");
             break;
         }
 
-        hConnect = WinHttpConnect(
+        
+        // Ensure modern TLS is enabled (Twitch requires TLS 1.2+).
+        DWORD protocols = WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_2;
+        // TLS 1.3 flag is available on newer SDKs; guard with ifdef.
+        #ifdef WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_3
+        protocols |= WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_3;
+        #endif
+        WinHttpSetOption(hSession, WINHTTP_OPTION_SECURE_PROTOCOLS, &protocols, sizeof(protocols));
+
+hConnect = WinHttpConnect(
             hSession,
             host.c_str(),
             INTERNET_DEFAULT_HTTPS_PORT,
             0);
 
         if (!hConnect) {
-            DebugLog(L"WinHttpConnect failed");
+            OutputDebug(L"WinHttpConnect failed");
             WinHttpCloseHandle(hSession);
             break;
         }
@@ -369,13 +392,25 @@ void TwitchEventSubWsClient::Run()
             WINHTTP_FLAG_SECURE);
 
         if (!hRequest) {
-            DebugLog(L"WinHttpOpenRequest failed");
+            OutputDebug(L"WinHttpOpenRequest failed");
             WinHttpCloseHandle(hConnect);
             WinHttpCloseHandle(hSession);
             break;
         }
 
-        if (!WinHttpSendRequest(
+        
+        // Tell WinHTTP this request will upgrade to a WebSocket.
+        // Without this, WinHttpWebSocketCompleteUpgrade will fail.
+        if (!WinHttpSetOption(hRequest, WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET, nullptr, 0)) {
+            DWORD err = GetLastError();
+            OutputDebug(L"WinHttpSetOption(WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET) failed, err=" + std::to_wstring(err));
+            WinHttpCloseHandle(hRequest);
+            WinHttpCloseHandle(hConnect);
+            WinHttpCloseHandle(hSession);
+            break;
+        }
+
+if (!WinHttpSendRequest(
             hRequest,
             WINHTTP_NO_ADDITIONAL_HEADERS,
             0,
@@ -384,7 +419,7 @@ void TwitchEventSubWsClient::Run()
             0,
             0))
         {
-            DebugLog(L"WinHttpSendRequest failed");
+            OutputDebug(L"WinHttpSendRequest failed, err=" + std::to_wstring(GetLastError()));
             WinHttpCloseHandle(hRequest);
             WinHttpCloseHandle(hConnect);
             WinHttpCloseHandle(hSession);
@@ -392,7 +427,7 @@ void TwitchEventSubWsClient::Run()
         }
 
         if (!WinHttpReceiveResponse(hRequest, nullptr)) {
-            DebugLog(L"WinHttpReceiveResponse failed");
+            OutputDebug(L"WinHttpReceiveResponse failed, err=" + std::to_wstring(GetLastError()));
             WinHttpCloseHandle(hRequest);
             WinHttpCloseHandle(hConnect);
             WinHttpCloseHandle(hSession);
@@ -403,7 +438,7 @@ void TwitchEventSubWsClient::Run()
         hRequest = nullptr;
 
         if (!hWebSocket) {
-            DebugLog(L"WinHttpWebSocketCompleteUpgrade failed");
+            OutputDebug(L"WinHttpWebSocketCompleteUpgrade failed, err=" + std::to_wstring(GetLastError()));
             WinHttpCloseHandle(hConnect);
             WinHttpCloseHandle(hSession);
             break;
@@ -414,7 +449,7 @@ void TwitchEventSubWsClient::Run()
             ws_handle_ = hWebSocket;
         }
 
-        DebugLog(L"connected");
+        OutputDebug(L"connected");
         {
             std::lock_guard<std::mutex> lk(status_mu_);
             ws_state_ = "connected";
@@ -530,7 +565,7 @@ void TwitchEventSubWsClient::HandleMessage(const std::string& payload)
             }
             EmitStatus();
 
-            DebugLog(L"session_welcome: subscribing");
+            OutputDebug(L"session_welcome: subscribing");
             const bool ok = SubscribeAll(sessionId);
             {
                 std::lock_guard<std::mutex> lk(status_mu_);
@@ -556,7 +591,7 @@ void TwitchEventSubWsClient::HandleMessage(const std::string& payload)
         const auto& pl = j["payload"];
         const std::string url = pl.contains("session") ? pl["session"].value("reconnect_url", "") : "";
         if (!url.empty()) {
-            DebugLog(L"session_reconnect: switching to reconnect_url");
+            OutputDebug(L"session_reconnect: switching to reconnect_url");
             RequestReconnect(Utf8ToWide(url));
         }
         return;
@@ -566,7 +601,7 @@ void TwitchEventSubWsClient::HandleMessage(const std::string& payload)
     {
         // Subscription revoked (permissions/expired/etc.). We don't know which ones will still succeed,
         // but we can attempt to resubscribe on the next welcome/reconnect.
-        DebugLog(L"revocation received");
+        OutputDebug(L"revocation received");
         {
             std::lock_guard<std::mutex> lk(status_mu_);
             last_error_ = "revocation";
@@ -604,7 +639,7 @@ std::string TwitchEventSubWsClient::ResolveBroadcasterUserId()
 
     HttpResult r = WinHttpRequest(L"GET", L"api.twitch.tv", INTERNET_DEFAULT_HTTPS_PORT, path, headers, "", true);
     if (r.status < 200 || r.status >= 300) {
-        DebugLog(L"ResolveBroadcasterUserId failed HTTP " + std::to_wstring(r.status) + L" body=" + Utf8ToWide(r.body));
+        OutputDebug(L"ResolveBroadcasterUserId failed HTTP " + std::to_wstring(r.status) + L" body=" + Utf8ToWide(r.body));
         return "";
     }
 
@@ -674,11 +709,11 @@ bool TwitchEventSubWsClient::CreateSubscription(const std::string& type,
     EmitStatus();
 
     if (r.status == 202 || (r.status >= 200 && r.status < 300)) {
-        DebugLog(L"Subscribed: " + Utf8ToWide(type) + L" v" + Utf8ToWide(version));
+        OutputDebug(L"Subscribed: " + Utf8ToWide(type) + L" v" + Utf8ToWide(version));
         return true;
     }
 
-    DebugLog(L"Subscribe failed for " + Utf8ToWide(type) + L" HTTP " + std::to_wstring(r.status) + L" body=" + Utf8ToWide(r.body));
+    OutputDebug(L"Subscribe failed for " + Utf8ToWide(type) + L" HTTP " + std::to_wstring(r.status) + L" body=" + Utf8ToWide(r.body));
     return false;
 }
 
@@ -686,7 +721,7 @@ bool TwitchEventSubWsClient::SubscribeAll(const std::string& sessionId)
 {
     std::string broadcasterUid = ResolveBroadcasterUserId();
     if (broadcasterUid.empty()) {
-        DebugLog(L"SubscribeAll: missing broadcaster user id (check twitch_login, token, client-id)");
+        OutputDebug(L"SubscribeAll: missing broadcaster user id (check twitch_login, token, client-id)");
         return false;
     }
 
