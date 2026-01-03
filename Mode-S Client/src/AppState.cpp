@@ -1,5 +1,4 @@
 #include "AppState.h"
-#include <algorithm>
 
 std::int64_t AppState::now_ms() {
     using namespace std::chrono;
@@ -22,6 +21,7 @@ void AppState::set_tiktok_followers(int f) {
     metrics_.ts_ms = now_ms();
     metrics_.tiktok_followers = f;
 }
+
 
 void AppState::set_twitch_viewers(int v) {
     std::lock_guard<std::mutex> lk(mtx_);
@@ -59,7 +59,6 @@ void AppState::set_tiktok_live(bool live) {
     metrics_.ts_ms = now_ms();
     metrics_.tiktok_live = live;
 }
-
 Metrics AppState::get_metrics() const {
     std::lock_guard<std::mutex> lk(mtx_);
     return metrics_;
@@ -91,47 +90,40 @@ nlohmann::json AppState::chat_json() const {
             {"user", c.user},
             {"message", c.message},
             {"ts_ms", c.ts_ms}
-        });
+            });
     }
     return arr;
 }
 
-// --- Twitch EventSub diagnostics ---
-void AppState::set_twitch_eventsub_status(const nlohmann::json& status) {
+void AppState::push_tiktok_event(const EventItem& ev) {
     std::lock_guard<std::mutex> lk(mtx_);
-    twitch_eventsub_status_ = status;
+    tiktok_events_.push_back(ev);
+    const size_t kMax = 200;
+    while (tiktok_events_.size() > kMax) tiktok_events_.pop_front();
 }
 
-nlohmann::json AppState::twitch_eventsub_status_json() const {
+nlohmann::json AppState::tiktok_events_json(int limit) const {
+    using nlohmann::json;
+    if (limit <= 0) limit = 200;
+
     std::lock_guard<std::mutex> lk(mtx_);
-    return twitch_eventsub_status_;
-}
+    json events = json::array();
+    const int total = (int)tiktok_events_.size();
+    const int start = (total > limit) ? (total - limit) : 0;
 
-void AppState::add_twitch_eventsub_event(const nlohmann::json& ev) {
-    std::lock_guard<std::mutex> lk(mtx_);
-    twitch_eventsub_events_.push_back(ev);
-    // Keep small
-    while (twitch_eventsub_events_.size() > 200) twitch_eventsub_events_.pop_front();
-}
-
-nlohmann::json AppState::twitch_eventsub_events_json(int limit) const {
-    std::lock_guard<std::mutex> lk(mtx_);
-    limit = std::max(1, std::min(limit, 1000));
-
-    nlohmann::json out;
-    out["count"] = (int)twitch_eventsub_events_.size();
-    nlohmann::json arr = nlohmann::json::array();
-
-    int start = (int)twitch_eventsub_events_.size() - limit;
-    if (start < 0) start = 0;
-    for (int i = start; i < (int)twitch_eventsub_events_.size(); ++i) {
-        arr.push_back(twitch_eventsub_events_[i]);
+    for (int i = start; i < total; ++i) {
+        const auto& e = tiktok_events_[(size_t)i];
+        json o;
+        o["platform"] = e.platform;
+        o["type"] = e.type;
+        o["user"] = e.user;
+        o["message"] = e.message;
+        o["ts_ms"] = e.ts_ms;
+        events.push_back(std::move(o));
     }
-    out["events"] = std::move(arr);
-    return out;
-}
 
-void AppState::clear_twitch_eventsub_events() {
-    std::lock_guard<std::mutex> lk(mtx_);
-    twitch_eventsub_events_.clear();
+    json out;
+    out["count"] = (int)events.size();
+    out["events"] = std::move(events);
+    return out;
 }
