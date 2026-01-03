@@ -58,6 +58,15 @@ public:
     nlohmann::json metrics_json() const;
     nlohmann::json chat_json() const;
     nlohmann::json tiktok_events_json(size_t limit = 200) const;
+
+    // --- Twitch EventSub diagnostics (separate from chat) ---
+    void set_twitch_eventsub_status(const nlohmann::json& status);
+    nlohmann::json twitch_eventsub_status_json() const;
+
+    void add_twitch_eventsub_event(const nlohmann::json& ev);
+    nlohmann::json twitch_eventsub_events_json(int limit = 200) const;
+    void clear_twitch_eventsub_events();
+
 private:
     static std::int64_t now_ms();
 
@@ -65,4 +74,19 @@ private:
     Metrics metrics_{};
     std::deque<ChatMessage> chat_; // last 200
     std::deque<EventItem> tiktok_events_; // last 200
+
+    // EventSub status + events kept small for UI/debugging.
+    nlohmann::json twitch_eventsub_status_ = nlohmann::json{
+        {"ws_state", "stopped"},
+        {"connected", false},
+        {"session_id", ""},
+        {"subscribed", false},
+        {"last_ws_message_ms", 0},
+        {"last_keepalive_ms", 0},
+        {"last_helix_ok_ms", 0},
+        {"last_error", ""},
+        {"subscriptions", nlohmann::json::array()}
+    };
+
+    std::deque<nlohmann::json> twitch_eventsub_events_; // last 200 by default
 };
