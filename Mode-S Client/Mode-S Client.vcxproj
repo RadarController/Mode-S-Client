@@ -216,6 +216,7 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <None Include="assets\app\app.js" />
     <None Include="assets\app\chat.html" />
     <None Include="assets\app\index.html" />
+    <None Include="assets\mergedChatFeed.js" />
     <None Include="assets\overlay\Common\chat.html" />
     <None Include="assets\overlay\landscape\26_chat.html" />
     <None Include="assets\overlay\landscape\26_footer.html" />

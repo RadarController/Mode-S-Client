@@ -39,7 +39,20 @@
         #log { scrollbar-width: none; }
         /* Hide scrollbar for IE, Edge */
         #log { -ms-overflow-style: none; }
-    </style>
+    
+        /* Event alert styling (EventSub merged into chat feed) */
+        .line.event {
+            background: #025492;
+            color: #fff;
+            border-radius: 10px;
+            padding: 4px 6px;
+        }
+        .line.event .text, .line.event .text span, .line.event .user {
+            color: #fff !important;
+        }
+    
+</style>
+  <script src="/assets/mergedChatFeed.js"></script>
 </head>
 <body>
     <div id="log"></div>
@@ -104,7 +117,30 @@
             const ts = pick(m, ["ts_ms","timestamp","ts","time","created_at"], Date.now());
             const color = String(pick(m, ["color","user_color"], ""));
             const id = String(pick(m, ["id","message_id","msg_id","uuid"], platform + "|" + user + "|" + ts + "|" + text));
-            return { platform, user, text, ts, id, color, raw: m };
+            return { platform, user, text, ts, id, color, raw: m, is_event: false };
+        }
+
+        function normalizeEvent(raw) {
+            const e = (raw && raw.data && typeof raw.data === "object") ? raw.data : raw;
+            const platform = String(pick(e, ["platform"], "twitch")).toLowerCase() || "twitch";
+            const type = String(pick(e, ["type"], "event"));
+            const user = String(pick(e, ["user","username","display_name","name"], ""));
+            const msg = String(pick(e, ["message","text"], type));
+            const ts = pick(e, ["ts_ms","timestamp","ts","time","created_at"], Date.now());
+            const id = "event|" + platform + "|" + type + "|" + user + "|" + ts + "|" + msg;
+            return { platform, user, text: msg, ts, id, color: "", raw: e, is_event: true, event_type: type };
+        }
+
+        async function fetchEventsSafe() {
+            try {
+                const r = await fetch("/api/twitch/eventsub/events?limit=200", { cache: "no-store" });
+                if (!r.ok) return [];
+                const j = await r.json();
+                const evs = Array.isArray(j?.events) ? j.events : [];
+                return evs;
+            } catch (e) {
+                return [];
+            }
         }
 
         function remember(id) {
@@ -118,8 +154,7 @@
             }
             return true;
         }
-
-        // Deterministic color generator from username
+// Deterministic color generator from username
         function colorFromName(name) {
             if (!name) return '';
             // simple hash
@@ -152,6 +187,7 @@
         function addLine(n) {
             if (!n.text) return;
             const line = document.createElement('div'); line.className = 'line';
+            if (n.is_event) line.classList.add('event');
             const icon = iconFor(n.platform); line.appendChild(icon);
 
             const txt = document.createElement('div'); txt.className = 'text';
@@ -159,7 +195,8 @@
             const userSpan = document.createElement('span');
             userSpan.className = 'user';
             userSpan.textContent = n.user;
-            if (n.platform && n.platform.indexOf('twitch') === 0) {
+            if (n.is_event) { try { userSpan.style.color = '#fff'; } catch (e) {} }
+            if (!n.is_event && n.platform && n.platform.indexOf('twitch') === 0) {
                 const provided = (n.color || '').trim();
                 const col = provided || colorFromName(n.user);
                 try { userSpan.style.color = col; } catch (e) { /* ignore invalid color */ }
@@ -198,24 +235,62 @@
         }
 
         async function poll() {
-            try {
-                const { url, data } = await fetchFirstWorkingEndpoint();
-                const msgs = extractMessages(data);
-                if (!msgs.length) return;
-                let serverNewestTs = 0; let added = 0;
-                for (const raw of msgs) {
-                    const n = normalize(raw);
-                    try { const t = Number(n.ts) || 0; if (t > serverNewestTs) serverNewestTs = t; } catch (e) {}
-                    if (!n.text) continue;
-                    if (remember(n.id)) { addLine(n); added++; }
-                }
-                // no page reload; DOM updates with smooth scroll are used
-            } catch (e) {
-                console.error('chat poll error:', e);
-            }
-        }
+    // This function is kept for compatibility, but the actual work is delegated
+    // to the shared MergedChatFeed module.
+}
 
-        (async () => { await preloadIcons(); window.addEventListener('load', () => { if (LOG.lastElementChild) LOG.lastElementChild.scrollIntoView(); }); poll(); setInterval(poll, POLL_MS); })();
-    </script>
+
+
+
+    
+
+// ---- merged chat + EventSub events feed ----
+let __mergedFeedTimer = null;
+function startMergedFeed() {
+    if (__mergedFeedTimer) clearInterval(__mergedFeedTimer);
+
+    __mergedFeedTimer = MergedChatFeed.start({
+        intervalMs: 1000,
+        maxItems: 200,
+        dedupeWindowMs: 5000,
+
+        // Chat fetch returns the JSON used by this page.
+        fetchChat: async () => {
+            const r = await fetchFirstWorkingEndpoint();
+            return r.data ?? r;
+        },
+
+        // Event fetch returns {count, events:[...]}
+        fetchEvents: async () => {
+            return await fetchEventsSafe();
+        },
+
+        // Convert chat JSON into raw message items.
+        extractChatItems: (chatJson) => extractMessages(chatJson),
+
+        // Normalize chat raw item into a common shape
+        normalizeChatItem: (raw) => {
+            const n = normalize(raw);
+            if (!n) return n;
+            n.is_event = false;
+            return n;
+        },
+
+        // Normalize EventSub event into a common shape
+        normalizeEventItem: (raw) => normalizeEvent(raw),
+
+        remember,
+        addLine,
+
+        onError: (e) => {
+            // Keep overlay quiet; app can log to console
+            if (typeof console !== "undefined" && console.error) console.error("merged feed error:", e);
+        }
+    });
+}
+
+startMergedFeed();
+
+</script>
 </body>
 </html>
