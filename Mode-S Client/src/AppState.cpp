@@ -95,35 +95,34 @@ nlohmann::json AppState::chat_json() const {
     return arr;
 }
 
-void AppState::push_tiktok_event(const EventItem& ev) {
+
+void AppState::push_tiktok_event(const EventItem& e) {
     std::lock_guard<std::mutex> lk(mtx_);
-    tiktok_events_.push_back(ev);
-    const size_t kMax = 200;
-    while (tiktok_events_.size() > kMax) tiktok_events_.pop_front();
+    tiktok_events_.push_back(e);
+    while (tiktok_events_.size() > 200) tiktok_events_.pop_front();
 }
 
-nlohmann::json AppState::tiktok_events_json(int limit) const {
-    using nlohmann::json;
-    if (limit <= 0) limit = 200;
-
+nlohmann::json AppState::tiktok_events_json(size_t limit) const {
     std::lock_guard<std::mutex> lk(mtx_);
-    json events = json::array();
-    const int total = (int)tiktok_events_.size();
-    const int start = (total > limit) ? (total - limit) : 0;
+    nlohmann::json out;
+    out["count"] = (int)tiktok_events_.size();
+    nlohmann::json arr = nlohmann::json::array();
 
-    for (int i = start; i < total; ++i) {
-        const auto& e = tiktok_events_[(size_t)i];
-        json o;
-        o["platform"] = e.platform;
-        o["type"] = e.type;
-        o["user"] = e.user;
-        o["message"] = e.message;
-        o["ts_ms"] = e.ts_ms;
-        events.push_back(std::move(o));
+    size_t n = tiktok_events_.size();
+    size_t start = 0;
+    if (limit > 0 && n > limit) start = n - limit;
+
+    for (size_t i = start; i < n; ++i) {
+        const auto& e = tiktok_events_[i];
+        nlohmann::json j;
+        j["platform"] = e.platform;
+        j["type"] = e.type;
+        j["user"] = e.user;
+        j["message"] = e.message;
+        j["ts_ms"] = e.ts_ms;
+        arr.push_back(std::move(j));
     }
 
-    json out;
-    out["count"] = (int)events.size();
-    out["events"] = std::move(events);
+    out["events"] = std::move(arr);
     return out;
 }

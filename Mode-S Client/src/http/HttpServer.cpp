@@ -387,17 +387,6 @@ svr.Get("/api/chat/diag", [&](const httplib::Request&, httplib::Response& res) {
             std::chrono::system_clock::now().time_since_epoch()
         ).count();
 
-
-
-// --- API: TikTok events ---
-svr.Get("/api/tiktok/events", [&](const httplib::Request& req, httplib::Response& res) {
-    int limit = 200;
-    if (req.has_param("limit")) {
-        try { limit = std::stoi(req.get_param_value("limit")); } catch (...) {}
-    }
-    auto out = state_.tiktok_events_json(limit);
-    res.set_content(out.dump(2), "application/json; charset=utf-8");
-});
         // Add into aggregator for overlays that read it
         chat_.Add(m);
         // Backward AppState sink removed: ChatAggregator is now the source-of-truth for overlays.
@@ -593,3 +582,4 @@ svr.Get("/api/tiktok/events", [&](const httplib::Request& req, httplib::Response
         res.set_redirect("/overlay/");
     });
 }
+// NOTE: /api/tiktok/events route insertion point not found; please merge manually.

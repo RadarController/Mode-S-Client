@@ -7,21 +7,22 @@
 #include <vector>
 #include "json.hpp"
 
-struct EventItem {
-    std::string platform;
-    std::string type;    // "follow", "gift", "like", "share"
-    std::string user;
-    std::string message;
-    std::int64_t ts_ms{};
-};
-
 struct ChatMessage {
-
     std::string platform;
     std::string user;
     std::string message;
     std::string color; // optional username color (e.g. "#FF0000")
     std::int64_t ts_ms{};
+
+
+struct EventItem {
+    std::string platform; // "tiktok"
+    std::string type;     // e.g. "like", "gift", "share", "follow"
+    std::string user;
+    std::string message;
+    std::int64_t ts_ms{};
+};
+
 };
 
 struct Metrics {
@@ -58,15 +59,13 @@ public:
     nlohmann::json metrics_json() const;
     nlohmann::json chat_json() const;
 
-    // TikTok events
-    void push_tiktok_event(const EventItem& ev);
-    nlohmann::json tiktok_events_json(int limit = 200) const;
 
+    void push_tiktok_event(const EventItem& e);
+    nlohmann::json tiktok_events_json(size_t limit = 200) const;
 private:
     static std::int64_t now_ms();
 
     mutable std::mutex mtx_;
     Metrics metrics_{};
     std::deque<ChatMessage> chat_; // last 200
-    std::deque<EventItem> tiktok_events_; // last 200
 };

@@ -107,6 +107,20 @@ bool StartOrRestartTikTokSidecar(
             state.set_tiktok_live(false);
             state.set_tiktok_viewers(0);
             uiPing();
+        } else if (type == "tiktok.event") {
+            EventItem e;
+            e.platform = "tiktok";
+            e.type = j.value("event_type", j.value("kind", j.value("event", "")));
+            if (e.type.empty()) e.type = "event";
+            e.user = j.value("user", "unknown");
+            e.message = j.value("message", "");
+            if (j.contains("ts_ms")) e.ts_ms = (std::int64_t)j.value("ts_ms", 0LL);
+            else {
+                double ts = j.value("ts", 0.0);
+                e.ts_ms = (std::int64_t)(ts * 1000.0);
+            }
+            state.push_tiktok_event(e);
+            uiPing();
         } else if (type == "tiktok.chat") {
             ChatMessage c;
             c.platform = "tiktok";
