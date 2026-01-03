@@ -66,4 +66,5 @@ private:
     mutable std::mutex mtx_;
     Metrics metrics_{};
     std::deque<ChatMessage> chat_; // last 200
+    std::deque<EventItem> tiktok_events_; // last 200
 };
