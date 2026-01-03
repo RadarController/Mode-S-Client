@@ -333,22 +333,6 @@ static void ExtractChatMessages(const json& j, std::vector<ChatMessage>& outMsgs
     }
 }
 
-static std::string GetTextSimpleOrRuns(const json& j) {
-    try {
-        if (j.is_object()) {
-            if (j.contains("simpleText")) return j["simpleText"].get<std::string>();
-            if (j.contains("runs") && j["runs"].is_array()) {
-                std::string out;
-                for (const auto& r : j["runs"]) {
-                    if (r.contains("text")) out += r["text"].get<std::string>();
-                }
-                return out;
-            }
-        }
-    }
-    catch (...) {}
-    return {};
-}
 
 static void ExtractYouTubeEvents(const json& j, std::vector<EventItem>& outEvents) {
     if (j.is_object()) {
@@ -362,14 +346,14 @@ static void ExtractYouTubeEvents(const json& j, std::vector<EventItem>& outEvent
             e.ts_ms = (std::int64_t)NowMs();
 
             try {
-                if (r.contains("authorName"))
-                    e.user = GetTextSimpleOrRuns(r["authorName"]);
+                if (r.contains("authorName") && r["authorName"].contains("simpleText"))
+                    e.user = r["authorName"]["simpleText"].get<std::string>();
             } catch (...) {}
 
             std::string amount;
             try {
-                if (r.contains("purchaseAmountText"))
-                    amount = GetTextSimpleOrRuns(r["purchaseAmountText"]);
+                if (r.contains("purchaseAmountText") && r["purchaseAmountText"].contains("simpleText"))
+                    amount = r["purchaseAmountText"]["simpleText"].get<std::string>();
             } catch (...) {}
 
             std::string msg;
@@ -402,14 +386,14 @@ static void ExtractYouTubeEvents(const json& j, std::vector<EventItem>& outEvent
             e.ts_ms = (std::int64_t)NowMs();
 
             try {
-                if (r.contains("authorName"))
-                    e.user = GetTextSimpleOrRuns(r["authorName"]);
+                if (r.contains("authorName") && r["authorName"].contains("simpleText"))
+                    e.user = r["authorName"]["simpleText"].get<std::string>();
             } catch (...) {}
 
             std::string amount;
             try {
-                if (r.contains("purchaseAmountText"))
-                    amount = GetTextSimpleOrRuns(r["purchaseAmountText"]);
+                if (r.contains("purchaseAmountText") && r["purchaseAmountText"].contains("simpleText"))
+                    amount = r["purchaseAmountText"]["simpleText"].get<std::string>();
             } catch (...) {}
 
             e.message = amount.empty() ? "sent Super Sticker" : ("sent Super Sticker " + amount);
