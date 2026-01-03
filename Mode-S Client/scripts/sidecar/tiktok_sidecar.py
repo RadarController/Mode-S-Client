@@ -364,12 +364,7 @@ async def main_async() -> int:
 
     @client.on(LikeEvent)
     async def on_like(event: LikeEvent):
-        try:
-            user = getattr(event.user, "nickname", None) or getattr(event.user, "unique_id", None) or "unknown"
-        except Exception:
-            user = "unknown"
-        ts_ms = int(now_ts() * 1000)
-        emit_event("like", user, "liked", ts_ms)
+        return  # likes disabled for now
 
     @client.on(GiftEvent)
     async def on_gift(event: GiftEvent):
