@@ -10,12 +10,17 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <mutex>
+#include <unordered_set>
 
 #include "json.hpp"
 #include "chat/ChatAggregator.h"
 #include "AppState.h"
 
 using json = nlohmann::json;
+
+static std::mutex yt_seen_mu;
+static std::unordered_set<std::string> yt_seen;
 
 static uint64_t NowMs() {
     return (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -493,11 +498,10 @@ void YouTubeLiveChatService::stop() {
     if (thread_.joinable()) thread_.join();
 }
 
-void YouTubeLiveChatService::worker(std::string handleIn, ChatAggregator* chat, AppState* state, LogFn log)
-{
+void YouTubeLiveChatService::worker(std::string handleIn, ChatAggregator* chat, AppState* state, LogFn log) {
     auto Log = [&](const std::wstring& s) {
         if (log) log(s);
-    };
+        };
 
     std::string handle = EnsureAtHandle(handleIn);
     Log(L"YOUTUBE: starting live chat poller for '" + ToW(handle) + L"'");
@@ -624,21 +628,45 @@ void YouTubeLiveChatService::worker(std::string handleIn, ChatAggregator* chat, 
         if (state) {
             std::vector<EventItem> evs;
             ExtractYouTubeEvents(j, evs);
-            for (const auto& e : evs) state->push_youtube_event(e);
+
+            for (const auto& e : evs) {
+                // Build a stable-ish key for this YouTube event
+                std::string key =
+                    e.type + "|" + e.user + "|" + std::to_string(e.ts_ms) + "|" + e.message;
+
+                {
+                    std::lock_guard<std::mutex> lk(yt_seen_mu);
+                    if (!yt_seen.insert(key).second) {
+                        continue; // already seen this event
+                    }
+                }
+
+                state->push_youtube_event(e);
+
+                if (chat) {
+                    ChatMessage m;
+                    m.platform = "youtube";
+                    m.user = e.user;
+                    m.message = "[" + e.type + "] " + e.message;
+                    m.ts_ms = e.ts_ms;
+
+                    chat->Add(std::move(m));
+                }
+            }
+
+            int timeoutMs = sleepMs;
+            std::string nextCont;
+            if (ExtractContinuationAndTimeout(j, nextCont, timeoutMs) && !nextCont.empty()) {
+                continuation = std::move(nextCont);
+            }
+
+            if (timeoutMs < 250) timeoutMs = 250;
+            if (timeoutMs > 10000) timeoutMs = 10000;
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(timeoutMs));
         }
 
-        int timeoutMs = sleepMs;
-        std::string nextCont;
-        if (ExtractContinuationAndTimeout(j, nextCont, timeoutMs) && !nextCont.empty()) {
-            continuation = std::move(nextCont);
-        }
-
-        if (timeoutMs < 250) timeoutMs = 250;
-        if (timeoutMs > 10000) timeoutMs = 10000;
-
-        std::this_thread::sleep_for(std::chrono::milliseconds(timeoutMs));
+        running_.store(false);
+        Log(L"YOUTUBE: stopped");
     }
-
-    running_.store(false);
-    Log(L"YOUTUBE: stopped");
 }
