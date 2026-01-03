@@ -13,7 +13,7 @@ struct ChatMessage {
     std::string message;
     std::string color; // optional username color (e.g. "#FF0000")
     std::int64_t ts_ms{};
-
+};
 
 struct EventItem {
     std::string platform; // "tiktok"
@@ -21,8 +21,6 @@ struct EventItem {
     std::string user;
     std::string message;
     std::int64_t ts_ms{};
-};
-
 };
 
 struct Metrics {
@@ -54,13 +52,11 @@ public:
     void set_youtube_followers(int f);
     void set_youtube_live(bool live);
     void set_tiktok_live(bool live);
+    void push_tiktok_event(const EventItem& e);
 
     Metrics get_metrics() const;
     nlohmann::json metrics_json() const;
     nlohmann::json chat_json() const;
-
-
-    void push_tiktok_event(const EventItem& e);
     nlohmann::json tiktok_events_json(size_t limit = 200) const;
 private:
     static std::int64_t now_ms();
