@@ -7,7 +7,7 @@
     <style>
         /* Minimal styling to ensure the log is scrollable in OBS browser sources */
         html, body { margin: 0; padding: 0; height: 100%; background: transparent; overflow: hidden; }
-        body { font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color: #000; }
+        body { font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color: #fff; }
         /* Make the log take full viewport width and be scrollable vertically. Hide scrollbars visually but keep scrolling. */
         #log { padding: 8px; overflow-y: auto; height: 100vh; box-sizing: border-box; width: 100vw; scroll-behavior: smooth; }
         #log .line { margin: 2px 0; display: flex; align-items: flex-start; }
@@ -39,13 +39,29 @@
         #log { scrollbar-width: none; }
         /* Hide scrollbar for IE, Edge */
         #log { -ms-overflow-style: none; }
-    </style>
+    
+        /* EventSub alerts rendered like chat lines, but highlighted */
+        #log .line.event {
+            background: #025492;
+            color: #fff;
+            padding: 4px 6px;
+            border-radius: 6px;
+        }
+        #log .line.event .text,
+        #log .line.event .text span,
+        #log .line.event .user {
+            color: #fff !important;
+        }
+
+</style>
 </head>
 <body>
     <div id="log"></div>
 
     <script>
         const LOG = document.getElementById("log");
+
+        const EVENTS_ENDPOINT = "/api/twitch/eventsub/events?limit=200";
 
         const ENDPOINTS = [
             "/api/chat?limit=200",
@@ -107,6 +123,31 @@
             return { platform, user, text, ts, id, color, raw: m };
         }
 
+        function normalizeEvent(e) {
+            // EventSub events from /api/twitch/eventsub/events
+            // Expected: { platform, type, user, message, ts_ms }
+            const platform = String(e?.platform || "twitch").toLowerCase();
+            const user = String(e?.user || "");
+            const text = String(e?.message || e?.type || "");
+            const ts = Number(e?.ts_ms || Date.now());
+            const type = String(e?.type || "");
+            // Stable-ish id for dedupe
+            const id = `ev:${platform}:${type}:${user}:${ts}:${text}`;
+            return { platform, user, text, ts, color: "", id, is_event: true };
+        }
+
+        async function fetchEventsSafe() {
+            try {
+                const r = await fetch(EVENTS_ENDPOINT, { cache: "no-store" });
+                if (!r.ok) return [];
+                const j = await r.json();
+                return Array.isArray(j?.events) ? j.events : [];
+            } catch (e) {
+                return [];
+            }
+        }
+
+
         function remember(id) {
             if (!id) return false;
             if (seen.has(id)) return false;
@@ -151,7 +192,7 @@
 
         function addLine(n) {
             if (!n.text) return;
-            const line = document.createElement('div'); line.className = 'line';
+            const line = document.createElement('div'); line.className = 'line' + (n.is_event ? ' event' : '');
             const icon = iconFor(n.platform); line.appendChild(icon);
 
             const txt = document.createElement('div'); txt.className = 'text';
@@ -159,7 +200,7 @@
             const userSpan = document.createElement('span');
             userSpan.className = 'user';
             userSpan.textContent = n.user;
-            if (n.platform && n.platform.indexOf('twitch') === 0) {
+            if (!n.is_event && n.platform && n.platform.indexOf('twitch') === 0) {
                 const provided = (n.color || '').trim();
                 const col = provided || colorFromName(n.user);
                 try { userSpan.style.color = col; } catch (e) { /* ignore invalid color */ }
@@ -199,17 +240,32 @@
 
         async function poll() {
             try {
-                const { url, data } = await fetchFirstWorkingEndpoint();
+                const [{ data }, evs] = await Promise.all([
+                    fetchFirstWorkingEndpoint(),
+                    fetchEventsSafe()
+                ]);
+
                 const msgs = extractMessages(data);
-                if (!msgs.length) return;
-                let serverNewestTs = 0; let added = 0;
+                const merged = [];
+
                 for (const raw of msgs) {
                     const n = normalize(raw);
-                    try { const t = Number(n.ts) || 0; if (t > serverNewestTs) serverNewestTs = t; } catch (e) {}
                     if (!n.text) continue;
-                    if (remember(n.id)) { addLine(n); added++; }
+                    n.is_event = false;
+                    merged.push(n);
                 }
-                // no page reload; DOM updates with smooth scroll are used
+
+                for (const e of (evs || [])) {
+                    const n = normalizeEvent(e);
+                    if (!n.text) continue;
+                    merged.push(n);
+                }
+
+                merged.sort((a, b) => (Number(a.ts) || 0) - (Number(b.ts) || 0));
+
+                for (const n of merged) {
+                    if (remember(n.id)) addLine(n);
+                }
             } catch (e) {
                 console.error('chat poll error:', e);
             }
