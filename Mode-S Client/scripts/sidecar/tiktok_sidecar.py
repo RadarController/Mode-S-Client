@@ -265,98 +265,16 @@ async def main_async() -> int:
     last_viewers: int = 0
     dumped_missing_user_count = False
 
-    # ---------------- events ----------------
-    @client.on(ConnectEvent)
-    async def on_connect(event: ConnectEvent):
-        nonlocal last_room_id
-        last_room_id = getattr(event, "room_id", None)
-        emit({"type": "tiktok.connected", "ts": now_ts()})
-        # Emit immediately (may be 0 until first poll refreshes)
-        emit_stats(True, last_viewers, note="connected", room_id=last_room_id)
-
-    @client.on(DisconnectEvent)
-    async def on_disconnect(_: DisconnectEvent):
-        emit({"type": "tiktok.offline", "ts": now_ts()})
-        emit_stats(False, 0, note="disconnected", room_id=last_room_id)
-
-    @client.on(CommentEvent)
-    async def on_comment(event: CommentEvent):
-        try:
-            emit({
-                "type": "tiktok.chat",
-                "ts": now_ts(),
-                "user": event.user.nickname if event.user else "unknown",
-                "message": event.comment,
-            })
-        except Exception:
-            pass
-
-@client.on(FollowEvent)
-async def on_follow(event: FollowEvent):
-    try:
-        user = getattr(event.user, "nickname", None) or getattr(event.user, "unique_id", None) or "unknown"
-    except Exception:
-        user = "unknown"
-    ts_ms = int(now_ts() * 1000)
-    emit_event("follow", user, "followed", ts_ms)
-
-@client.on(ShareEvent)
-async def on_share(event: ShareEvent):
-    try:
-        user = getattr(event.user, "nickname", None) or getattr(event.user, "unique_id", None) or "unknown"
-    except Exception:
-        user = "unknown"
-    ts_ms = int(now_ts() * 1000)
-    emit_event("share", user, "shared", ts_ms)
-
-@client.on(LikeEvent)
-async def on_like(event: LikeEvent):
-    try:
-        user = getattr(event.user, "nickname", None) or getattr(event.user, "unique_id", None) or "unknown"
-    except Exception:
-        user = "unknown"
-    ts_ms = int(now_ts() * 1000)
-    emit_event("like", user, "liked", ts_ms)
-
-@client.on(GiftEvent)
-async def on_gift(event: GiftEvent):
-    # Aggregate gift streaks to avoid spam.
-    try:
-        user_obj = getattr(event, "user", None)
-        user = getattr(user_obj, "nickname", None) or getattr(user_obj, "unique_id", None) or "unknown"
-        unique_id = getattr(user_obj, "unique_id", None) or user
-    except Exception:
-        user = "unknown"
-        unique_id = "unknown"
-
-    gift = getattr(event, "gift", None)
-    gift_id = getattr(gift, "id", None) or getattr(event, "gift_id", None) or "unknown"
-    gift_name = getattr(gift, "name", None) or getattr(event, "gift_name", None) or "Gift"
-
-    rep = int(getattr(event, "repeat_count", None) or getattr(event, "repeatCount", None) or 1)
-    ts = now_ts()
-    ts_ms = int(ts * 1000)
-
-    key = (str(unique_id), str(gift_id))
-    g = _gift_pending.get(key)
-    if not g:
-        g = {"count": 0, "last_ts": ts, "last_ts_ms": ts_ms, "gift_name": str(gift_name), "user": str(user)}
-        _gift_pending[key] = g
-
-    g["count"] = int(g.get("count", 0)) + rep
-    g["last_ts"] = ts
-    g["last_ts_ms"] = ts_ms
-    g["gift_name"] = str(gift_name)
-    g["user"] = str(user)
-
-    if bool(getattr(event, "repeat_end", False) or getattr(event, "repeatEnd", False)):
-        _finalize_gift(key)
+    _room_poll_task: Optional[asyncio.Task] = None
 
     # ---------------- room info polling (SOURCE OF TRUTH) ----------------
     async def poll_room_info():
-        nonlocal last_viewers, dumped_missing_user_count
+        nonlocal last_viewers, dumped_missing_user_count, last_room_id
 
         while True:
+            if last_room_id is None:
+                await asyncio.sleep(1)
+                continue
             await asyncio.sleep(5)
 
             # Always try to fetch *fresh* room info each poll
@@ -396,9 +314,96 @@ async def on_gift(event: GiftEvent):
 
             # IMPORTANT: emit every poll, not only when it changes
             emit_stats(True, last_viewers, note=f"room_info_poll:{used}", room_id=last_room_id)
+        # Start the poller once; it will wait until last_room_id is known.
+        if _room_poll_task is None or _room_poll_task.done():
+            _room_poll_task = asyncio.create_task(poll_room_info())
 
-    asyncio.create_task(poll_room_info())
+    # ---------------- events ----------------
+    @client.on(ConnectEvent)
+    async def on_connect(event: ConnectEvent):
+        nonlocal last_room_id
+        last_room_id = getattr(event, "room_id", None)
+        emit({"type": "tiktok.connected", "ts": now_ts()})
+        # Emit immediately (may be 0 until first poll refreshes)
+        emit_stats(True, last_viewers, note="connected", room_id=last_room_id)
 
+    @client.on(DisconnectEvent)
+    async def on_disconnect(_: DisconnectEvent):
+        emit({"type": "tiktok.offline", "ts": now_ts()})
+        emit_stats(False, 0, note="disconnected", room_id=last_room_id)
+
+    @client.on(CommentEvent)
+    async def on_comment(event: CommentEvent):
+        try:
+            emit({
+                "type": "tiktok.chat",
+                "ts": now_ts(),
+                "user": event.user.nickname if event.user else "unknown",
+                "message": event.comment,
+            })
+        except Exception:
+            pass
+
+    @client.on(FollowEvent)
+    async def on_follow(event: FollowEvent):
+        try:
+            user = getattr(event.user, "nickname", None) or getattr(event.user, "unique_id", None) or "unknown"
+        except Exception:
+            user = "unknown"
+        ts_ms = int(now_ts() * 1000)
+        emit_event("follow", user, "followed", ts_ms)
+
+    @client.on(ShareEvent)
+    async def on_share(event: ShareEvent):
+        try:
+            user = getattr(event.user, "nickname", None) or getattr(event.user, "unique_id", None) or "unknown"
+        except Exception:
+            user = "unknown"
+        ts_ms = int(now_ts() * 1000)
+        emit_event("share", user, "shared", ts_ms)
+
+    @client.on(LikeEvent)
+    async def on_like(event: LikeEvent):
+        try:
+            user = getattr(event.user, "nickname", None) or getattr(event.user, "unique_id", None) or "unknown"
+        except Exception:
+            user = "unknown"
+        ts_ms = int(now_ts() * 1000)
+        emit_event("like", user, "liked", ts_ms)
+
+    @client.on(GiftEvent)
+    async def on_gift(event: GiftEvent):
+        # Aggregate gift streaks to avoid spam.
+        try:
+            user_obj = getattr(event, "user", None)
+            user = getattr(user_obj, "nickname", None) or getattr(user_obj, "unique_id", None) or "unknown"
+            unique_id = getattr(user_obj, "unique_id", None) or user
+        except Exception:
+            user = "unknown"
+            unique_id = "unknown"
+
+        gift = getattr(event, "gift", None)
+        gift_id = getattr(gift, "id", None) or getattr(event, "gift_id", None) or "unknown"
+        gift_name = getattr(gift, "name", None) or getattr(event, "gift_name", None) or "Gift"
+
+        rep = int(getattr(event, "repeat_count", None) or getattr(event, "repeatCount", None) or 1)
+        ts = now_ts()
+        ts_ms = int(ts * 1000)
+
+        key = (str(unique_id), str(gift_id))
+        g = _gift_pending.get(key)
+        if not g:
+            g = {"count": 0, "last_ts": ts, "last_ts_ms": ts_ms, "gift_name": str(gift_name), "user": str(user)}
+            _gift_pending[key] = g
+
+        g["count"] = int(g.get("count", 0)) + rep
+        g["last_ts"] = ts
+        g["last_ts_ms"] = ts_ms
+        g["gift_name"] = str(gift_name)
+        g["user"] = str(user)
+
+        if bool(getattr(event, "repeat_end", False) or getattr(event, "repeatEnd", False)):
+            _finalize_gift(key)
     # ---------------- connect with retry on signer failures ----------------
     attempt = 0
     while True:
