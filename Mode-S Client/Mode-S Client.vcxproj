@@ -90,7 +90,7 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;%(PreprocessorDefinitions);CPPHTTPLIB_OPENSSL_SUPPORT</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>$(ProjectDir)external;$(ProjectDir)src;$(ProjectDir)integrations;$(ProjectDir)assets;$(ProjectDir)core;$(ProjectDir)helpers;$(ProjectDir)scripts;$(ProjectDir)ui</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
@@ -109,7 +109,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;%(PreprocessorDefinitions);CPPHTTPLIB_OPENSSL_SUPPORT</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>$(ProjectDir)external;$(ProjectDir)src;$(ProjectDir)integrations;$(ProjectDir)assets;$(ProjectDir)core;$(ProjectDir)helpers;$(ProjectDir)scripts;$(ProjectDir)ui</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
@@ -132,7 +132,7 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_DEBUG;_WINDOWS;%(PreprocessorDefinitions);CPPHTTPLIB_OPENSSL_SUPPORT</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>$(ProjectDir)external;$(ProjectDir)src;$(ProjectDir)integrations;$(ProjectDir)assets;$(ProjectDir)core;$(ProjectDir)helpers;$(ProjectDir)scripts;$(ProjectDir)ui</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
@@ -151,7 +151,7 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NDEBUG;_WINDOWS;%(PreprocessorDefinitions);CPPHTTPLIB_OPENSSL_SUPPORT</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>$(ProjectDir)external;$(ProjectDir)src;$(ProjectDir)integrations;$(ProjectDir)assets;$(ProjectDir)core;$(ProjectDir)helpers;$(ProjectDir)scripts;$(ProjectDir)ui</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
@@ -177,6 +177,7 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClInclude Include="integrations\obs\ObsWsClient.h" />
     <ClInclude Include="integrations\tiktok\TikTokFollowersService.h" />
     <ClInclude Include="integrations\tiktok\TikTokSidecar.h" />
+    <ClInclude Include="integrations\twitch\TwitchAuth.h" />
     <ClInclude Include="integrations\twitch\TwitchEventSubWsClient.h" />
     <ClInclude Include="integrations\twitch\TwitchHelixService.h" />
     <ClInclude Include="integrations\twitch\TwitchIrcWsClient.h" />
@@ -198,6 +199,7 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClCompile Include="integrations\obs\ObsWsClient.cpp" />
     <ClCompile Include="integrations\tiktok\TikTokFollowersService.cpp" />
     <ClCompile Include="integrations\tiktok\TikTokSidecar.cpp" />
+    <ClCompile Include="integrations\twitch\TwitchAuth.cpp" />
     <ClCompile Include="integrations\twitch\TwitchEventSubWsClient.cpp" />
     <ClCompile Include="integrations\twitch\TwitchHelixService.cpp" />
     <ClCompile Include="integrations\twitch\TwitchIrcWsClient.cpp" />
@@ -245,11 +247,13 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
     <Import Project="..\packages\Microsoft.Web.WebView2.1.0.3650.58\build\native\Microsoft.Web.WebView2.targets" Condition="Exists('..\packages\Microsoft.Web.WebView2.1.0.3650.58\build\native\Microsoft.Web.WebView2.targets')" />
+    <Import Project="..\packages\openssl.vcpkg.3.5.2\build\native\openssl.vcpkg.targets" Condition="Exists('..\packages\openssl.vcpkg.3.5.2\build\native\openssl.vcpkg.targets')" />
   </ImportGroup>
   <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
     <PropertyGroup>
       <ErrorText>This project references NuGet package(s) that are missing on this computer. Use NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105. The missing file is {0}.</ErrorText>
     </PropertyGroup>
     <Error Condition="!Exists('..\packages\Microsoft.Web.WebView2.1.0.3650.58\build\native\Microsoft.Web.WebView2.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\Microsoft.Web.WebView2.1.0.3650.58\build\native\Microsoft.Web.WebView2.targets'))" />
+    <Error Condition="!Exists('..\packages\openssl.vcpkg.3.5.2\build\native\openssl.vcpkg.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\openssl.vcpkg.3.5.2\build\native\openssl.vcpkg.targets'))" />
   </Target>
 </Project>

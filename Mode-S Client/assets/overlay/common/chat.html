@@ -76,7 +76,8 @@
         const SEEN_LIMIT = 5000;
 
         // Preload icons from several candidate locations. If none available, use embedded fallbacks.
-        const ICONS = { twitch: null, tiktok: null };
+        // ✅ Added youtube slot.
+        const ICONS = { twitch: null, tiktok: null, youtube: null };
 
         async function tryLoadIconCandidates(name, candidates) {
             for (const p of candidates) {
@@ -94,10 +95,14 @@
         }
 
         async function preloadIcons() {
-            const twitchCandidates = ['./icons/twitch-icon.svg','/overlay/icons/twitch-icon.svg','/assets/icons/twitch-icon.svg','/icons/twitch-icon.svg'];
-            const tiktokCandidates = ['./icons/tiktok-icon.svg','/overlay/icons/tiktok-icon.svg','/assets/icons/tiktok-icon.svg','/icons/tiktok-icon.svg'];
+            // ✅ Prefer /assets/icons first (your requirement), keep other candidates as fallbacks.
+            const twitchCandidates = ['/assets/icons/twitch-icon.svg', './icons/twitch-icon.svg', '/overlay/icons/twitch-icon.svg', '/icons/twitch-icon.svg'];
+            const tiktokCandidates = ['/assets/icons/tiktok-icon.svg', './icons/tiktok-icon.svg', '/overlay/icons/tiktok-icon.svg', '/icons/tiktok-icon.svg'];
+            const youtubeCandidates = ['/assets/icons/youtube-icon.svg', './icons/youtube-icon.svg', '/overlay/icons/youtube-icon.svg', '/icons/youtube-icon.svg'];
+
             ICONS.twitch = await tryLoadIconCandidates('twitch', twitchCandidates);
             ICONS.tiktok = await tryLoadIconCandidates('tiktok', tiktokCandidates);
+            ICONS.youtube = await tryLoadIconCandidates('youtube', youtubeCandidates);
         }
 
         function pick(obj, keys, fallback = "") {
@@ -111,12 +116,12 @@
 
         function normalize(raw) {
             const m = (raw && raw.data && typeof raw.data === "object") ? raw.data : raw;
-            const platform = String(pick(m, ["platform","source","service","provider","origin"], "chat")).toLowerCase();
-            const user = String(pick(m, ["user","username","display_name","nick","author","name"], ""));
-            const text = String(pick(m, ["message","text","content","msg","body"], ""));
-            const ts = pick(m, ["ts_ms","timestamp","ts","time","created_at"], Date.now());
-            const color = String(pick(m, ["color","user_color"], ""));
-            const id = String(pick(m, ["id","message_id","msg_id","uuid"], platform + "|" + user + "|" + ts + "|" + text));
+            const platform = String(pick(m, ["platform", "source", "service", "provider", "origin"], "chat")).toLowerCase();
+            const user = String(pick(m, ["user", "username", "display_name", "nick", "author", "name"], ""));
+            const text = String(pick(m, ["message", "text", "content", "msg", "body"], ""));
+            const ts = pick(m, ["ts_ms", "timestamp", "ts", "time", "created_at"], Date.now());
+            const color = String(pick(m, ["color", "user_color"], ""));
+            const id = String(pick(m, ["id", "message_id", "msg_id", "uuid"], platform + "|" + user + "|" + ts + "|" + text));
             return { platform, user, text, ts, id, color, raw: m, is_event: false };
         }
 
@@ -124,9 +129,9 @@
             const e = (raw && raw.data && typeof raw.data === "object") ? raw.data : raw;
             const platform = String(pick(e, ["platform"], "twitch")).toLowerCase() || "twitch";
             const type = String(pick(e, ["type"], "event"));
-            const user = String(pick(e, ["user","username","display_name","name"], ""));
-            const msg = String(pick(e, ["message","text"], type));
-            const ts = pick(e, ["ts_ms","timestamp","ts","time","created_at"], Date.now());
+            const user = String(pick(e, ["user", "username", "display_name", "name"], ""));
+            const msg = String(pick(e, ["message", "text"], type));
+            const ts = pick(e, ["ts_ms", "timestamp", "ts", "time", "created_at"], Date.now());
             const id = "event|" + platform + "|" + type + "|" + user + "|" + ts + "|" + msg;
             return { platform, user, text: msg, ts, id, color: "", raw: e, is_event: true, event_type: type };
         }
@@ -143,7 +148,7 @@
         async function fetchTikTokEventsSafe() {
             try {
                 const r = await fetch("/api/tiktok/events?limit=200", { cache: "no-store" });
- 
+
                 if (!r.ok) return [];
                 const j = await r.json();
                 const evs = Array.isArray(j?.events) ? j.events : [];
@@ -164,7 +169,7 @@
             }
             return true;
         }
-// Deterministic color generator from username
+        // Deterministic color generator from username
         function colorFromName(name) {
             if (!name) return '';
             // simple hash
@@ -185,12 +190,18 @@
             platform = (platform || '').toLowerCase();
             const span = document.createElement('span');
             span.className = 'icon';
+
             if (platform.indexOf('twitch') === 0 && ICONS.twitch) { span.innerHTML = ICONS.twitch; return span; }
             if (platform.indexOf('tiktok') === 0 && ICONS.tiktok) { span.innerHTML = ICONS.tiktok; return span; }
+            // ✅ Added youtube icon usage
+            if (platform.indexOf('youtube') === 0 && ICONS.youtube) { span.innerHTML = ICONS.youtube; return span; }
+
+            // Fallbacks if SVG files can't be loaded for some reason
             if (platform.indexOf('twitch') === 0) { span.innerHTML = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path fill="#6441A4" d="M4 4h16v11H8l-4 4V4z"/></svg>'; }
             else if (platform.indexOf('tiktok') === 0) { span.innerHTML = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path fill="#25F4EE" d="M16 3v9.5A3.5 3.5 0 1 1 13 9V7l3-4z"/><path fill="#FE2C55" d="M16 3v6.5A3.5 3.5 0 1 0 13 6V3h3z" opacity="0.9"/></svg>'; }
             else if (platform.indexOf('youtube') === 0) { span.innerHTML = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path fill="#FF0000" d="M10 8l6 4-6 4z"/><rect x="3" y="6" width="18" height="12" rx="2" ry="2" fill="none" stroke="#FF0000" stroke-width="1"/></svg>'; }
             else { const letter = (platform && platform[0]) ? platform[0].toUpperCase() : '?'; span.innerHTML = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" fill="#666"/><text x="12" y="16" font-size="10" text-anchor="middle" fill="#fff" font-family="Arial, sans-serif">${letter}</text></svg>`; }
+
             return span;
         }
 
@@ -205,7 +216,7 @@
             const userSpan = document.createElement('span');
             userSpan.className = 'user';
             userSpan.textContent = n.user;
-            if (n.is_event) { try { userSpan.style.color = '#fff'; } catch (e) {} }
+            if (n.is_event) { try { userSpan.style.color = '#fff'; } catch (e) { } }
             if (!n.is_event && n.platform && n.platform.indexOf('twitch') === 0) {
                 const provided = (n.color || '').trim();
                 const col = provided || colorFromName(n.user);
@@ -245,68 +256,66 @@
         }
 
         async function poll() {
-    // This function is kept for compatibility, but the actual work is delegated
-    // to the shared MergedChatFeed module.
-}
-
-
-
-
-    
-
-// ---- merged chat + EventSub events feed ----
-let __mergedFeedTimer = null;
-function startMergedFeed() {
-    if (__mergedFeedTimer) clearInterval(__mergedFeedTimer);
-
-    __mergedFeedTimer = MergedChatFeed.start({
-        intervalMs: 1000,
-        maxItems: 200,
-        dedupeWindowMs: 5000,
-
-        // Chat fetch returns the JSON used by this page.
-        fetchChat: async () => {
-            const r = await fetchFirstWorkingEndpoint();
-            return r.data ?? r;
-        },
-
-        // Event fetch returns {count, events:[...]}
-        fetchEvents: async () => {
-    const [tw, tt] = await Promise.all([
-        fetchEventsSafe(),
-        fetchTikTokEventsSafe()
-    ]);
-    const twEvents = (tw && tw.events) ? tw.events : (tw || []);
-    const ttEvents = (tt && tt.events) ? tt.events : (tt || []);
-    return { count: (twEvents.length + ttEvents.length), events: [...twEvents, ...ttEvents] };
-},
-
-        // Convert chat JSON into raw message items.
-        extractChatItems: (chatJson) => extractMessages(chatJson),
-
-        // Normalize chat raw item into a common shape
-        normalizeChatItem: (raw) => {
-            const n = normalize(raw);
-            if (!n) return n;
-            n.is_event = false;
-            return n;
-        },
-
-        // Normalize EventSub event into a common shape
-        normalizeEventItem: (raw) => normalizeEvent(raw),
-
-        remember,
-        addLine,
-
-        onError: (e) => {
-            // Keep overlay quiet; app can log to console
-            if (typeof console !== "undefined" && console.error) console.error("merged feed error:", e);
+            // This function is kept for compatibility, but the actual work is delegated
+            // to the shared MergedChatFeed module.
         }
-    });
-}
 
-startMergedFeed();
+        // ---- merged chat + EventSub events feed ----
+        let __mergedFeedTimer = null;
+        function startMergedFeed() {
+            if (__mergedFeedTimer) clearInterval(__mergedFeedTimer);
 
-</script>
+            __mergedFeedTimer = MergedChatFeed.start({
+                intervalMs: 1000,
+                maxItems: 200,
+                dedupeWindowMs: 5000,
+
+                // Chat fetch returns the JSON used by this page.
+                fetchChat: async () => {
+                    const r = await fetchFirstWorkingEndpoint();
+                    return r.data ?? r;
+                },
+
+                // Event fetch returns {count, events:[...]}
+                fetchEvents: async () => {
+                    const [tw, tt] = await Promise.all([
+                        fetchEventsSafe(),
+                        fetchTikTokEventsSafe()
+                    ]);
+                    const twEvents = (tw && tw.events) ? tw.events : (tw || []);
+                    const ttEvents = (tt && tt.events) ? tt.events : (tt || []);
+                    return { count: (twEvents.length + ttEvents.length), events: [...twEvents, ...ttEvents] };
+                },
+
+                // Convert chat JSON into raw message items.
+                extractChatItems: (chatJson) => extractMessages(chatJson),
+
+                // Normalize chat raw item into a common shape
+                normalizeChatItem: (raw) => {
+                    const n = normalize(raw);
+                    if (!n) return n;
+                    n.is_event = false;
+                    return n;
+                },
+
+                // Normalize EventSub event into a common shape
+                normalizeEventItem: (raw) => normalizeEvent(raw),
+
+                remember,
+                addLine,
+
+                onError: (e) => {
+                    // Keep overlay quiet; app can log to console
+                    if (typeof console !== "undefined" && console.error) console.error("merged feed error:", e);
+                }
+            });
+        }
+
+        // ✅ Ensure icons are loaded before the feed begins rendering lines.
+        preloadIcons()
+            .catch(() => { })  // fall back to inline SVGs if icon files can't be fetched
+            .finally(() => startMergedFeed());
+
+    </script>
 </body>
 </html>

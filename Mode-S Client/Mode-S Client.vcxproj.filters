@@ -102,6 +102,9 @@
     <ClInclude Include="integrations\twitch\TwitchEventSubWsClient.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="integrations\twitch\TwitchAuth.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="integrations\obs\ObsWsClient.cpp">
@@ -150,6 +153,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="integrations\twitch\TwitchEventSubWsClient.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="integrations\twitch\TwitchAuth.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
