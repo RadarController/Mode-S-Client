@@ -177,6 +177,7 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClInclude Include="integrations\obs\ObsWsClient.h" />
     <ClInclude Include="integrations\tiktok\TikTokFollowersService.h" />
     <ClInclude Include="integrations\tiktok\TikTokSidecar.h" />
+    <ClInclude Include="integrations\twitch\TwitchAuth.h" />
     <ClInclude Include="integrations\twitch\TwitchEventSubWsClient.h" />
     <ClInclude Include="integrations\twitch\TwitchHelixService.h" />
     <ClInclude Include="integrations\twitch\TwitchIrcWsClient.h" />
@@ -198,6 +199,7 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClCompile Include="integrations\obs\ObsWsClient.cpp" />
     <ClCompile Include="integrations\tiktok\TikTokFollowersService.cpp" />
     <ClCompile Include="integrations\tiktok\TikTokSidecar.cpp" />
+    <ClCompile Include="integrations\twitch\TwitchAuth.cpp" />
     <ClCompile Include="integrations\twitch\TwitchEventSubWsClient.cpp" />
     <ClCompile Include="integrations\twitch\TwitchHelixService.cpp" />
     <ClCompile Include="integrations\twitch\TwitchIrcWsClient.cpp" />
