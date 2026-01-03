@@ -13,7 +13,7 @@ struct ChatMessage {
     std::string message;
     std::string color; // optional username color (e.g. "#FF0000")
     std::int64_t ts_ms{};
-
+};
 
 struct EventItem {
     std::string platform; // "tiktok"
@@ -21,8 +21,6 @@ struct EventItem {
     std::string user;
     std::string message;
     std::int64_t ts_ms{};
-};
-
 };
 
 struct Metrics {
