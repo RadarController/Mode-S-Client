@@ -7,6 +7,12 @@
 #include <iomanip>
 #include <sstream>
 #include <vector>
+#include <cstdio>
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <windows.h>
+#endif
 
 #include "httplib.h"
 #include "json.hpp"
@@ -27,6 +33,22 @@ static const char* kTwitchScopeReadable =
 "channel:read:hype_train "
 "channel:read:redemptions "
 "channel:read:subscriptions";
+
+static std::string MaskToken(const std::string& t) {
+    if (t.empty()) return "(empty)";
+    const auto n = t.size();
+    if (n <= 8) return "(len=" + std::to_string(n) + ")";
+    return t.substr(0, 4) + "..." + t.substr(n - 4) + " (len=" + std::to_string(n) + ")";
+}
+
+static void DebugLog(const std::string& msg) {
+    const std::string line = "TWITCHAUTH: " + msg + "\n";
+#ifdef _WIN32
+    OutputDebugStringA(line.c_str());
+#endif
+    std::fprintf(stderr, "%s", line.c_str());
+    std::fflush(stderr);
+}
 
 namespace {
     // ---- config path (best-effort search; align with your project if you already have a shared helper) ----
@@ -220,6 +242,7 @@ std::string TwitchAuth::HttpPostForm(const std::string& url,
 
 bool TwitchAuth::LoadFromConfig(std::string* out_error) {
     auto path = FindConfigPath();
+    DebugLog(std::string("using config path: ") + path.string());
     json j;
     if (!ReadJsonFile(path, &j, out_error)) return false;
 
@@ -230,6 +253,7 @@ bool TwitchAuth::LoadFromConfig(std::string* out_error) {
     client_id_ = j.value("twitch_client_id", "");
     client_secret_ = j.value("twitch_client_secret", "");
 
+    DebugLog("loaded client_id len=" + std::to_string(client_id_.size()) + ", client_secret len=" + std::to_string(client_secret_.size()));
     if (!j.contains("twitch") || !j["twitch"].is_object()) {
         if (out_error) *out_error = "Missing 'twitch' object in config.json";
         return false;
@@ -241,7 +265,9 @@ bool TwitchAuth::LoadFromConfig(std::string* out_error) {
 
     refresh_token_cfg_ = refresh;
 
+    DebugLog(std::string("loaded access_token ") + MaskToken(access) + ", refresh_token " + MaskToken(refresh));
     if (client_id_.empty() || client_secret_.empty() || refresh_token_cfg_.empty()) {
+        DebugLog("missing required config fields; cannot refresh.");
         if (out_error) {
             *out_error =
                 "Missing twitch_client_id / twitch_client_secret / twitch.user_refresh_token in config.json. "
@@ -265,11 +291,13 @@ bool TwitchAuth::LoadFromConfig(std::string* out_error) {
         if (!snap.access_token.empty()) current_ = snap;
     }
 
+    DebugLog("persisted refreshed tokens successfully.");
     return true;
 }
 
 bool TwitchAuth::SaveToConfig(const TokenSnapshot& snap, std::string* out_error) {
     auto path = FindConfigPath();
+    DebugLog(std::string("saving tokens to config path: ") + path.string());
     json j;
     if (!ReadJsonFile(path, &j, out_error)) return false;
 
@@ -306,6 +334,7 @@ bool TwitchAuth::NeedsRefresh(std::int64_t now_unix) const {
 }
 
 bool TwitchAuth::RefreshWithTwitch(std::string* out_error) {
+    DebugLog("starting token refresh (refresh_token " + MaskToken(refresh_token_cfg_) + ", client_id len=" + std::to_string(client_id_.size()) + ")");
     // https://id.twitch.tv/oauth2/token
     const std::string url = "https://id.twitch.tv/oauth2/token";
     const std::string body =
@@ -318,11 +347,16 @@ bool TwitchAuth::RefreshWithTwitch(std::string* out_error) {
     long http = 0;
     std::string http_err;
     auto resp = HttpPostForm(url, body, "application/x-www-form-urlencoded", &http, &http_err);
+    DebugLog("token endpoint HTTP status=" + std::to_string(http) + ", response bytes=" + std::to_string(resp.size()));
     if (resp.empty()) {
+        DebugLog(std::string("empty response from token endpoint; error=") + http_err);
         if (out_error) *out_error = http_err.empty() ? "Empty response from Twitch token endpoint" : http_err;
         return false;
     }
     if (http < 200 || http >= 300) {
+        std::string body_preview = resp;
+        if (body_preview.size() > 500) body_preview.resize(500);
+        DebugLog("refresh failed; body preview: " + body_preview);
         if (out_error) *out_error = "Twitch token endpoint returned HTTP " + std::to_string(http) + " body=" + resp;
         return false;
     }
@@ -346,6 +380,7 @@ bool TwitchAuth::RefreshWithTwitch(std::string* out_error) {
 
         const auto now = NowUnixSeconds();
         snap.expires_at_unix = now + expires_in;
+        DebugLog("refresh OK; expires_in=" + std::to_string(expires_in) + "s, new refresh_token " + MaskToken(snap.refresh_token));
 
     }
     catch (const std::exception& e) {
@@ -362,6 +397,7 @@ bool TwitchAuth::RefreshWithTwitch(std::string* out_error) {
 
     std::string save_err;
     if (!SaveToConfig(snap, &save_err)) {
+        DebugLog("FAILED to persist refreshed tokens: " + save_err);
         // Keep token in memory, but report persistence failure
         if (out_error) *out_error = "Token refreshed but failed to persist to config.json: " + save_err;
         return false;
@@ -384,6 +420,7 @@ bool TwitchAuth::RefreshNow(std::string* out_error) {
 }
 
 bool TwitchAuth::Start() {
+    DebugLog("Start() called");
     std::string err;
     if (!LoadFromConfig(&err)) {
         return false;
@@ -392,7 +429,11 @@ bool TwitchAuth::Start() {
     // Always attempt refresh at startup (since sample config doesn't store expiry)
     {
         std::string refresh_err;
-        (void)RefreshWithTwitch(&refresh_err);
+        if (!RefreshWithTwitch(&refresh_err)) {
+            DebugLog("startup refresh FAILED: " + refresh_err);
+        } else {
+            DebugLog("startup refresh succeeded");
+        }
     }
 
     running_.store(true);
@@ -408,7 +449,11 @@ bool TwitchAuth::Start() {
             if (!running_.load()) break;
 
             std::string refresh_err;
-            (void)RefreshWithTwitch(&refresh_err);
+            if (!RefreshWithTwitch(&refresh_err)) {
+            DebugLog("startup refresh FAILED: " + refresh_err);
+        } else {
+            DebugLog("startup refresh succeeded");
+        }
         }
         });
 

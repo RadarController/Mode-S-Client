@@ -31,6 +31,7 @@
 #include "twitch/TwitchHelixService.h"
 #include "twitch/TwitchIrcWsClient.h"
 #include "twitch/TwitchEventSubWsClient.h"
+#include "twitch/TwitchAuth.h"
 #include "tiktok/TikTokSidecar.h"
 #include "tiktok/TikTokFollowersService.h"
 #include "euroscope/EuroScopeIngestService.h"
@@ -1259,6 +1260,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     static TikTokSidecar youtube;
     static TwitchIrcWsClient twitch;
     static TwitchEventSubWsClient twitchEventSub;
+    static TwitchAuth twitchAuth;
     static std::unique_ptr<HttpServer> gHttp;
     static std::thread metricsThread;
     static std::thread twitchHelixThread;
@@ -1632,6 +1634,18 @@ LogLine(L"TIKTOK: starting followers poller thread");
             }
         );
         tiktokFollowersThread.detach();
+        // Twitch OAuth token refresh (silent) - runs during boot while splash is visible
+        {
+            LogLine(L"TWITCH: refreshing OAuth token...");
+            std::string auth_err;
+            if (!twitchAuth.Start()) {
+                LogLine(L"TWITCH: OAuth token refresh/start failed (check config: twitch_client_id / twitch_client_secret / twitch.user_refresh_token)");
+            } else {
+                LogLine(L"TWITCH: OAuth token refresh worker started");
+            }
+        }
+
+
 
         // Signal that the app has finished initializing and the main window can be shown.
         PostMessageW(hwnd, WM_APP_SPLASH_READY, 0, 0);
@@ -1906,6 +1920,8 @@ config.youtube_handle = ToUtf8(GetWindowTextWString(hYouTube));
         youtube.stop();
         twitch.stop();
         twitchEventSub.Stop();
+        twitchAuth.Stop();
+
 
 #if HAVE_WEBVIEW2
         // Tear down WebView2 last to avoid any late WM_SIZE/paint touching released objects.
