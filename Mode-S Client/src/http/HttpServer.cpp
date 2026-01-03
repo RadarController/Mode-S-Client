@@ -219,12 +219,11 @@ void HttpServer::RegisterRoutes() {
         res.set_content(j.dump(2), "application/json; charset=utf-8");
     });
 
-
     // --- API: Twitch EventSub diagnostics ---
     svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Response& res) {
         auto j = state_.twitch_eventsub_status_json();
         res.set_content(j.dump(2), "application/json; charset=utf-8");
-    });
+        });
 
     svr.Get("/api/twitch/eventsub/events", [&](const httplib::Request& req, httplib::Response& res) {
         int limit = 200;
@@ -234,7 +233,7 @@ void HttpServer::RegisterRoutes() {
         }
         auto j = state_.twitch_eventsub_events_json(limit);
         res.set_content(j.dump(2), "application/json; charset=utf-8");
-    });
+        });
 
 // --- API: settings save (used by /app UI) ---
 // Accept both legacy and newer paths.
@@ -409,6 +408,23 @@ svr.Get("/api/chat/diag", [&](const httplib::Request&, httplib::Response& res) {
 
         res.set_content(R"({"ok":true})", "application/json; charset=utf-8");
         });
+
+    // --- API: TikTok events ---
+    svr.Get("/api/tiktok/events", [&](const httplib::Request& req, httplib::Response& res) {
+        int limit = 200;
+        if (req.has_param("limit")) {
+            try {
+                limit = std::max(1, std::min(1000, std::stoi(req.get_param_value("limit"))));
+            } catch (...) {
+                // keep default
+            }
+        }
+
+        auto j = state_.tiktok_events_json(static_cast<size_t>(limit));
+        res.set_content(j.dump(2), "application/json; charset=utf-8");
+    });
+
+
 
     // --- Overlay: special chat.html injection ---
     svr.Get("/overlay/chat.html", [&](const httplib::Request&, httplib::Response& res) {

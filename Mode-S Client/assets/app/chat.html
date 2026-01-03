@@ -134,6 +134,16 @@
         async function fetchEventsSafe() {
             try {
                 const r = await fetch("/api/twitch/eventsub/events?limit=200", { cache: "no-store" });
+            if (!r.ok) return { count: 0, events: [] };
+            return await r.json();
+        } catch (_) {
+            return { count: 0, events: [] };
+        }
+        }
+        async function fetchTikTokEventsSafe() {
+            try {
+                const r = await fetch("/api/tiktok/events?limit=200", { cache: "no-store" });
+
                 if (!r.ok) return [];
                 const j = await r.json();
                 const evs = Array.isArray(j?.events) ? j.events : [];
@@ -262,8 +272,14 @@ function startMergedFeed() {
 
         // Event fetch returns {count, events:[...]}
         fetchEvents: async () => {
-            return await fetchEventsSafe();
-        },
+    const [tw, tt] = await Promise.all([
+        fetchEventsSafe(),
+        fetchTikTokEventsSafe()
+    ]);
+    const twEvents = (tw && tw.events) ? tw.events : (tw || []);
+    const ttEvents = (tt && tt.events) ? tt.events : (tt || []);
+    return { count: (twEvents.length + ttEvents.length), events: [...twEvents, ...ttEvents] };
+},
 
         // Convert chat JSON into raw message items.
         extractChatItems: (chatJson) => extractMessages(chatJson),

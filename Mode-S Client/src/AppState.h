@@ -15,6 +15,14 @@ struct ChatMessage {
     std::int64_t ts_ms{};
 };
 
+struct EventItem {
+    std::string platform; // "tiktok"
+    std::string type;     // e.g. "like", "gift", "share", "follow"
+    std::string user;
+    std::string message;
+    std::int64_t ts_ms{};
+};
+
 struct Metrics {
     std::int64_t ts_ms{};
     int twitch_viewers{};
@@ -44,10 +52,12 @@ public:
     void set_youtube_followers(int f);
     void set_youtube_live(bool live);
     void set_tiktok_live(bool live);
+    void push_tiktok_event(const EventItem& e);
 
     Metrics get_metrics() const;
     nlohmann::json metrics_json() const;
     nlohmann::json chat_json() const;
+    nlohmann::json tiktok_events_json(size_t limit = 200) const;
 
     // --- Twitch EventSub diagnostics (separate from chat) ---
     void set_twitch_eventsub_status(const nlohmann::json& status);
@@ -63,6 +73,7 @@ private:
     mutable std::mutex mtx_;
     Metrics metrics_{};
     std::deque<ChatMessage> chat_; // last 200
+    std::deque<EventItem> tiktok_events_; // last 200
 
     // EventSub status + events kept small for UI/debugging.
     nlohmann::json twitch_eventsub_status_ = nlohmann::json{
