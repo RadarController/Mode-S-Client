@@ -67,6 +67,9 @@ public:
     nlohmann::json twitch_eventsub_events_json(int limit = 200) const;
     void clear_twitch_eventsub_events();
 
+    void push_youtube_event(const EventItem& e);
+    nlohmann::json youtube_events_json(size_t limit = 200) const;
+
 private:
     static std::int64_t now_ms();
 
@@ -74,6 +77,8 @@ private:
     Metrics metrics_{};
     std::deque<ChatMessage> chat_; // last 200
     std::deque<EventItem> tiktok_events_; // last 200
+	std::deque<EventItem> youtube_events_; // last 200
+    std::deque<nlohmann::json> twitch_eventsub_events_; // last 200 by default
 
     // EventSub status + events kept small for UI/debugging.
     nlohmann::json twitch_eventsub_status_ = nlohmann::json{
@@ -88,5 +93,5 @@ private:
         {"subscriptions", nlohmann::json::array()}
     };
 
-    std::deque<nlohmann::json> twitch_eventsub_events_; // last 200 by default
+    
 };

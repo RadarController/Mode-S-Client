@@ -165,3 +165,35 @@ nlohmann::json AppState::tiktok_events_json(size_t limit) const {
     out["events"] = std::move(arr);
     return out;
 }
+
+void AppState::push_youtube_event(const EventItem& e) {
+    std::lock_guard<std::mutex> lk(mtx_);
+    youtube_events_.push_back(e);
+    while (youtube_events_.size() > 200) youtube_events_.pop_front();
+}
+
+nlohmann::json AppState::youtube_events_json(size_t limit) const {
+    std::lock_guard<std::mutex> lk(mtx_);
+
+    nlohmann::json out;
+    out["count"] = (int)youtube_events_.size();
+    nlohmann::json arr = nlohmann::json::array();
+
+    size_t n = youtube_events_.size();
+    size_t start = 0;
+    if (limit > 0 && n > limit) start = n - limit;
+
+    for (size_t i = start; i < n; ++i) {
+        const auto& e = youtube_events_[i];
+        nlohmann::json j;
+        j["platform"] = e.platform;
+        j["type"] = e.type;
+        j["user"] = e.user;
+        j["message"] = e.message;
+        j["ts_ms"] = e.ts_ms;
+        arr.push_back(std::move(j));
+    }
+
+    out["events"] = std::move(arr);
+    return out;
+}

@@ -432,6 +432,8 @@ svr.Get("/api/chat/diag", [&](const httplib::Request&, httplib::Response& res) {
         auto html = ReadFileUtf8(htmlPath);
         if (html.empty()) {
             res.status = 404;
+            res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+            res.set_header("Pragma", "no-cache");
             res.set_content("chat.html not found", "text/plain");
             return;
         }

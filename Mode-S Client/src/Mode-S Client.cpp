@@ -34,6 +34,7 @@
 #include "twitch/TwitchAuth.h"
 #include "tiktok/TikTokSidecar.h"
 #include "tiktok/TikTokFollowersService.h"
+#include "youtube/YouTubeLiveChatService.h"
 #include "euroscope/EuroScopeIngestService.h"
 #include "obs/ObsWsClient.h"
 #include "floating/FloatingChat.h"
@@ -1261,6 +1262,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     static TwitchIrcWsClient twitch;
     static TwitchEventSubWsClient twitchEventSub;
     static TwitchAuth twitchAuth;
+    static YouTubeLiveChatService youtubeChat;
     static std::unique_ptr<HttpServer> gHttp;
     static std::thread metricsThread;
     static std::thread twitchHelixThread;
@@ -1578,15 +1580,23 @@ switch (msg) {
             };
 
             opt.start_youtube = [&]() -> bool {
-                return PlatformControl::StartOrRestartYouTubeSidecar(
+                const bool ok = PlatformControl::StartOrRestartYouTubeSidecar(
                     youtube, state, chat,
                     GetExeDir(),
                     config.youtube_handle,
                     hwnd,
                     [](const std::wstring& s) { LogLine(s); });
-            };
+
+                youtubeChat.start(config.youtube_handle, chat,
+                    [](const std::wstring& s) { LogLine(s); },
+                    &state);
+
+                return ok;
+                };
+
             opt.stop_youtube = [&]() -> bool {
                 PlatformControl::StopYouTube(youtube, state, hwnd, (UINT)(WM_APP + 41), [](const std::wstring& s) { LogLine(s); });
+                youtubeChat.stop();
                 return true;
             };
 
@@ -1753,11 +1763,24 @@ case WM_COMMAND:
         }
 
         
-if (id == IDC_START_YOUTUBE) {
-    StartOrRestartYouTubeSidecar(youtube, state, chat, hwnd, gLog, hYouTube);
-    return 0;
-}
+        if (id == IDC_START_YOUTUBE) {
+            std::string raw = ToUtf8(GetWindowTextWString(hYouTube));
+            std::string cleaned = SanitizeYouTubeHandle(raw);
+            SetWindowTextW(hYouTube, ToW(cleaned).c_str());
 
+            PlatformControl::StartOrRestartYouTubeSidecar(
+                youtube, state, chat,
+                GetExeDir(),
+                cleaned,
+                hwnd,
+                [](const std::wstring& s) { LogLine(s); });
+
+            youtubeChat.start(cleaned, chat,
+                [](const std::wstring& s) { LogLine(s); },
+                &state);
+
+            return 0;
+        }
 
         if (id == IDC_TIKTOK_COOKIES) {
             TikTokCookiesDraft draft;
@@ -1921,7 +1944,7 @@ config.youtube_handle = ToUtf8(GetWindowTextWString(hYouTube));
         twitch.stop();
         twitchEventSub.Stop();
         twitchAuth.Stop();
-
+        youtubeChat.stop();
 
 #if HAVE_WEBVIEW2
         // Tear down WebView2 last to avoid any late WM_SIZE/paint touching released objects.

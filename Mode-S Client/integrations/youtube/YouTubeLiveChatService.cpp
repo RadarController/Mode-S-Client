@@ -328,6 +328,108 @@ static void ExtractChatMessages(const json& j, std::vector<ChatMessage>& outMsgs
     }
 }
 
+
+static void ExtractYouTubeEvents(const json& j, std::vector<EventItem>& outEvents) {
+    if (j.is_object()) {
+        // Super Chat
+        auto it = j.find("liveChatPaidMessageRenderer");
+        if (it != j.end() && it->is_object()) {
+            const json& r = *it;
+            EventItem e{};
+            e.platform = "youtube";
+            e.type = "superchat";
+            e.ts_ms = (std::int64_t)NowMs();
+
+            try {
+                if (r.contains("authorName") && r["authorName"].contains("simpleText"))
+                    e.user = r["authorName"]["simpleText"].get<std::string>();
+            } catch (...) {}
+
+            std::string amount;
+            try {
+                if (r.contains("purchaseAmountText") && r["purchaseAmountText"].contains("simpleText"))
+                    amount = r["purchaseAmountText"]["simpleText"].get<std::string>();
+            } catch (...) {}
+
+            std::string msg;
+            try {
+                if (r.contains("message") && r["message"].contains("runs") && r["message"]["runs"].is_array()) {
+                    for (const auto& run : r["message"]["runs"]) {
+                        if (run.contains("text")) msg += run["text"].get<std::string>();
+                    }
+                }
+            } catch (...) {}
+
+            if (!amount.empty()) {
+                e.message = "sent Super Chat " + amount;
+                if (!msg.empty()) e.message += ": " + msg;
+            } else {
+                e.message = "sent Super Chat";
+                if (!msg.empty()) e.message += ": " + msg;
+            }
+
+            if (!e.user.empty()) outEvents.push_back(std::move(e));
+        }
+
+        // Super Sticker
+        it = j.find("liveChatPaidStickerRenderer");
+        if (it != j.end() && it->is_object()) {
+            const json& r = *it;
+            EventItem e{};
+            e.platform = "youtube";
+            e.type = "supersticker";
+            e.ts_ms = (std::int64_t)NowMs();
+
+            try {
+                if (r.contains("authorName") && r["authorName"].contains("simpleText"))
+                    e.user = r["authorName"]["simpleText"].get<std::string>();
+            } catch (...) {}
+
+            std::string amount;
+            try {
+                if (r.contains("purchaseAmountText") && r["purchaseAmountText"].contains("simpleText"))
+                    amount = r["purchaseAmountText"]["simpleText"].get<std::string>();
+            } catch (...) {}
+
+            e.message = amount.empty() ? "sent Super Sticker" : ("sent Super Sticker " + amount);
+            if (!e.user.empty()) outEvents.push_back(std::move(e));
+        }
+
+        // Membership (new member / milestone)
+        it = j.find("liveChatMembershipItemRenderer");
+        if (it != j.end() && it->is_object()) {
+            const json& r = *it;
+            EventItem e{};
+            e.platform = "youtube";
+            e.type = "membership";
+            e.ts_ms = (std::int64_t)NowMs();
+
+            try {
+                if (r.contains("authorName") && r["authorName"].contains("simpleText"))
+                    e.user = r["authorName"]["simpleText"].get<std::string>();
+            } catch (...) {}
+
+            std::string txt;
+            try {
+                if (r.contains("headerSubtext") && r["headerSubtext"].contains("runs") && r["headerSubtext"]["runs"].is_array()) {
+                    for (const auto& run : r["headerSubtext"]["runs"]) {
+                        if (run.contains("text")) txt += run["text"].get<std::string>();
+                    }
+                }
+            } catch (...) {}
+
+            e.message = txt.empty() ? "became a member" : txt;
+            if (!e.user.empty()) outEvents.push_back(std::move(e));
+        }
+
+        for (auto it2 = j.begin(); it2 != j.end(); ++it2) {
+            ExtractYouTubeEvents(it2.value(), outEvents);
+        }
+    } else if (j.is_array()) {
+        for (const auto& v : j) ExtractYouTubeEvents(v, outEvents);
+    }
+}
+
 static bool ExtractContinuationAndTimeout(const json& j, std::string& continuation, int& timeoutMs) {
     try {
         if (j.contains("continuationContents") &&
@@ -358,14 +460,15 @@ YouTubeLiveChatService::YouTubeLiveChatService() {}
 YouTubeLiveChatService::~YouTubeLiveChatService() { stop(); }
 
 bool YouTubeLiveChatService::start(const std::string& youtube_handle_or_channel,
-    ChatAggregator& chat,
-    LogFn log)
+        ChatAggregator& chat,
+        LogFn log,
+        AppState* state)
 {
     if (running_.load()) return false;
     if (Trim(youtube_handle_or_channel).empty()) return false;
 
     running_.store(true);
-    thread_ = std::thread(&YouTubeLiveChatService::worker, this, youtube_handle_or_channel, &chat, std::move(log));
+    thread_ = std::thread(&YouTubeLiveChatService::worker, this, youtube_handle_or_channel, &chat, state, std::move(log));
     return true;
 }
 
@@ -374,7 +477,7 @@ void YouTubeLiveChatService::stop() {
     if (thread_.joinable()) thread_.join();
 }
 
-void YouTubeLiveChatService::worker(std::string handleIn, ChatAggregator* chat, LogFn log)
+void YouTubeLiveChatService::worker(std::string handleIn, ChatAggregator* chat, AppState* state, LogFn log)
 {
     auto Log = [&](const std::wstring& s) {
         if (log) log(s);
@@ -499,6 +602,13 @@ void YouTubeLiveChatService::worker(std::string handleIn, ChatAggregator* chat, 
         ExtractChatMessages(j, msgs);
         for (auto& m : msgs) {
             if (chat) chat->Add(std::move(m));
+        }
+
+        // Extract YouTube paid/membership events into AppState (separate from chat)
+        if (state) {
+            std::vector<EventItem> evs;
+            ExtractYouTubeEvents(j, evs);
+            for (const auto& e : evs) state->push_youtube_event(e);
         }
 
         int timeoutMs = sleepMs;
