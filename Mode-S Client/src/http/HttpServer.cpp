@@ -424,7 +424,24 @@ svr.Get("/api/chat/diag", [&](const httplib::Request&, httplib::Response& res) {
         res.set_content(j.dump(2), "application/json; charset=utf-8");
     });
 
+    // --- API: YouTube events ---
+    svr.Get("/api/youtube/events", [&](const httplib::Request& req, httplib::Response& res) {
+        int limit = 200;
+        if (req.has_param("limit")) {
+            try { limit = std::max(1, std::min(1000, std::stoi(req.get_param_value("limit")))); }
+            catch (...) {}
+        }
 
+        json out;
+        out["ts_ms"] = (long long)std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()
+        ).count();
+        out["events"] = state_.youtube_events_json((size_t)limit);
+
+        res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+        res.set_header("Pragma", "no-cache");
+        res.set_content(out.dump(2), "application/json; charset=utf-8");
+        });
 
     // --- Overlay: special chat.html injection ---
     svr.Get("/overlay/chat.html", [&](const httplib::Request&, httplib::Response& res) {
