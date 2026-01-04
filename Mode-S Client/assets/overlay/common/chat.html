@@ -163,7 +163,14 @@
             const text = String(pick(m, ["message", "text", "content", "msg", "body"], ""));
             const ts = pick(m, ["ts_ms", "timestamp", "ts", "time", "created_at"], Date.now());
             const color = String(pick(m, ["color", "user_color"], ""));
-            const id = String(pick(m, ["id", "message_id", "msg_id", "uuid"], platform + "|" + user + "|" + ts + "|" + text));
+            let id = String(pick(m, ["id", "message_id", "msg_id", "uuid"], platform + "|" + user + "|" + ts + "|" + text));
+
+            // Stronger dedupe for YouTube: sometimes the same message can arrive twice
+            // (one path with emoji runs, one without). Use a stable signature ID.
+            if (platform === "youtube") {
+                id = platform + "|" + user + "|" + ts + "|" + text;
+            }
+
             const runs = (m && Array.isArray(m.runs)) ? m.runs : null;
             return { platform, user, text, ts, id, color, runs, raw: m, is_event: false };
         }
