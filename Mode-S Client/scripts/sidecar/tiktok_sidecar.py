@@ -354,13 +354,8 @@ async def main_async() -> int:
         emit_event("follow", user, "followed", ts_ms)
 
     @client.on(ShareEvent)
-    async def on_share(event: ShareEvent):
-        try:
-            user = getattr(event.user, "nickname", None) or getattr(event.user, "unique_id", None) or "unknown"
-        except Exception:
-            user = "unknown"
-        ts_ms = int(now_ts() * 1000)
-        emit_event("share", user, "shared", ts_ms)
+    async def on_like(event: ShareEvent):
+        return  # likes disabled for now
 
     @client.on(LikeEvent)
     async def on_like(event: LikeEvent):

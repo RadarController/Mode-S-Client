@@ -1,0 +1,293 @@
+/* Aviation/ATC cinematic alerts overlay
+   Served via: /overlay/alerts.html
+   Transparency-friendly (OBS Browser Source)
+*/
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font-stack, Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif);
+  color: #E6EDF3;
+}
+
+#stage {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* Placement: bottom-center, cinema safe margins */
+#dock {
+  position: absolute;
+  left: 50%;
+  bottom: 64px;
+  transform: translateX(-50%);
+  width: min(680px, calc(100vw - 112px));
+}
+
+/* Card */
+.alert {
+    --accent: #1e6dff;
+    --accent2: #FFB020; /* amber */
+    --edge: rgba(131, 174, 252, 0.55);
+    --ink: rgba(230, 237, 243, 0.95);
+    --bg0: rgba(11, 15, 20, 0.78);
+    --bg1: rgba(11, 15, 20, 0.62);
+    --glass: rgba(255, 255, 255, 0.06);
+    position: relative;
+    display: grid;
+    grid-template-columns: 44px 1fr;
+    gap: 14px;
+    align-items: center;
+    padding: 16px 18px;
+    border-radius: 18px;
+    background: linear-gradient(180deg, var(--bg0), var(--bg1));
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 18px 40px rgba(0,0,0,0.35), 0 0 0 1px rgba(30,109,255,0.10) inset;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    transform: translateY(16px);
+    opacity: 0;
+}
+
+/* Accent rail */
+.alert::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 14px;
+  bottom: 14px;
+  width: 5px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(30,109,255,0.85), rgba(30,109,255,0.25));
+  box-shadow: 0 0 18px rgba(30,109,255,0.28);
+  opacity: 0.95;
+}
+
+/* Subtle HUD corner ticks */
+.alert::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 18px;
+  background:
+    linear-gradient(90deg, rgba(30,109,255,0.12), transparent 32%),
+    linear-gradient(180deg, rgba(255,255,255,0.06), transparent 30%);
+  pointer-events: none;
+  mix-blend-mode: screen;
+  opacity: 0.55;
+}
+
+/* Scanline overlay */
+.scanline {
+  position: absolute;
+  inset: -30px;
+  border-radius: 22px;
+  background:
+    linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(30,109,255,0.00) 20%,
+      rgba(30,109,255,0.18) 50%,
+      rgba(30,109,255,0.00) 80%,
+      transparent 100%
+    );
+  transform: translateX(-120%);
+  pointer-events: none;
+  filter: blur(0.5px);
+  opacity: 0;
+}
+
+/* Icon */
+.icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.08);
+  display: grid;
+  place-items: center;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.20) inset;
+}
+
+.icon svg {
+  width: 22px;
+  height: 22px;
+  opacity: 0.95;
+}
+
+/* Text */
+.text {
+  min-width: 0;
+}
+
+.row1 {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.callsign {
+    font-size: 12px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: rgba(131,174,252,0.95);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 70%;
+}
+
+.timez {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: rgba(230,237,243,0.60);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.row2 {
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.user {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 70%;
+  var(--shadow-style);
+}
+
+.badge {
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    padding: 6px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(131,174,252,0.28);
+    background: rgba(131,174,252,0.08);
+    color: rgba(131,174,252,0.95);
+    white-space: nowrap;
+}
+
+.row3 {
+  margin-top: 8px;
+  font-size: 14px;
+  line-height: 1.25;
+  color: rgba(230,237,243,0.78);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Platform tints */
+.alert.twitch { --accent: #9146FF; --edge: rgba(145,70,255,0.45); }
+.alert.twitch::before { background: linear-gradient(180deg, rgba(145,70,255,0.95), rgba(145,70,255,0.25)); box-shadow: 0 0 18px rgba(145,70,255,0.25); }
+
+.alert.tiktok { --accent: #00F2EA; --edge: rgba(0,242,234,0.42); }
+.alert.tiktok::before { background: linear-gradient(180deg, rgba(0,242,234,0.92), rgba(0,242,234,0.25)); box-shadow: 0 0 18px rgba(0,242,234,0.22); }
+
+/* Animation states */
+.alert.enter {
+  animation: enter 320ms cubic-bezier(.2,.9,.2,1) forwards;
+}
+
+.alert.enter .scanline {
+  animation: scan 520ms cubic-bezier(.2,.9,.2,1) forwards;
+}
+
+.alert.hold {
+  /* Keep the card visible while the glow animation runs.
+     Without this, the base .alert opacity/transform (0 + offset)
+     re-apply and you see a flicker between enter → hold. */
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  animation: holdGlow 1600ms ease-in-out infinite;
+}
+
+.alert.exit {
+  /* Ensure we start the exit from the visible pose even if the
+     previous state was an animation-only class. */
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  animation: exit 420ms cubic-bezier(.2,.9,.2,1) forwards;
+}
+
+/* Optional tiny blip */
+.blip {
+    position: absolute;
+    right: 16px;
+    top: 14px;
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: rgba(131,174,252,0.9);
+    box-shadow: 0 0 14px rgba(131,174,252,0.55);
+    opacity: 0.0;
+}
+
+.alert.enter .blip { animation: blip 900ms ease-out forwards; }
+
+@keyframes enter {
+  from { transform: translateY(18px) scale(0.985); opacity: 0; }
+  to   { transform: translateY(0)    scale(1);     opacity: 1; }
+}
+
+@keyframes scan {
+  0%   { transform: translateX(-120%); opacity: 0; }
+  12%  { opacity: 0.85; }
+  100% { transform: translateX(120%);  opacity: 0; }
+}
+
+@keyframes holdGlow {
+  0%, 100% { box-shadow: 0 18px 40px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.08) inset; }
+  50%      { box-shadow: 0 18px 42px rgba(0,0,0,0.38), 0 0 0 1px rgba(30,109,255,0.14) inset, 0 0 22px rgba(30,109,255,0.10); }
+}
+
+@keyframes exit {
+  from { transform: translateY(0) scale(1); opacity: 1; }
+  to   { transform: translateY(18px) scale(0.985); opacity: 0; }
+}
+
+@keyframes blip {
+  0%   { transform: scale(0.6); opacity: 0; }
+  18%  { transform: scale(1.0); opacity: 1; }
+  70%  { transform: scale(1.1); opacity: 0.65; }
+  100% { transform: scale(1.2); opacity: 0; }
+}
+
+/* Debug banner */
+#debug {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  padding: 8px 10px;
+  font-size: 11px;
+  letter-spacing: 0.10em;
+  color: rgba(230,237,243,0.65);
+  background: rgba(11,15,20,0.45);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 12px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: none;
+}
+
+body.debug #debug { display: block; }

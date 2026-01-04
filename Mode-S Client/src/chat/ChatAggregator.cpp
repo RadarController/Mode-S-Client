@@ -44,11 +44,11 @@ nlohmann::json ChatAggregator::RecentJson(size_t limit) const
 {
     std::lock_guard<std::mutex> lock(mu_);
 
-    const size_t n = std::min(limit, ring_.size());
-    const size_t start = ring_.size() - n;
+    const size_t n = ring_.size();
+    const size_t start = (n > limit) ? (n - limit) : 0;
 
     nlohmann::json out = nlohmann::json::array();
-    for (size_t i = start; i < ring_.size(); ++i) {
+    for (size_t i = start; i < n; ++i) {
         const auto& m = ring_[i];
         // Normalize platform to lowercase for consistent overlay rendering and dedupe.
         std::string platform = m.platform;

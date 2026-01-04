@@ -34,10 +34,22 @@
 #include "twitch/TwitchAuth.h"
 #include "tiktok/TikTokSidecar.h"
 #include "tiktok/TikTokFollowersService.h"
+#include "youtube/YouTubeLiveChatService.h"
 #include "euroscope/EuroScopeIngestService.h"
 #include "obs/ObsWsClient.h"
 #include "floating/FloatingChat.h"
 #include "platform/PlatformControl.h"
+
+// Web UI log capture: LogLine() will also push into AppState so /api/log can display it.
+static AppState* gStateForWebLog = nullptr;
+
+static std::string ToUtf8(const std::wstring& w) {
+    if (w.empty()) return "";
+    int len = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
+    std::string s(len, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), s.data(), len, nullptr, nullptr);
+    return s;
+}
 
 // --------------------------- WebView2 (Modern UI host) ----------------------
 #if !defined(HAVE_WEBVIEW2)
@@ -107,7 +119,7 @@ static constexpr UINT WM_APP_SPLASH_READY = WM_APP + 201;
 static constexpr UINT_PTR SPLASH_CLOSE_TIMER_ID = 1001;
 static constexpr UINT SPLASH_CLOSE_DELAY_MS = 1 * 1000; // test: keep splash for 1s after ready
 static const wchar_t* kAppDisplayName = L"RadarController Mode-S Client";
-static const wchar_t* kAppVersion = L"v0.3.2"; // TODO: wire to resource/file version
+static const wchar_t* kAppVersion = L"v0.3.4"; // TODO: wire to resource/file version
 
 static HWND hGroupTikTok = nullptr, hGroupTwitch = nullptr, hGroupYouTube = nullptr;
 static HWND hLblTikTok = nullptr, hLblTwitch = nullptr, hLblYouTube = nullptr;
@@ -216,6 +228,10 @@ static void AppendLogOnUiThread(const std::wstring& s)
 
 static void LogLine(const std::wstring& s)
 {
+    // Also feed the Web UI log buffer (served via /api/log)
+    if (gStateForWebLog) {
+        gStateForWebLog->push_log_utf8(ToUtf8(s));
+    }
     // If called from a worker thread, marshal to the UI thread to avoid deadlocks/freezes.
     if (gUiThreadId != 0 && GetCurrentThreadId() != gUiThreadId) {
         if (gMainWnd) {
@@ -237,6 +253,7 @@ static std::wstring ToW(const std::string& s) {
     MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), w.data(), len);
     return w;
 }
+
 
 
 struct HttpResult {
@@ -327,13 +344,6 @@ static std::string UrlEncode(const std::string& s)
         }
     }
     return out;
-}
-static std::string ToUtf8(const std::wstring& w) {
-    if (w.empty()) return "";
-    int len = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-    std::string s(len, '\0');
-    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), s.data(), len, nullptr, nullptr);
-    return s;
 }
 
 static std::wstring GetWindowTextWString(HWND h) {
@@ -1261,6 +1271,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     static TwitchIrcWsClient twitch;
     static TwitchEventSubWsClient twitchEventSub;
     static TwitchAuth twitchAuth;
+    static YouTubeLiveChatService youtubeChat;
     static std::unique_ptr<HttpServer> gHttp;
     static std::thread metricsThread;
     static std::thread twitchHelixThread;
@@ -1330,9 +1341,12 @@ switch (msg) {
             wcscpy_s(lf.lfFaceName, L"Segoe UI");
             gFontUi = CreateFontIndirectW(&lf);
         }
-
+        }
         // Load config first (so edits start populated)
         (void)config.Load();
+
+        // Allow LogLine() to feed the Web UI (/api/log)
+        gStateForWebLog = &state;
 
         // Log what AppConfig actually loaded (helps diagnose mismatched JSON keys vs. AppConfig mapping).
         {
@@ -1344,6 +1358,8 @@ switch (msg) {
             snap += L"' twitch_client_secret_len=";
             snap += std::to_wstring(config.twitch_client_secret.size());
             LogLine(snap.c_str());
+        }
+
         
         // If enabled, host the new modern UI (HTML/CSS) directly inside the main window via WebView2.
         // This keeps all existing backend threads + HTTP API intact, but replaces the legacy Win32 control layout.
@@ -1400,9 +1416,7 @@ switch (msg) {
             // Kick off backend init (HTTP server, pollers, etc.)
             PostMessageW(hwnd, WM_APP + 1, 0, 0);
             return 0;
-        }
 #endif
-}
 
         // Group boxes
         hGroupTikTok = CreateWindowW(L"BUTTON", L"TikTok", WS_CHILD | WS_VISIBLE | BS_GROUPBOX, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
@@ -1564,13 +1578,25 @@ switch (msg) {
                     twitchEventSub.Start(
                         config.twitch_client_id,
                         ReadTwitchUserAccessToken(),
-                        config.twitch_login,   // broadcaster identifier (login is OK for now)
-                        [&](const ChatMessage& msg)
+                        config.twitch_login,
+
+                        // Do NOT use chat callback for EventSub
+                        nullptr,
+
+                        // EventSub events
+                        [&](const nlohmann::json& ev)
                         {
-                            chat.Add(msg);
-                        });
+                            state.add_twitch_eventsub_event(ev);
+                        },
+
+                        // Optional: status updates
+                        [&](const nlohmann::json& st)
+                        {
+                            state.set_twitch_eventsub_status(st);
+                        }
+                    );
+                    return ok;
                 }
-                return ok;
             };
             opt.stop_twitch = [&]() -> bool {
                 PlatformControl::StopTwitch(twitch, state, hwnd, (UINT)(WM_APP + 41), [](const std::wstring& s) { LogLine(s); });
@@ -1578,15 +1604,23 @@ switch (msg) {
             };
 
             opt.start_youtube = [&]() -> bool {
-                return PlatformControl::StartOrRestartYouTubeSidecar(
+                const bool ok = PlatformControl::StartOrRestartYouTubeSidecar(
                     youtube, state, chat,
                     GetExeDir(),
                     config.youtube_handle,
                     hwnd,
                     [](const std::wstring& s) { LogLine(s); });
-            };
+
+                youtubeChat.start(config.youtube_handle, chat,
+                    [](const std::wstring& s) { LogLine(s); },
+                    &state);
+
+                return ok;
+                };
+
             opt.stop_youtube = [&]() -> bool {
                 PlatformControl::StopYouTube(youtube, state, hwnd, (UINT)(WM_APP + 41), [](const std::wstring& s) { LogLine(s); });
+                youtubeChat.stop();
                 return true;
             };
 
@@ -1644,8 +1678,6 @@ LogLine(L"TIKTOK: starting followers poller thread");
                 LogLine(L"TWITCH: OAuth token refresh worker started");
             }
         }
-
-
 
         // Signal that the app has finished initializing and the main window can be shown.
         PostMessageW(hwnd, WM_APP_SPLASH_READY, 0, 0);
@@ -1753,11 +1785,24 @@ case WM_COMMAND:
         }
 
         
-if (id == IDC_START_YOUTUBE) {
-    StartOrRestartYouTubeSidecar(youtube, state, chat, hwnd, gLog, hYouTube);
-    return 0;
-}
+        if (id == IDC_START_YOUTUBE) {
+            std::string raw = ToUtf8(GetWindowTextWString(hYouTube));
+            std::string cleaned = SanitizeYouTubeHandle(raw);
+            SetWindowTextW(hYouTube, ToW(cleaned).c_str());
 
+            PlatformControl::StartOrRestartYouTubeSidecar(
+                youtube, state, chat,
+                GetExeDir(),
+                cleaned,
+                hwnd,
+                [](const std::wstring& s) { LogLine(s); });
+
+            youtubeChat.start(cleaned, chat,
+                [](const std::wstring& s) { LogLine(s); },
+                &state);
+
+            return 0;
+        }
 
         if (id == IDC_TIKTOK_COOKIES) {
             TikTokCookiesDraft draft;
@@ -1921,7 +1966,7 @@ config.youtube_handle = ToUtf8(GetWindowTextWString(hYouTube));
         twitch.stop();
         twitchEventSub.Stop();
         twitchAuth.Stop();
-
+        youtubeChat.stop();
 
 #if HAVE_WEBVIEW2
         // Tear down WebView2 last to avoid any late WM_SIZE/paint touching released objects.

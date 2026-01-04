@@ -15,13 +15,16 @@ void AppState::set_tiktok_viewers(int v) {
     metrics_.ts_ms = now_ms();
     metrics_.tiktok_viewers = v;
 }
-
 void AppState::set_tiktok_followers(int f) {
     std::lock_guard<std::mutex> lk(mtx_);
     metrics_.ts_ms = now_ms();
     metrics_.tiktok_followers = f;
 }
-
+void AppState::set_tiktok_live(bool live) {
+    std::lock_guard<std::mutex> lk(mtx_);
+    metrics_.ts_ms = now_ms();
+    metrics_.tiktok_live = live;
+}
 
 void AppState::set_twitch_viewers(int v) {
     std::lock_guard<std::mutex> lk(mtx_);
@@ -54,11 +57,7 @@ void AppState::set_youtube_live(bool live) {
     metrics_.ts_ms = now_ms();
     metrics_.youtube_live = live;
 }
-void AppState::set_tiktok_live(bool live) {
-    std::lock_guard<std::mutex> lk(mtx_);
-    metrics_.ts_ms = now_ms();
-    metrics_.tiktok_live = live;
-}
+
 Metrics AppState::get_metrics() const {
     std::lock_guard<std::mutex> lk(mtx_);
     return metrics_;
@@ -163,5 +162,73 @@ nlohmann::json AppState::tiktok_events_json(size_t limit) const {
     }
 
     out["events"] = std::move(arr);
+    return out;
+}
+
+void AppState::push_youtube_event(const EventItem& e) {
+    std::lock_guard<std::mutex> lk(mtx_);
+    youtube_events_.push_back(e);
+    while (youtube_events_.size() > 200) youtube_events_.pop_front();
+}
+
+nlohmann::json AppState::youtube_events_json(size_t limit) const {
+    std::lock_guard<std::mutex> lk(mtx_);
+
+    nlohmann::json out;
+    out["count"] = (int)youtube_events_.size();
+    nlohmann::json arr = nlohmann::json::array();
+
+    size_t n = youtube_events_.size();
+    size_t start = 0;
+    if (limit > 0 && n > limit) start = n - limit;
+
+    for (size_t i = start; i < n; ++i) {
+        const auto& e = youtube_events_[i];
+        nlohmann::json j;
+        j["platform"] = e.platform;
+        j["type"] = e.type;
+        j["user"] = e.user;
+        j["message"] = e.message;
+        j["ts_ms"] = e.ts_ms;
+        arr.push_back(std::move(j));
+    }
+
+    out["events"] = std::move(arr);
+    return out;
+}
+void AppState::push_log_utf8(const std::string& msg) {
+    if (msg.empty()) return;
+
+    std::lock_guard<std::mutex> lk(mtx_);
+    LogEntry e;
+    e.id = ++log_next_id_;
+    e.ts_ms = now_ms();
+    e.msg = msg;
+
+    log_.push_back(std::move(e));
+    while (log_.size() > 2000) log_.pop_front(); // keep it bounded
+}
+
+nlohmann::json AppState::log_json(std::uint64_t since, int limit) const {
+    std::lock_guard<std::mutex> lk(mtx_);
+    limit = std::max(1, std::min(limit, 1000));
+
+    nlohmann::json out;
+    out["ok"] = true;
+    nlohmann::json arr = nlohmann::json::array();
+
+    // Return entries with id > since, oldest -> newest
+    int count = 0;
+    for (const auto& e : log_) {
+        if (e.id <= since) continue;
+        arr.push_back({
+            {"id", e.id},
+            {"ts_ms", e.ts_ms},
+            {"msg", e.msg}
+            });
+        if (++count >= limit) break;
+    }
+
+    out["entries"] = std::move(arr);
     return out;
 }
