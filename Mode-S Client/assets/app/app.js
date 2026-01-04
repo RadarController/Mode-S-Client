@@ -75,7 +75,7 @@ function logLine(tag, msg){
   const ts = new Date().toLocaleTimeString();
   line.innerHTML = `<span class="log__ts">[${ts}]</span><span class="log__tag">${tag}</span><span class="log__msg"></span>`;
   line.querySelector(".log__msg").textContent = msg;
-  log.appendChild(line);
+  log.prepend(line);
 }
 
 function setBadge(platform, live, label){
