@@ -580,14 +580,18 @@ def main():
                             # drop ~half
                             seen_ids = set(list(seen_ids)[-2500:])
 
-                        emit({
-                            "type": "youtube.chat",
-                            "ts": time.time(),
-                            "ts_ms": now_ms,
-                            "id": mid,
-                            "user": m.get("user", ""),
-                            "message": m.get("message", ""),
-                        })
+                        # NOTE: Chat is handled by the native integration now (C++), so we do NOT emit youtube.chat here.
+                        # Emitting chat from both sources causes duplicates in /api/chat (one with runs, one without).
+                        pass
+
+#                        emit({
+#                            "type": "youtube.chat",
+#                            "ts": time.time(),
+#                            "ts_ms": now_ms,
+#                            "id": mid,
+#                            "user": m.get("user", ""),
+#                            "message": m.get("message", ""),
+#                        })
 
                 # Sleep based on server hint (or backoff on error)
                 time.sleep(max(0.25, min(10.0, sleep_ms / 1000.0)))
