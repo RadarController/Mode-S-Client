@@ -4,7 +4,7 @@
   Served via: http://localhost:17845/overlay/alerts.html
   Polls:
     - /api/twitch/eventsub/events
-    - /api/tiktok/events
+    - /api/tiktok/events  (also tries /api/TikTok/events)
 
   Notes:
   - Client-side de-dupe (uses event.id if present, otherwise hashes payload)
@@ -18,12 +18,14 @@
     queueMax: 25,
     dedupeMax: 1500,
     // enter (320) + hold (3600) + exit (420) + gap (260)
-    // Keep the alert visible (after the enter animation) for 10 seconds.
-    holdMs: 10000,
+    holdMs: 3600,
     gapMs: 260,
     endpoints: [
       { url: '/api/twitch/eventsub/events' },
       { url: '/api/tiktok/events' },
+      { url: '/api/TikTok/events', optional: true },
+      // Optional until YouTube events are fully stable.
+      { url: '/api/youtube/events', optional: true },
     ],
   };
 
@@ -44,19 +46,12 @@
 
   const queue = [];
   const seen = new Map();
-  // Per-endpoint "prime" flags: on the first successful fetch for an endpoint,
-  // we mark all returned events as seen but DO NOT play them. This prevents the
-  // overlay from replaying historical events when it first loads (or when an
-  // endpoint comes online later).
-  const primedByUrl = new Map();
   let playing = false;
   let lastPollOk = 0;
   let lastPollErr = '';
 
   const isDebug = new URLSearchParams(location.search).has('debug');
-  const isDemo = new URLSearchParams(location.search).has('demo');
   if (isDebug) document.body.classList.add('debug');
-  if (isDemo) document.body.classList.add('demo');
 
   function nowMs() { return Date.now(); }
 
@@ -135,7 +130,16 @@
         <path fill="currentColor" d="M14 3c1 2.6 2.9 4.5 5.6 5.1v3.1c-2.1-.1-4-1-5.6-2.3v6.5c0 3.2-2.6 5.8-5.8 5.8S2.4 18.6 2.4 15.4s2.6-5.8 5.8-5.8c.4 0 .8 0 1.2.1v3.3c-.4-.1-.8-.2-1.2-.2-1.4 0-2.6 1.2-2.6 2.6s1.2 2.6 2.6 2.6 2.6-1.2 2.6-2.6V3H14z"/>
       </svg>`;
 
-    elIcon.innerHTML = (platform === 'tiktok') ? svgTikTok : svgTwitch;
+    // Simple YouTube play badge (kept monochrome to match the overlay style).
+    const svgYouTube = `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path fill="currentColor" d="M21.6 7.2a3.1 3.1 0 0 0-2.2-2.2C17.5 4.5 12 4.5 12 4.5s-5.5 0-7.4.5A3.1 3.1 0 0 0 2.4 7.2 32.5 32.5 0 0 0 2 12a32.5 32.5 0 0 0 .4 4.8 3.1 3.1 0 0 0 2.2 2.2c1.9.5 7.4.5 7.4.5s5.5 0 7.4-.5a3.1 3.1 0 0 0 2.2-2.2A32.5 32.5 0 0 0 22 12a32.5 32.5 0 0 0-.4-4.8z"/>
+        <path fill="#0b0f14" d="M10 15.5V8.5L16 12l-6 3.5z"/>
+      </svg>`;
+
+    if (platform === 'youtube') elIcon.innerHTML = svgYouTube;
+    else if (platform === 'tiktok') elIcon.innerHTML = svgTikTok;
+    else elIcon.innerHTML = svgTwitch;
   }
 
   function mapEvent(e) {
@@ -151,7 +155,7 @@
     } else if (platform === 'twitch' && type === 'channel.subscribe') {
       kind = 'AIRSPACE CLEARANCE';
       message = 'Control zone access approved.';
-    } else if (platform === 'twitch' && (type === 'channel.subscription.gift' || type === 'channel.subscription.gifted')) {
+    } else if (platform === 'twitch' && (type === 'channel.subscription.gift' || type === 'channel.subscription.gifted' || type.includes('gift'))) {
       kind = 'PAYLOAD TRANSFER';
       message = 'Gifted clearance issued.';
     } else if (platform === 'tiktok' && type === 'follow') {
@@ -160,15 +164,21 @@
     } else if (platform === 'tiktok' && type === 'gift') {
       kind = 'PAYLOAD DELIVERY';
       message = 'Delivery confirmed.';
+    } else if (platform === 'youtube' && type === 'membership') {
+      kind = 'AIRSPACE CLEARANCE';
+      message = 'Control zone access approved.';
     } else {
       kind = (e.type || 'EVENT').toString();
       message = (e.message || '').toString();
     }
 
-    // Keep "followed" out of the cinematic line; it reads better as the ATC phrase.
+    // Keep generic “followed/subscribed” out of the cinematic line; it reads better as the ATC phrase.
     const rawMsg = String(e.message || '').trim();
-    if (rawMsg && rawMsg.toLowerCase() !== 'followed' && message !== rawMsg) {
-      message = rawMsg;
+    if (rawMsg) {
+      const low = rawMsg.toLowerCase();
+      if (low !== 'followed' && low !== 'subscribed' && message !== rawMsg) {
+        message = rawMsg;
+      }
     }
 
     return {
@@ -208,23 +218,9 @@
     for (const ep of CONFIG.endpoints) {
       try {
         const data = await fetchJson(ep.url);
-        const events = Array.isArray(data?.events) ? data.events : [];
-        const primed = primedByUrl.get(ep.url) === true;
-
-        // First success for this endpoint: treat current payload as backlog.
-        // Mark as seen, but do not enqueue.
-        if (!primed) {
-          for (const e of events) {
-            const key = eventKey(e);
-            if (!key) continue;
-            if (!seen.has(key)) seen.set(key, nowMs());
-          }
-          primedByUrl.set(ep.url, true);
-          pruneSeen();
-          anyOk = true;
-          continue;
-        }
-
+        const events = Array.isArray(data?.events)
+          ? data.events
+          : (Array.isArray(data?.events?.events) ? data.events.events : []);
         for (const e of events) {
           const key = eventKey(e);
           if (!key) continue;
@@ -304,129 +300,6 @@
   }
 
   function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
-
-  // =========================
-  // Demo mode (client-side)
-  // =========================
-  // Enable with: ?demo=1
-  // Adds a small control panel and keyboard shortcuts to inject fake events
-  // into the same queue pipeline used by real API events.
-  function injectDemo(raw) {
-    const e = {
-      ...raw,
-      id: raw.id || `demo:${nowMs()}:${Math.random().toString(16).slice(2)}`,
-      ts_ms: raw.ts_ms || nowMs(),
-    };
-    // Mark seen so we don't double-play if the same demo object is reinjected.
-    seen.set(eventKey(e), nowMs());
-    enqueue(e);
-    pruneSeen();
-    if (!playing) playNext();
-    updateDebug();
-  }
-
-  function createDemoPanel() {
-    const panel = document.createElement('div');
-    panel.id = 'demoPanel';
-    panel.style.cssText = [
-      'position:fixed',
-      'left:16px',
-      'bottom:16px',
-      'z-index:9999',
-      'display:flex',
-      'gap:10px',
-      'align-items:flex-end',
-      'pointer-events:auto',
-      'padding:10px',
-      'border-radius:14px',
-      'background:rgba(18,22,28,.72)',
-      'border:1px solid rgba(255,255,255,.12)',
-      'backdrop-filter:blur(8px)',
-      '-webkit-backdrop-filter:blur(8px)',
-      'color:rgba(233,238,247,.92)',
-      'font:12px/1.2 Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif',
-      'box-shadow:0 14px 40px rgba(0,0,0,.35)',
-    ].join(';');
-
-    panel.innerHTML = `
-      <div style="display:flex;flex-direction:column;gap:8px;min-width:190px;">
-        <div style="font-weight:650;letter-spacing:.08em;text-transform:uppercase;font-size:11px;opacity:.9;">Demo Events</div>
-        <label style="display:flex;flex-direction:column;gap:4px;">
-          <span style="color:rgba(233,238,247,.70);font-weight:650;letter-spacing:.08em;text-transform:uppercase;font-size:10px;">User</span>
-          <input id="demoUser" type="text" value="TestPilot" style="padding:7px 10px;border-radius:12px;background:rgba(10,14,18,.35);border:1px solid rgba(255,255,255,.12);color:rgba(233,238,247,.92);outline:none;" />
-        </label>
-        <label style="display:flex;flex-direction:column;gap:4px;">
-          <span style="color:rgba(233,238,247,.70);font-weight:650;letter-spacing:.08em;text-transform:uppercase;font-size:10px;">Gift (TikTok)</span>
-          <div style="display:flex;gap:8px;">
-            <input id="demoGift" type="text" value="Rose" style="flex:1;padding:7px 10px;border-radius:12px;background:rgba(10,14,18,.35);border:1px solid rgba(255,255,255,.12);color:rgba(233,238,247,.92);outline:none;" />
-            <input id="demoQty" type="number" min="1" value="1" style="width:70px;padding:7px 10px;border-radius:12px;background:rgba(10,14,18,.35);border:1px solid rgba(255,255,255,.12);color:rgba(233,238,247,.92);outline:none;" />
-          </div>
-        </label>
-        <div style="color:rgba(233,238,247,.70);font-size:10px;letter-spacing:.06em;">
-          Shortcuts: <b>F</b>=follow, <b>S</b>=sub, <b>G</b>=gift sub, <b>T</b>=tiktok follow, <b>Y</b>=tiktok gift
-        </div>
-      </div>
-
-      <div style="display:flex;flex-direction:column;gap:8px;">
-        <button data-demo="twFollow" style="cursor:pointer;padding:8px 12px;border-radius:12px;background:#1e6dff;border:1px solid rgba(255,255,255,.14);color:rgba(233,238,247,.92);font-weight:700;">Twitch Follow</button>
-        <button data-demo="twSub" style="cursor:pointer;padding:8px 12px;border-radius:12px;background:rgba(30,109,255,.18);border:1px solid rgba(255,255,255,.12);color:rgba(233,238,247,.92);font-weight:700;">Twitch Sub</button>
-        <button data-demo="twGift" style="cursor:pointer;padding:8px 12px;border-radius:12px;background:rgba(30,109,255,.18);border:1px solid rgba(255,255,255,.12);color:rgba(233,238,247,.92);font-weight:700;">Twitch Gift Sub</button>
-      </div>
-
-      <div style="display:flex;flex-direction:column;gap:8px;">
-        <button data-demo="ttFollow" style="cursor:pointer;padding:8px 12px;border-radius:12px;background:rgba(30,109,255,.18);border:1px solid rgba(255,255,255,.12);color:rgba(233,238,247,.92);font-weight:700;">TikTok Follow</button>
-        <button data-demo="ttGift" style="cursor:pointer;padding:8px 12px;border-radius:12px;background:rgba(30,109,255,.18);border:1px solid rgba(255,255,255,.12);color:rgba(233,238,247,.92);font-weight:700;">TikTok Gift</button>
-      </div>
-    `;
-
-    document.body.appendChild(panel);
-
-    const getUser = () => {
-      const v = (document.getElementById('demoUser')?.value || '').trim();
-      return v || 'TestPilot';
-    };
-    const getGift = () => {
-      const name = (document.getElementById('demoGift')?.value || '').trim() || 'Rose';
-      const qty = Math.max(1, parseInt(document.getElementById('demoQty')?.value || '1', 10) || 1);
-      return { name, qty };
-    };
-
-    function fire(kind) {
-      const user = getUser();
-      if (kind === 'twFollow') {
-        injectDemo({ platform: 'twitch', type: 'channel.follow', user, message: 'followed' });
-      } else if (kind === 'twSub') {
-        injectDemo({ platform: 'twitch', type: 'channel.subscribe', user, message: 'subscribed' });
-      } else if (kind === 'twGift') {
-        injectDemo({ platform: 'twitch', type: 'channel.subscription.gift', user, message: 'gifted a sub' });
-      } else if (kind === 'ttFollow') {
-        injectDemo({ platform: 'tiktok', type: 'follow', user, message: 'followed' });
-      } else if (kind === 'ttGift') {
-        const g = getGift();
-        injectDemo({ platform: 'tiktok', type: 'gift', user, message: `${g.name} x${g.qty}` });
-      }
-    }
-
-    panel.addEventListener('click', (ev) => {
-      const btn = ev.target?.closest?.('button[data-demo]');
-      if (!btn) return;
-      fire(btn.getAttribute('data-demo'));
-    });
-
-    window.addEventListener('keydown', (ev) => {
-      // Avoid stealing keys when typing into inputs.
-      const t = ev.target;
-      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-      const k = String(ev.key || '').toLowerCase();
-      if (k === 'f') fire('twFollow');
-      if (k === 's') fire('twSub');
-      if (k === 'g') fire('twGift');
-      if (k === 't') fire('ttFollow');
-      if (k === 'y') fire('ttGift');
-    });
-  }
-
-  if (isDemo) createDemoPanel();
 
   // Kick off
   setInterval(pollOnce, CONFIG.pollMs);

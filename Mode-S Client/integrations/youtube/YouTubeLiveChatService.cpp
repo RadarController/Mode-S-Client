@@ -367,6 +367,29 @@ static void ExtractChatMessages(const json& j, std::vector<ChatMessage>& outMsgs
 }
 
 
+
+static std::string ExtractRunsOrSimpleText(const json& obj, const std::string& key) {
+    try {
+        if (!obj.is_object() || !obj.contains(key)) return "";
+        const auto& v = obj.at(key);
+        if (v.is_object()) {
+            if (v.contains("simpleText") && v["simpleText"].is_string()) {
+                return v["simpleText"].get<std::string>();
+            }
+            if (v.contains("runs") && v["runs"].is_array()) {
+                std::string out;
+                for (const auto& run : v["runs"]) {
+                    if (run.is_object() && run.contains("text") && run["text"].is_string()) {
+                        out += run["text"].get<std::string>();
+                    }
+                }
+                return out;
+            }
+        }
+    } catch (...) {}
+    return "";
+}
+
 static void ExtractYouTubeEvents(const json& j, std::vector<EventItem>& outEvents) {
     if (j.is_object()) {
         // Super Chat
@@ -459,6 +482,70 @@ static void ExtractYouTubeEvents(const json& j, std::vector<EventItem>& outEvent
             e.message = txt.empty() ? "became a member" : txt;
             if (!e.user.empty()) outEvents.push_back(std::move(e));
         }
+
+
+// Gifted memberships (purchase announcement)
+it = j.find("liveChatSponsorshipsGiftPurchaseAnnouncementRenderer");
+if (it != j.end() && it->is_object()) {
+    const json& r = *it;
+    EventItem e{};
+    e.platform = "youtube";
+    e.type = "membership.gift";
+    e.ts_ms = (std::int64_t)NowMs();
+
+    try {
+        if (r.contains("authorName") && r["authorName"].contains("simpleText"))
+            e.user = r["authorName"]["simpleText"].get<std::string>();
+    } catch (...) {}
+
+    std::string txt;
+    // YouTube varies the field names here; try several.
+    txt = ExtractRunsOrSimpleText(r, "headerPrimaryText");
+    if (txt.empty()) txt = ExtractRunsOrSimpleText(r, "primaryText");
+    if (txt.empty()) txt = ExtractRunsOrSimpleText(r, "headerSubtext");
+    if (txt.empty()) txt = ExtractRunsOrSimpleText(r, "message");
+    if (txt.empty()) txt = ExtractRunsOrSimpleText(r, "text");
+
+    if (txt.empty()) {
+        // Some payloads carry a numeric gift count.
+        try {
+            if (r.contains("giftCount")) {
+                int n = r["giftCount"].is_number_integer() ? r["giftCount"].get<int>() : 0;
+                if (n > 0) txt = "gifted " + std::to_string(n) + " memberships";
+            }
+        } catch (...) {}
+    }
+
+    e.message = txt.empty() ? "gifted memberships" : txt;
+    if (!e.user.empty()) outEvents.push_back(std::move(e));
+}
+
+// Gifted memberships (redemption announcement)
+it = j.find("liveChatSponsorshipsGiftRedemptionAnnouncementRenderer");
+if (it != j.end() && it->is_object()) {
+    const json& r = *it;
+    EventItem e{};
+    e.platform = "youtube";
+    e.type = "membership.gift.redeem";
+    e.ts_ms = (std::int64_t)NowMs();
+
+    // The "user" for redemption is often the recipient.
+    try {
+        if (r.contains("authorName") && r["authorName"].contains("simpleText"))
+            e.user = r["authorName"]["simpleText"].get<std::string>();
+    } catch (...) {}
+
+    std::string txt;
+    txt = ExtractRunsOrSimpleText(r, "headerPrimaryText");
+    if (txt.empty()) txt = ExtractRunsOrSimpleText(r, "primaryText");
+    if (txt.empty()) txt = ExtractRunsOrSimpleText(r, "headerSubtext");
+    if (txt.empty()) txt = ExtractRunsOrSimpleText(r, "message");
+    if (txt.empty()) txt = ExtractRunsOrSimpleText(r, "text");
+
+    e.message = txt.empty() ? "redeemed a gifted membership" : txt;
+    if (!e.user.empty()) outEvents.push_back(std::move(e));
+}
+
 
         for (auto it2 = j.begin(); it2 != j.end(); ++it2) {
             ExtractYouTubeEvents(it2.value(), outEvents);
@@ -651,57 +738,56 @@ void YouTubeLiveChatService::worker(std::string handleIn, ChatAggregator* chat, 
             Log(L"YOUTUBE: poll returned non-JSON; backing off");
             std::this_thread::sleep_for(std::chrono::milliseconds(2500));
             continue;
-        }
-
-        std::vector<ChatMessage> msgs;
-        ExtractChatMessages(j, msgs);
-        for (auto& m : msgs) {
-            if (chat) chat->Add(std::move(m));
-        }
-
-        // Extract YouTube paid/membership events into AppState (separate from chat)
-        if (state) {
-            std::vector<EventItem> evs;
-            ExtractYouTubeEvents(j, evs);
-
-            for (const auto& e : evs) {
-                // Build a stable-ish key for this YouTube event
-                std::string key =
-                    e.type + "|" + e.user + "|" + std::to_string(e.ts_ms) + "|" + e.message;
-
-                {
-                    std::lock_guard<std::mutex> lk(yt_seen_mu);
-                    if (!yt_seen.insert(key).second) {
-                        continue; // already seen this event
-                    }
-                }
-
-                state->push_youtube_event(e);
-
-                if (chat) {
-                    ChatMessage m;
-                    m.platform = "youtube";
-                    m.user = e.user;
-                    m.message = "[" + e.type + "] " + e.message;
-                    m.ts_ms = e.ts_ms;
-
-                    chat->Add(std::move(m));
-                }
-            }
-
-            int timeoutMs = sleepMs;
-            std::string nextCont;
-            if (ExtractContinuationAndTimeout(j, nextCont, timeoutMs) && !nextCont.empty()) {
-                continuation = std::move(nextCont);
-            }
-
-            if (timeoutMs < 250) timeoutMs = 250;
-            if (timeoutMs > 10000) timeoutMs = 10000;
-
-            std::this_thread::sleep_for(std::chrono::milliseconds(timeoutMs));
-        }
-
-        running_.store(false);
-        Log(L"YOUTUBE: stopped");
+        }    std::vector<ChatMessage> msgs;
+    ExtractChatMessages(j, msgs);
+    for (auto& m : msgs) {
+        if (chat) chat->Add(std::move(m));
     }
+
+    // Extract YouTube paid/membership events into AppState (separate from chat)
+    if (state) {
+        std::vector<EventItem> evs;
+        ExtractYouTubeEvents(j, evs);
+
+        for (const auto& e : evs) {
+            // NOTE: YouTube event payloads often lack a stable ID in our EventItem.
+            // Dedupe best-effort on (type|user|message) and a coarse time bucket.
+            std::string key =
+                e.type + "|" + e.user + "|" + e.message + "|" + std::to_string(e.ts_ms / 2000);
+
+            {
+                std::lock_guard<std::mutex> lk(yt_seen_mu);
+                if (!yt_seen.insert(key).second) {
+                    continue; // already seen this event
+                }
+            }
+
+            state->push_youtube_event(e);
+
+            // Also mirror as chat so overlays can show it in /api/chat
+            if (chat) {
+                ChatMessage m;
+                m.platform = "youtube";
+                m.user = e.user;
+                m.message = "[" + e.type + "] " + e.message;
+                m.ts_ms = e.ts_ms;
+                chat->Add(std::move(m));
+            }
+        }
+    }
+
+    // Continuation + pacing MUST happen regardless of whether AppState is provided.
+    int timeoutMs = sleepMs;
+    std::string nextCont;
+    if (ExtractContinuationAndTimeout(j, nextCont, timeoutMs) && !nextCont.empty()) {
+        continuation = std::move(nextCont);
+    }
+
+    if (timeoutMs < 250) timeoutMs = 250;
+    if (timeoutMs > 10000) timeoutMs = 10000;
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(timeoutMs));
+}
+
+Log(L"YOUTUBE: stopped");
 }
