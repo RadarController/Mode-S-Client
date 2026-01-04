@@ -15,11 +15,15 @@ void AppState::set_tiktok_viewers(int v) {
     metrics_.ts_ms = now_ms();
     metrics_.tiktok_viewers = v;
 }
-
 void AppState::set_tiktok_followers(int f) {
     std::lock_guard<std::mutex> lk(mtx_);
     metrics_.ts_ms = now_ms();
     metrics_.tiktok_followers = f;
+}
+void AppState::set_tiktok_live(bool live) {
+    std::lock_guard<std::mutex> lk(mtx_);
+    metrics_.ts_ms = now_ms();
+    metrics_.tiktok_live = live;
 }
 
 void AppState::set_twitch_viewers(int v) {
@@ -53,11 +57,7 @@ void AppState::set_youtube_live(bool live) {
     metrics_.ts_ms = now_ms();
     metrics_.youtube_live = live;
 }
-void AppState::set_tiktok_live(bool live) {
-    std::lock_guard<std::mutex> lk(mtx_);
-    metrics_.ts_ms = now_ms();
-    metrics_.tiktok_live = live;
-}
+
 Metrics AppState::get_metrics() const {
     std::lock_guard<std::mutex> lk(mtx_);
     return metrics_;

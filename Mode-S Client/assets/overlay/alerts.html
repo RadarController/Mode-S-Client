@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>ATC Alerts</title>
+
+  <!-- Replaced by your server for .html overlays; safe defaults if not replaced -->
+  <style>
+    :root {
+      --font-stack: {{FONT_STACK}};
+      --shadow-style: {{TEXT_SHADOW_STYLE}};
+    }
+  </style>
+
+  <link rel="stylesheet" href="/overlay/alerts.css" />
+</head>
+<body>
+  <div id="stage" aria-live="polite" aria-atomic="true">
+    <div id="dock">
+      <div id="card" class="alert" hidden>
+        <div id="scan" class="scanline"></div>
+        <div class="blip" aria-hidden="true"></div>
+
+        <div class="icon" id="platformIcon" aria-hidden="true"></div>
+
+        <div class="text">
+          <div class="row1">
+            <div class="callsign" id="callsign">—</div>
+            <div class="timez" id="time">—</div>
+          </div>
+          <div class="row2">
+            <div class="user" id="user">—</div>
+            <div class="badge" id="type">—</div>
+          </div>
+          <div class="row3" id="msg">—</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="debug">ATC ALERTS • <span id="debugText">init</span></div>
+
+  <script src="/overlay/alerts.js"></script>
+</body>
+</html>

@@ -1578,13 +1578,25 @@ switch (msg) {
                     twitchEventSub.Start(
                         config.twitch_client_id,
                         ReadTwitchUserAccessToken(),
-                        config.twitch_login,   // broadcaster identifier (login is OK for now)
-                        [&](const ChatMessage& msg)
+                        config.twitch_login,
+
+                        // Do NOT use chat callback for EventSub
+                        nullptr,
+
+                        // EventSub events
+                        [&](const nlohmann::json& ev)
                         {
-                            chat.Add(msg);
-                        });
+                            state.add_twitch_eventsub_event(ev);
+                        },
+
+                        // Optional: status updates
+                        [&](const nlohmann::json& st)
+                        {
+                            state.set_twitch_eventsub_status(st);
+                        }
+                    );
+                    return ok;
                 }
-                return ok;
             };
             opt.stop_twitch = [&]() -> bool {
                 PlatformControl::StopTwitch(twitch, state, hwnd, (UINT)(WM_APP + 41), [](const std::wstring& s) { LogLine(s); });

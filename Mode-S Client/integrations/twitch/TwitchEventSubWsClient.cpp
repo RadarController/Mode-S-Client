@@ -810,40 +810,43 @@ void TwitchEventSubWsClient::HandleNotification(const void* payloadPtr)
     ChatMessage msg;
     msg.platform = "twitch";
 
+    std::string user;
+    std::string message;
+
     // Event payload fields differ slightly between types; prefer user_name if present.
     if (subType == "channel.follow")
     {
-        msg.user = ev.value("user_name", ev.value("user_login", ""));
-        msg.message = "followed";
+        user = ev.value("user_name", ev.value("user_login", ""));
+        message = "followed";
     }
     else if (subType == "channel.subscribe")
     {
-        msg.user = ev.value("user_name", ev.value("user_login", ""));
-        msg.message = "subscribed";
+        user = ev.value("user_name", ev.value("user_login", ""));
+        message = "subscribed";
     }
     else if (subType == "channel.subscription.gift")
     {
-        msg.user = ev.value("user_name", ev.value("user_login", ""));
+        user = ev.value("user_name", ev.value("user_login", ""));
         int count = ev.value("total", 1);
-        msg.message = "gifted " + std::to_string(count) + " subs";
+        message = "gifted " + std::to_string(count) + " subs";
     }
     else
     {
         return;
     }
 
-    msg.ts_ms = NowMs();
+    const auto ts = NowMs();
 
     if (on_event_) {
         json evOut;
-        evOut["ts_ms"] = msg.ts_ms;
+        evOut["ts_ms"] = ts;
         evOut["platform"] = "twitch";
         evOut["type"] = subType;
-        evOut["user"] = msg.user;
-        evOut["message"] = msg.message;
+        evOut["user"] = user;
+        evOut["message"] = message;
         on_event_(evOut);
     }
 
-    if (on_chat_event_)
-        on_chat_event_(msg);
+    // IMPORTANT: Do NOT forward EventSub events into chat.
+    // (Remove on_chat_event_ usage here.)
 }

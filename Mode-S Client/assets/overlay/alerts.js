@@ -1,0 +1,434 @@
+/*
+  ATC Alerts Overlay (Twitch + TikTok)
+
+  Served via: http://localhost:17845/overlay/alerts.html
+  Polls:
+    - /api/twitch/eventsub/events
+    - /api/tiktok/events
+
+  Notes:
+  - Client-side de-dupe (uses event.id if present, otherwise hashes payload)
+  - Queues alerts and plays them one-by-one
+  - Set ?debug=1 on the overlay URL to show the debug banner
+*/
+
+(() => {
+  const CONFIG = {
+    pollMs: 450,
+    queueMax: 25,
+    dedupeMax: 1500,
+    // enter (320) + hold (3600) + exit (420) + gap (260)
+    // Keep the alert visible (after the enter animation) for 10 seconds.
+    holdMs: 10000,
+    gapMs: 260,
+    endpoints: [
+      { url: '/api/twitch/eventsub/events' },
+      { url: '/api/tiktok/events' },
+    ],
+  };
+
+  const $ = (sel) => document.querySelector(sel);
+
+  // DOM
+  const stage = $('#stage');
+  const card = $('#card');
+  const scan = $('#scan');
+  const elIcon = $('#platformIcon');
+  const elCallsign = $('#callsign');
+  const elUser = $('#user');
+  const elType = $('#type');
+  const elMsg = $('#msg');
+  const elTime = $('#time');
+  const debugBanner = $('#debug');
+  const debugText = $('#debugText');
+
+  const queue = [];
+  const seen = new Map();
+  // Per-endpoint "prime" flags: on the first successful fetch for an endpoint,
+  // we mark all returned events as seen but DO NOT play them. This prevents the
+  // overlay from replaying historical events when it first loads (or when an
+  // endpoint comes online later).
+  const primedByUrl = new Map();
+  let playing = false;
+  let lastPollOk = 0;
+  let lastPollErr = '';
+
+  const isDebug = new URLSearchParams(location.search).has('debug');
+  const isDemo = new URLSearchParams(location.search).has('demo');
+  if (isDebug) document.body.classList.add('debug');
+  if (isDemo) document.body.classList.add('demo');
+
+  function nowMs() { return Date.now(); }
+
+  function hash32(s) {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = (h * 0x01000193) >>> 0;
+    }
+    return h >>> 0;
+  }
+
+  function normalizePlatform(p) {
+    return String(p || '').toLowerCase();
+  }
+
+  function eventKey(e) {
+    if (!e) return '';
+    if (e.id) return `id:${e.id}`;
+    const p = normalizePlatform(e.platform);
+    const t = String(e.type || '').toLowerCase();
+    const u = String(e.user || '');
+    const m = String(e.message || '');
+    const ts = String(e.ts_ms || '');
+    return `k:${p}|${t}|${u}|${m}|${ts}`;
+  }
+
+  function pruneSeen() {
+    if (seen.size <= CONFIG.dedupeMax) return;
+    const entries = [...seen.entries()].sort((a, b) => a[1] - b[1]);
+    const removeCount = Math.ceil(entries.length * 0.25);
+    for (let i = 0; i < removeCount; i++) seen.delete(entries[i][0]);
+  }
+
+  function shortTime(ts) {
+    try {
+      const d = new Date(Number(ts));
+      const hh = String(d.getUTCHours()).padStart(2, '0');
+      const mm = String(d.getUTCMinutes()).padStart(2, '0');
+      const ss = String(d.getUTCSeconds()).padStart(2, '0');
+      return `${hh}:${mm}:${ss}Z`;
+    } catch {
+      return '';
+    }
+  }
+
+  function callsignFromUser(user) {
+    const raw = String(user || '').trim();
+    if (!raw) return 'UNKNOWN';
+    const ascii = raw.normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
+    const clean = ascii.replace(/[^a-zA-Z0-9]/g, '');
+    const up = (clean || ascii || raw).toUpperCase();
+    if (/^[A-Z]+$/.test(up) && up.length <= 6) {
+      const num = (Math.abs(hash32(raw)) % 9000) + 1000;
+      return `${up}${num}`;
+    }
+    return up.slice(0, 12);
+  }
+
+  function setPlatformClass(platform) {
+    card.classList.remove('twitch', 'tiktok', 'youtube');
+    if (platform === 'twitch') card.classList.add('twitch');
+    if (platform === 'tiktok') card.classList.add('tiktok');
+    if (platform === 'youtube') card.classList.add('youtube');
+  }
+
+  function setPlatformIcon(platform) {
+    const svgTwitch = `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path fill="currentColor" d="M3 2h18v12l-5 5h-5l-3 3H6v-3H3V2zm16 2H5v14h3v3l3-3h5l3-3V4z"/>
+        <path fill="currentColor" d="M15 7h2v6h-2V7zm-5 0h2v6h-2V7z"/>
+      </svg>`;
+
+    const svgTikTok = `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path fill="currentColor" d="M14 3c1 2.6 2.9 4.5 5.6 5.1v3.1c-2.1-.1-4-1-5.6-2.3v6.5c0 3.2-2.6 5.8-5.8 5.8S2.4 18.6 2.4 15.4s2.6-5.8 5.8-5.8c.4 0 .8 0 1.2.1v3.3c-.4-.1-.8-.2-1.2-.2-1.4 0-2.6 1.2-2.6 2.6s1.2 2.6 2.6 2.6 2.6-1.2 2.6-2.6V3H14z"/>
+      </svg>`;
+
+    elIcon.innerHTML = (platform === 'tiktok') ? svgTikTok : svgTwitch;
+  }
+
+  function mapEvent(e) {
+    const platform = normalizePlatform(e.platform);
+    const type = String(e.type || '').toLowerCase();
+
+    let kind = 'EVENT';
+    let message = '';
+
+    if (platform === 'twitch' && type === 'channel.follow') {
+      kind = 'NEW CONTACT';
+      message = 'Radar contact established.';
+    } else if (platform === 'twitch' && type === 'channel.subscribe') {
+      kind = 'AIRSPACE CLEARANCE';
+      message = 'Control zone access approved.';
+    } else if (platform === 'twitch' && (type === 'channel.subscription.gift' || type === 'channel.subscription.gifted')) {
+      kind = 'PAYLOAD TRANSFER';
+      message = 'Gifted clearance issued.';
+    } else if (platform === 'tiktok' && type === 'follow') {
+      kind = 'NEW CONTACT';
+      message = 'Inbound track acquired.';
+    } else if (platform === 'tiktok' && type === 'gift') {
+      kind = 'PAYLOAD DELIVERY';
+      message = 'Delivery confirmed.';
+    } else {
+      kind = (e.type || 'EVENT').toString();
+      message = (e.message || '').toString();
+    }
+
+    // Keep "followed" out of the cinematic line; it reads better as the ATC phrase.
+    const rawMsg = String(e.message || '').trim();
+    if (rawMsg && rawMsg.toLowerCase() !== 'followed' && message !== rawMsg) {
+      message = rawMsg;
+    }
+
+    return {
+      platform,
+      kind,
+      callsign: callsignFromUser(e.user),
+      user: String(e.user || ''),
+      message: message || '',
+      ts_ms: Number(e.ts_ms || 0),
+    };
+  }
+
+  function enqueue(rawEvent) {
+    const a = mapEvent(rawEvent);
+    if (!a.user && !a.callsign) return;
+    queue.push(a);
+    while (queue.length > CONFIG.queueMax) queue.shift();
+  }
+
+  async function fetchJson(url) {
+    const r = await fetch(url, { cache: 'no-store' });
+    if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+    return await r.json();
+  }
+
+  function updateDebug() {
+    if (!isDebug) return;
+    const age = lastPollOk ? `${Math.max(0, Math.floor((nowMs() - lastPollOk) / 1000))}s` : '—';
+    const q = queue.length;
+    debugText.textContent = `q=${q} • last_ok=${age} ${lastPollErr ? `• err=${lastPollErr}` : ''}`;
+  }
+
+  async function pollOnce() {
+    let anyOk = false;
+    let errMsg = '';
+
+    for (const ep of CONFIG.endpoints) {
+      try {
+        const data = await fetchJson(ep.url);
+        const events = Array.isArray(data?.events) ? data.events : [];
+        const primed = primedByUrl.get(ep.url) === true;
+
+        // First success for this endpoint: treat current payload as backlog.
+        // Mark as seen, but do not enqueue.
+        if (!primed) {
+          for (const e of events) {
+            const key = eventKey(e);
+            if (!key) continue;
+            if (!seen.has(key)) seen.set(key, nowMs());
+          }
+          primedByUrl.set(ep.url, true);
+          pruneSeen();
+          anyOk = true;
+          continue;
+        }
+
+        for (const e of events) {
+          const key = eventKey(e);
+          if (!key) continue;
+          if (seen.has(key)) continue;
+          seen.set(key, nowMs());
+          enqueue(e);
+        }
+        pruneSeen();
+        anyOk = true;
+      } catch (err) {
+        if (!ep.optional) {
+          errMsg = (err?.message || String(err)).slice(0, 80);
+          console.debug('[alerts] poll failed', ep.url, errMsg);
+        }
+      }
+    }
+
+    if (anyOk) {
+      lastPollOk = nowMs();
+      lastPollErr = '';
+    } else if (errMsg) {
+      lastPollErr = errMsg;
+    }
+
+    updateDebug();
+    if (!playing) playNext();
+  }
+
+  function renderAlert(a) {
+    setPlatformClass(a.platform);
+    setPlatformIcon(a.platform);
+
+    elCallsign.textContent = a.callsign || 'UNKNOWN';
+    elUser.textContent = a.user || 'UNKNOWN';
+    elType.textContent = a.kind || 'EVENT';
+    elMsg.textContent = a.message || '';
+    elTime.textContent = shortTime(a.ts_ms) || '';
+
+    stage.setAttribute('aria-label', `${a.platform} ${a.kind} ${a.user}`);
+  }
+
+  function clearAnimClasses() {
+    card.classList.remove('enter', 'hold', 'exit');
+    // force reflow so re-adding classes restarts keyframes reliably
+    void card.offsetWidth;
+  }
+
+  async function playNext() {
+    const next = queue.shift();
+    if (!next) {
+      playing = false;
+      card.hidden = true;
+      return;
+    }
+
+    playing = true;
+    renderAlert(next);
+
+    card.hidden = false;
+    clearAnimClasses();
+    card.classList.add('enter');
+
+    await sleep(320);
+    card.classList.remove('enter');
+    card.classList.add('hold');
+
+    await sleep(CONFIG.holdMs);
+    card.classList.remove('hold');
+    card.classList.add('exit');
+
+    await sleep(420);
+    card.classList.remove('exit');
+    card.hidden = true;
+
+    await sleep(CONFIG.gapMs);
+    playNext();
+  }
+
+  function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+  // =========================
+  // Demo mode (client-side)
+  // =========================
+  // Enable with: ?demo=1
+  // Adds a small control panel and keyboard shortcuts to inject fake events
+  // into the same queue pipeline used by real API events.
+  function injectDemo(raw) {
+    const e = {
+      ...raw,
+      id: raw.id || `demo:${nowMs()}:${Math.random().toString(16).slice(2)}`,
+      ts_ms: raw.ts_ms || nowMs(),
+    };
+    // Mark seen so we don't double-play if the same demo object is reinjected.
+    seen.set(eventKey(e), nowMs());
+    enqueue(e);
+    pruneSeen();
+    if (!playing) playNext();
+    updateDebug();
+  }
+
+  function createDemoPanel() {
+    const panel = document.createElement('div');
+    panel.id = 'demoPanel';
+    panel.style.cssText = [
+      'position:fixed',
+      'left:16px',
+      'bottom:16px',
+      'z-index:9999',
+      'display:flex',
+      'gap:10px',
+      'align-items:flex-end',
+      'pointer-events:auto',
+      'padding:10px',
+      'border-radius:14px',
+      'background:rgba(18,22,28,.72)',
+      'border:1px solid rgba(255,255,255,.12)',
+      'backdrop-filter:blur(8px)',
+      '-webkit-backdrop-filter:blur(8px)',
+      'color:rgba(233,238,247,.92)',
+      'font:12px/1.2 Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif',
+      'box-shadow:0 14px 40px rgba(0,0,0,.35)',
+    ].join(';');
+
+    panel.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:8px;min-width:190px;">
+        <div style="font-weight:650;letter-spacing:.08em;text-transform:uppercase;font-size:11px;opacity:.9;">Demo Events</div>
+        <label style="display:flex;flex-direction:column;gap:4px;">
+          <span style="color:rgba(233,238,247,.70);font-weight:650;letter-spacing:.08em;text-transform:uppercase;font-size:10px;">User</span>
+          <input id="demoUser" type="text" value="TestPilot" style="padding:7px 10px;border-radius:12px;background:rgba(10,14,18,.35);border:1px solid rgba(255,255,255,.12);color:rgba(233,238,247,.92);outline:none;" />
+        </label>
+        <label style="display:flex;flex-direction:column;gap:4px;">
+          <span style="color:rgba(233,238,247,.70);font-weight:650;letter-spacing:.08em;text-transform:uppercase;font-size:10px;">Gift (TikTok)</span>
+          <div style="display:flex;gap:8px;">
+            <input id="demoGift" type="text" value="Rose" style="flex:1;padding:7px 10px;border-radius:12px;background:rgba(10,14,18,.35);border:1px solid rgba(255,255,255,.12);color:rgba(233,238,247,.92);outline:none;" />
+            <input id="demoQty" type="number" min="1" value="1" style="width:70px;padding:7px 10px;border-radius:12px;background:rgba(10,14,18,.35);border:1px solid rgba(255,255,255,.12);color:rgba(233,238,247,.92);outline:none;" />
+          </div>
+        </label>
+        <div style="color:rgba(233,238,247,.70);font-size:10px;letter-spacing:.06em;">
+          Shortcuts: <b>F</b>=follow, <b>S</b>=sub, <b>G</b>=gift sub, <b>T</b>=tiktok follow, <b>Y</b>=tiktok gift
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <button data-demo="twFollow" style="cursor:pointer;padding:8px 12px;border-radius:12px;background:#1e6dff;border:1px solid rgba(255,255,255,.14);color:rgba(233,238,247,.92);font-weight:700;">Twitch Follow</button>
+        <button data-demo="twSub" style="cursor:pointer;padding:8px 12px;border-radius:12px;background:rgba(30,109,255,.18);border:1px solid rgba(255,255,255,.12);color:rgba(233,238,247,.92);font-weight:700;">Twitch Sub</button>
+        <button data-demo="twGift" style="cursor:pointer;padding:8px 12px;border-radius:12px;background:rgba(30,109,255,.18);border:1px solid rgba(255,255,255,.12);color:rgba(233,238,247,.92);font-weight:700;">Twitch Gift Sub</button>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <button data-demo="ttFollow" style="cursor:pointer;padding:8px 12px;border-radius:12px;background:rgba(30,109,255,.18);border:1px solid rgba(255,255,255,.12);color:rgba(233,238,247,.92);font-weight:700;">TikTok Follow</button>
+        <button data-demo="ttGift" style="cursor:pointer;padding:8px 12px;border-radius:12px;background:rgba(30,109,255,.18);border:1px solid rgba(255,255,255,.12);color:rgba(233,238,247,.92);font-weight:700;">TikTok Gift</button>
+      </div>
+    `;
+
+    document.body.appendChild(panel);
+
+    const getUser = () => {
+      const v = (document.getElementById('demoUser')?.value || '').trim();
+      return v || 'TestPilot';
+    };
+    const getGift = () => {
+      const name = (document.getElementById('demoGift')?.value || '').trim() || 'Rose';
+      const qty = Math.max(1, parseInt(document.getElementById('demoQty')?.value || '1', 10) || 1);
+      return { name, qty };
+    };
+
+    function fire(kind) {
+      const user = getUser();
+      if (kind === 'twFollow') {
+        injectDemo({ platform: 'twitch', type: 'channel.follow', user, message: 'followed' });
+      } else if (kind === 'twSub') {
+        injectDemo({ platform: 'twitch', type: 'channel.subscribe', user, message: 'subscribed' });
+      } else if (kind === 'twGift') {
+        injectDemo({ platform: 'twitch', type: 'channel.subscription.gift', user, message: 'gifted a sub' });
+      } else if (kind === 'ttFollow') {
+        injectDemo({ platform: 'tiktok', type: 'follow', user, message: 'followed' });
+      } else if (kind === 'ttGift') {
+        const g = getGift();
+        injectDemo({ platform: 'tiktok', type: 'gift', user, message: `${g.name} x${g.qty}` });
+      }
+    }
+
+    panel.addEventListener('click', (ev) => {
+      const btn = ev.target?.closest?.('button[data-demo]');
+      if (!btn) return;
+      fire(btn.getAttribute('data-demo'));
+    });
+
+    window.addEventListener('keydown', (ev) => {
+      // Avoid stealing keys when typing into inputs.
+      const t = ev.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      const k = String(ev.key || '').toLowerCase();
+      if (k === 'f') fire('twFollow');
+      if (k === 's') fire('twSub');
+      if (k === 'g') fire('twGift');
+      if (k === 't') fire('ttFollow');
+      if (k === 'y') fire('ttGift');
+    });
+  }
+
+  if (isDemo) createDemoPanel();
+
+  // Kick off
+  setInterval(pollOnce, CONFIG.pollMs);
+  pollOnce();
+})();
