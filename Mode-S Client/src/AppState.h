@@ -41,6 +41,9 @@ struct Metrics {
 
 class AppState {
 public:
+    void push_log_utf8(const std::string& msg);
+    nlohmann::json log_json(std::uint64_t since = 0, int limit = 200) const;
+
     std::vector<ChatMessage> recent_chat() const;
 
     void set_tiktok_viewers(int v);
@@ -93,5 +96,13 @@ private:
         {"subscriptions", nlohmann::json::array()}
     };
 
+    struct LogEntry {
+        std::uint64_t id{};
+        std::int64_t ts_ms{};
+        std::string msg;
+    };
+
+    std::deque<LogEntry> log_;          // ring buffer
+    std::uint64_t log_next_id_ = 0;     // monotonically increasing
     
 };

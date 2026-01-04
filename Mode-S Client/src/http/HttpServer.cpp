@@ -15,36 +15,37 @@
 #include "../AppConfig.h"
 
 namespace {
-inline void SafeOutputLog(std::function<void(const std::wstring&)>& log, const std::wstring& msg) {
-    ::OutputDebugStringW((msg + L"\n").c_str());
-    try {
-        log(msg);
-    } catch (...) {
-        // Never allow logging to break server threads
+    inline void SafeOutputLog(std::function<void(const std::wstring&)>& log, const std::wstring& msg) {
+        ::OutputDebugStringW((msg + L"\n").c_str());
+        try {
+            log(msg);
+        }
+        catch (...) {
+            // Never allow logging to break server threads
+        }
     }
-}
 }
 
 
 using json = nlohmann::json;
 
 static std::string Trim(const std::string& s) {
-    auto is_space = [](unsigned char c) { return c==' '||c=='\t'||c=='\r'||c=='\n'; };
+    auto is_space = [](unsigned char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; };
     size_t a = 0, b = s.size();
     while (a < b && is_space((unsigned char)s[a])) a++;
-    while (b > a && is_space((unsigned char)s[b-1])) b--;
-    return s.substr(a, b-a);
+    while (b > a && is_space((unsigned char)s[b - 1])) b--;
+    return s.substr(a, b - a);
 }
 
 static bool ReplaceAll(std::string& s, const std::string& from, const std::string& to) {
     if (from.empty()) return false;
     bool changed = false;
     size_t pos = 0;
-while ((pos = s.find(from, pos)) != std::string::npos) {
+    while ((pos = s.find(from, pos)) != std::string::npos) {
         s.replace(pos, from.size(), to);
         pos += to.size();
-            changed = true;
-}
+        changed = true;
+    }
     return changed;
 }
 
@@ -83,17 +84,17 @@ static std::string WideToUtf8(const std::wstring& ws) {
 }
 
 HttpServer::HttpServer(AppState& state,
-                       ChatAggregator& chat,
-                       EuroScopeIngestService& euroscope,
-                       AppConfig& config,
-                       Options options,
-                       LogFn log)
+    ChatAggregator& chat,
+    EuroScopeIngestService& euroscope,
+    AppConfig& config,
+    Options options,
+    LogFn log)
     : state_(state),
-      chat_(chat),
-      euroscope_(euroscope),
-      config_(config),
-      opt_(std::move(options)),
-      log_(std::move(log)) {
+    chat_(chat),
+    euroscope_(euroscope),
+    config_(config),
+    opt_(std::move(options)),
+    log_(std::move(log)) {
     if (!log_) {
         log_ = [](const std::wstring&) {};
     }
@@ -113,17 +114,19 @@ void HttpServer::Start() {
         try {
             SafeOutputLog(log_, L"HTTP: listening on http://127.0.0.1:" + std::to_wstring(opt_.port));
             svr_->listen(opt_.bind_host.c_str(), opt_.port);
-        } catch (...) {
+        }
+        catch (...) {
             SafeOutputLog(log_, L"HTTP: server thread crashed");
         }
-    });
+        });
 }
 
 void HttpServer::Stop() {
     if (!svr_) return;
     try {
         svr_->stop();
-    } catch (...) {}
+    }
+    catch (...) {}
 
     // Join the server thread so the process exits cleanly.
     // (listen() will return after stop()).
@@ -131,7 +134,8 @@ void HttpServer::Stop() {
         if (std::this_thread::get_id() == thread_.get_id()) {
             // Defensive: if Stop() is ever called from the server thread itself.
             thread_.detach();
-        } else {
+        }
+        else {
             thread_.join();
         }
     }
@@ -205,6 +209,24 @@ void HttpServer::ApplyOverlayTokens(std::string& html)
 void HttpServer::RegisterRoutes() {
     auto& svr = *svr_;
 
+    // --- API: log (for Web UI) ---
+    svr.Get("/api/log", [&](const httplib::Request& req, httplib::Response& res) {
+        std::uint64_t since = 0;
+        int limit = 200;
+
+        if (req.has_param("since")) {
+            try { since = (std::uint64_t)std::stoull(req.get_param_value("since")); }
+            catch (...) {}
+        }
+        if (req.has_param("limit")) {
+            try { limit = std::stoi(req.get_param_value("limit")); }
+            catch (...) {}
+        }
+
+        auto j = state_.log_json(since, limit);
+        res.set_content(j.dump(), "application/json; charset=utf-8");
+        });
+
     // --- API: metrics ---
     svr.Get("/api/metrics", [&](const httplib::Request&, httplib::Response& res) {
         auto j = state_.metrics_json();
@@ -217,7 +239,7 @@ void HttpServer::RegisterRoutes() {
         j.update(euroscope_.Metrics(now_ms));
 
         res.set_content(j.dump(2), "application/json; charset=utf-8");
-    });
+        });
 
     // --- API: Twitch EventSub diagnostics ---
     svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Response& res) {
@@ -235,97 +257,98 @@ void HttpServer::RegisterRoutes() {
         res.set_content(j.dump(2), "application/json; charset=utf-8");
         });
 
-// --- API: settings save (used by /app UI) ---
-// Accept both legacy and newer paths.
-auto handle_settings_save = [&](const httplib::Request& req, httplib::Response& res) {
-    // If the UI sends a JSON body, apply it to config_ before saving.
-    if (!req.body.empty()) {
-        try {
-            auto j = json::parse(req.body);
+    // --- API: settings save (used by /app UI) ---
+    // Accept both legacy and newer paths.
+    auto handle_settings_save = [&](const httplib::Request& req, httplib::Response& res) {
+        // If the UI sends a JSON body, apply it to config_ before saving.
+        if (!req.body.empty()) {
+            try {
+                auto j = json::parse(req.body);
 
-            if (j.contains("tiktok_unique_id"))      config_.tiktok_unique_id      = j.value("tiktok_unique_id", config_.tiktok_unique_id);
-            if (j.contains("twitch_login"))          config_.twitch_login          = j.value("twitch_login", config_.twitch_login);
-            if (j.contains("twitch_client_id"))      config_.twitch_client_id      = j.value("twitch_client_id", config_.twitch_client_id);
-            if (j.contains("twitch_client_secret"))  config_.twitch_client_secret  = j.value("twitch_client_secret", config_.twitch_client_secret);
-            if (j.contains("youtube_handle"))        config_.youtube_handle        = j.value("youtube_handle", config_.youtube_handle);
+                if (j.contains("tiktok_unique_id"))      config_.tiktok_unique_id = j.value("tiktok_unique_id", config_.tiktok_unique_id);
+                if (j.contains("twitch_login"))          config_.twitch_login = j.value("twitch_login", config_.twitch_login);
+                if (j.contains("twitch_client_id"))      config_.twitch_client_id = j.value("twitch_client_id", config_.twitch_client_id);
+                if (j.contains("twitch_client_secret"))  config_.twitch_client_secret = j.value("twitch_client_secret", config_.twitch_client_secret);
+                if (j.contains("youtube_handle"))        config_.youtube_handle = j.value("youtube_handle", config_.youtube_handle);
 
-            // TikTok cookie/session fields (optional)
-            if (j.contains("tiktok_sessionid"))      config_.tiktok_sessionid      = j.value("tiktok_sessionid", config_.tiktok_sessionid);
-            if (j.contains("tiktok_sessionid_ss"))   config_.tiktok_sessionid_ss   = j.value("tiktok_sessionid_ss", config_.tiktok_sessionid_ss);
-            if (j.contains("tiktok_tt_target_idc"))  config_.tiktok_tt_target_idc  = j.value("tiktok_tt_target_idc", config_.tiktok_tt_target_idc);
+                // TikTok cookie/session fields (optional)
+                if (j.contains("tiktok_sessionid"))      config_.tiktok_sessionid = j.value("tiktok_sessionid", config_.tiktok_sessionid);
+                if (j.contains("tiktok_sessionid_ss"))   config_.tiktok_sessionid_ss = j.value("tiktok_sessionid_ss", config_.tiktok_sessionid_ss);
+                if (j.contains("tiktok_tt_target_idc"))  config_.tiktok_tt_target_idc = j.value("tiktok_tt_target_idc", config_.tiktok_tt_target_idc);
 
-            // Overlay styling fields (optional)
-            if (j.contains("overlay_font_family"))   config_.overlay_font_family   = j.value("overlay_font_family", config_.overlay_font_family);
-            if (j.contains("overlay_font_size"))     config_.overlay_font_size     = j.value("overlay_font_size", config_.overlay_font_size);
-            if (j.contains("overlay_text_shadow"))   config_.overlay_text_shadow   = j.value("overlay_text_shadow", config_.overlay_text_shadow);
+                // Overlay styling fields (optional)
+                if (j.contains("overlay_font_family"))   config_.overlay_font_family = j.value("overlay_font_family", config_.overlay_font_family);
+                if (j.contains("overlay_font_size"))     config_.overlay_font_size = j.value("overlay_font_size", config_.overlay_font_size);
+                if (j.contains("overlay_text_shadow"))   config_.overlay_text_shadow = j.value("overlay_text_shadow", config_.overlay_text_shadow);
 
-            if (j.contains("metrics_json_path"))     config_.metrics_json_path     = j.value("metrics_json_path", config_.metrics_json_path);
-        } catch (...) {
-            res.status = 400;
-            res.set_content(R"({"ok":false,"error":"invalid_json"})", "application/json; charset=utf-8");
+                if (j.contains("metrics_json_path"))     config_.metrics_json_path = j.value("metrics_json_path", config_.metrics_json_path);
+            }
+            catch (...) {
+                res.status = 400;
+                res.set_content(R"({"ok":false,"error":"invalid_json"})", "application/json; charset=utf-8");
+                return;
+            }
+        }
+
+        const std::wstring cfg_path_w = AppConfig::ConfigPath();
+        const std::string  cfg_path = WideToUtf8(cfg_path_w);
+
+        if (!config_.Save()) {
+            SafeOutputLog(log_, L"settingssave: FAILED writing " + cfg_path_w);
+            res.status = 500;
+            json out;
+            out["ok"] = false;
+            out["error"] = "save_failed";
+            out["path"] = cfg_path;
+            res.set_content(out.dump(2), "application/json; charset=utf-8");
             return;
         }
-    }
 
-    const std::wstring cfg_path_w = AppConfig::ConfigPath();
-    const std::string  cfg_path   = WideToUtf8(cfg_path_w);
+        SafeOutputLog(log_, L"settingssave: wrote " + cfg_path_w);
 
-    if (!config_.Save()) {
-        SafeOutputLog(log_, L"settingssave: FAILED writing " + cfg_path_w);
-        res.status = 500;
         json out;
-        out["ok"] = false;
-        out["error"] = "save_failed";
+        out["ok"] = true;
         out["path"] = cfg_path;
+        res.set_header("X-Config-Path", cfg_path.c_str());
         res.set_content(out.dump(2), "application/json; charset=utf-8");
-        return;
-    }
+        };
 
-    SafeOutputLog(log_, L"settingssave: wrote " + cfg_path_w);
+    svr.Post("/api/settingssave", handle_settings_save);
+    svr.Post("/api/settings/save", handle_settings_save);
 
-    json out;
-    out["ok"] = true;
-    out["path"] = cfg_path;
-    res.set_header("X-Config-Path", cfg_path.c_str());
-    res.set_content(out.dump(2), "application/json; charset=utf-8");
-};
+    // --- API: settings (read) ---
+    // The /app UI calls this to populate the username fields on load.
+    // Keep the payload intentionally small (do not expose secrets by default).
+    svr.Get("/api/settings", [&](const httplib::Request&, httplib::Response& res) {
+        const std::wstring cfg_path_w = AppConfig::ConfigPath();
+        const std::string  cfg_path = WideToUtf8(cfg_path_w);
 
-svr.Post("/api/settingssave", handle_settings_save);
-svr.Post("/api/settings/save", handle_settings_save);
+        json out;
+        out["ok"] = true;
+        out["config_path"] = cfg_path;
 
-// --- API: settings (read) ---
-// The /app UI calls this to populate the username fields on load.
-// Keep the payload intentionally small (do not expose secrets by default).
-svr.Get("/api/settings", [&](const httplib::Request&, httplib::Response& res) {
-    const std::wstring cfg_path_w = AppConfig::ConfigPath();
-    const std::string  cfg_path = WideToUtf8(cfg_path_w);
+        // Username / channel identifiers (safe to expose)
+        out["tiktok_unique_id"] = config_.tiktok_unique_id;
+        out["twitch_login"] = config_.twitch_login;
+        out["youtube_handle"] = config_.youtube_handle;
 
-    json out;
-    out["ok"] = true;
-    out["config_path"] = cfg_path;
+        res.set_header("X-Config-Path", cfg_path.c_str());
+        res.set_content(out.dump(2), "application/json; charset=utf-8");
+        });
 
-    // Username / channel identifiers (safe to expose)
-    out["tiktok_unique_id"] = config_.tiktok_unique_id;
-    out["twitch_login"] = config_.twitch_login;
-    out["youtube_handle"] = config_.youtube_handle;
+    // --- API: EuroScope ingest ---
 
-    res.set_header("X-Config-Path", cfg_path.c_str());
-    res.set_content(out.dump(2), "application/json; charset=utf-8");
-    });
-
-// --- API: EuroScope ingest ---
-
-    // EuroScope plugin ingest endpoint (expects JSON with ts_ms)
+        // EuroScope plugin ingest endpoint (expects JSON with ts_ms)
     svr.Post("/api/euroscope", [&](const httplib::Request& req, httplib::Response& res) {
         std::string err;
         if (!euroscope_.Ingest(req.body, err)) {
             res.status = 400;
             res.set_content(std::string(R"({"ok":false,"error":")") + err + R"("})",
-                            "application/json; charset=utf-8");
+                "application/json; charset=utf-8");
             return;
         }
         res.set_content(R"({"ok":true})", "application/json; charset=utf-8");
-    });
+        });
 
     // --- API: chat (stable shape) ---
     auto handle_chat_recent = [&](const httplib::Request& req, httplib::Response& res) {
@@ -348,11 +371,13 @@ svr.Get("/api/settings", [&](const httplib::Request&, httplib::Response& res) {
                         json slice = json::array();
                         for (size_t i = s.size() - limit; i < s.size(); ++i) slice.push_back(s[i]);
                         msgs = std::move(slice);
-                    } else {
+                    }
+                    else {
                         msgs = std::move(s);
                     }
                 }
-            } catch (...) {
+            }
+            catch (...) {
                 // ignore and keep msgs as-is
             }
         }
@@ -364,30 +389,31 @@ svr.Get("/api/settings", [&](const httplib::Request&, httplib::Response& res) {
         out["messages"] = std::move(msgs);
 
         res.set_content(out.dump(2), "application/json; charset=utf-8");
-    };
+        };
 
     svr.Get("/api/chat/recent", handle_chat_recent);
     svr.Get("/api/chat", handle_chat_recent);
 
 
-// --- API: chat diagnostics ---
-// Returns address of the ChatAggregator instance and current buffered count.
-svr.Get("/api/chat/diag", [&](const httplib::Request&, httplib::Response& res) {
-    json out;
-    out["chat_ptr"] = (uint64_t)(uintptr_t)(&chat_);
-    out["count"] = (long long)chat_.Size();
-    // Include AppState chat count as well (some adapters write into AppState)
-    try {
-        auto v = state_.recent_chat();
-        out["state_count"] = (long long)v.size();
-    } catch (...) {
-        out["state_count"] = 0;
-    }
-    out["ts_ms"] = (long long)std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()
-    ).count();
-    res.set_content(out.dump(2), "application/json; charset=utf-8");
-});
+    // --- API: chat diagnostics ---
+    // Returns address of the ChatAggregator instance and current buffered count.
+    svr.Get("/api/chat/diag", [&](const httplib::Request&, httplib::Response& res) {
+        json out;
+        out["chat_ptr"] = (uint64_t)(uintptr_t)(&chat_);
+        out["count"] = (long long)chat_.Size();
+        // Include AppState chat count as well (some adapters write into AppState)
+        try {
+            auto v = state_.recent_chat();
+            out["state_count"] = (long long)v.size();
+        }
+        catch (...) {
+            out["state_count"] = 0;
+        }
+        out["ts_ms"] = (long long)std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()
+        ).count();
+        res.set_content(out.dump(2), "application/json; charset=utf-8");
+        });
 
     // --- API: chat test inject (debug) ---
 // Example:
@@ -415,16 +441,34 @@ svr.Get("/api/chat/diag", [&](const httplib::Request&, httplib::Response& res) {
         if (req.has_param("limit")) {
             try {
                 limit = std::max(1, std::min(1000, std::stoi(req.get_param_value("limit"))));
-            } catch (...) {
+            }
+            catch (...) {
                 // keep default
             }
         }
 
         auto j = state_.tiktok_events_json(static_cast<size_t>(limit));
         res.set_content(j.dump(2), "application/json; charset=utf-8");
-    });
+        });
 
+    // --- API: YouTube events ---
+    svr.Get("/api/youtube/events", [&](const httplib::Request& req, httplib::Response& res) {
+        int limit = 200;
+        if (req.has_param("limit")) {
+            try { limit = std::max(1, std::min(1000, std::stoi(req.get_param_value("limit")))); }
+            catch (...) {}
+        }
 
+        json out;
+        out["ts_ms"] = (long long)std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()
+        ).count();
+        out["events"] = state_.youtube_events_json((size_t)limit);
+
+        res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+        res.set_header("Pragma", "no-cache");
+        res.set_content(out.dump(2), "application/json; charset=utf-8");
+        });
 
     // --- Overlay: special chat.html injection ---
     svr.Get("/overlay/chat.html", [&](const httplib::Request&, httplib::Response& res) {
@@ -446,23 +490,23 @@ svr.Get("/api/chat/diag", [&](const httplib::Request&, httplib::Response& res) {
             fontStack = "'" + fontFamily + "', sans-serif";
             // Optional Google Fonts link injection if you use placeholders
             googleLink = "<link rel=\"preconnect\" href=\"https://fonts.googleapis.com\">\n"
-                         "<link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin>\n"
-                         "<link href=\"https://fonts.googleapis.com/css2?family=" + fontFamily + ":wght@300;400;600;700&display=swap\" rel=\"stylesheet\">\n";
+                "<link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin>\n"
+                "<link href=\"https://fonts.googleapis.com/css2?family=" + fontFamily + ":wght@300;400;600;700&display=swap\" rel=\"stylesheet\">\n";
         }
 
         std::string shadow = config_.overlay_text_shadow ? "0 2px 10px rgba(0,0,0,.55)" : "none";
         ApplyOverlayTokens(html);
 
         res.set_content(html, "text/html; charset=utf-8");
-    });
+        });
 
     // /overlay or /overlay/ -> default (chat)
     svr.Get("/overlay", [&](const httplib::Request&, httplib::Response& res) {
         res.set_redirect("/overlay/chat.html");
-    });
+        });
     svr.Get("/overlay/", [&](const httplib::Request&, httplib::Response& res) {
         res.set_redirect("/overlay/chat.html");
-    });
+        });
 
     // Serve /overlay/<anything> from overlay root (except chat.html special case)
     svr.Get(R"(/overlay/(.*))", [&](const httplib::Request& req, httplib::Response& res) {
@@ -494,7 +538,7 @@ svr.Get("/api/chat/diag", [&](const httplib::Request&, httplib::Response& res) {
             ApplyOverlayTokens(bytes);
         }
         res.set_content(std::move(bytes), ContentTypeFor(rel));
-    });
+        });
 
     // --- Static assets: /assets/... ---
     // Your floating chat lives at /assets/app/chat.html.
@@ -506,10 +550,10 @@ svr.Get("/api/chat/diag", [&](const httplib::Request&, httplib::Response& res) {
     // Serves files from <assetsRoot>/app (e.g. assets/app/index.html)
     svr.Get("/app", [&](const httplib::Request&, httplib::Response& res) {
         res.set_redirect("/app/index.html");
-    });
+        });
     svr.Get("/app/", [&](const httplib::Request&, httplib::Response& res) {
         res.set_redirect("/app/index.html");
-    });
+        });
 
     svr.Get(R"(/app/(.*))", [&, assetsRoot](const httplib::Request& req, httplib::Response& res) {
         std::string rel = req.matches[1].str();
@@ -534,7 +578,7 @@ svr.Get("/api/chat/diag", [&](const httplib::Request&, httplib::Response& res) {
             ApplyOverlayTokens(bytes);
         }
         res.set_content(std::move(bytes), ContentTypeFor(rel));
-    });
+        });
 
     svr.Get(R"(/assets/(.*))", [&, assetsRoot](const httplib::Request& req, httplib::Response& res) {
         std::string rel = req.matches[1].str();
@@ -559,7 +603,7 @@ svr.Get("/api/chat/diag", [&](const httplib::Request&, httplib::Response& res) {
             ApplyOverlayTokens(bytes);
         }
         res.set_content(std::move(bytes), ContentTypeFor(rel));
-    });
+        });
 
 
     // --- API: platform control (start/stop) ---
@@ -569,15 +613,17 @@ svr.Get("/api/chat/diag", [&](const httplib::Request&, httplib::Response& res) {
         [&](const httplib::Request& req, httplib::Response& res) {
 
             const std::string platform = req.matches[1];
-            const std::string action   = req.matches[2];
+            const std::string action = req.matches[2];
 
             std::function<bool(void)> fn;
 
             if (platform == "tiktok") {
                 fn = (action == "start") ? opt_.start_tiktok : opt_.stop_tiktok;
-            } else if (platform == "twitch") {
+            }
+            else if (platform == "twitch") {
                 fn = (action == "start") ? opt_.start_twitch : opt_.stop_twitch;
-            } else if (platform == "youtube") {
+            }
+            else if (platform == "youtube") {
                 fn = (action == "start") ? opt_.start_youtube : opt_.stop_youtube;
             }
 
@@ -590,7 +636,8 @@ svr.Get("/api/chat/diag", [&](const httplib::Request&, httplib::Response& res) {
             bool ok = false;
             try {
                 ok = fn();
-            } catch (...) {
+            }
+            catch (...) {
                 res.status = 500;
                 res.set_content(R"({"ok":false,"error":"exception"})", "application/json");
                 return;
@@ -604,9 +651,9 @@ svr.Get("/api/chat/diag", [&](const httplib::Request&, httplib::Response& res) {
 
             const std::string state = (action == "start") ? "started" : "stopped";
             std::string body = std::string(R"({"ok":true,"platform":")") + platform +
-                               R"(","action":")" + action +
-                               R"(","state":")" + state +
-                               R"("})";
+                R"(","action":")" + action +
+                R"(","state":")" + state +
+                R"("})";
 
             res.set_content(body, "application/json");
         });
@@ -614,5 +661,5 @@ svr.Get("/api/chat/diag", [&](const httplib::Request&, httplib::Response& res) {
     // Root -> overlay
     svr.Get("/", [&](const httplib::Request&, httplib::Response& res) {
         res.set_redirect("/overlay/");
-    });
+        });
 }

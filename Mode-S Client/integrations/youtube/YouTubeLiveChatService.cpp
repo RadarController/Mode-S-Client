@@ -167,14 +167,49 @@ static std::string EnsureAtHandle(const std::string& s) {
 
 // crude: finds `"key":"VALUE"` and returns VALUE
 static bool ExtractFirstJsonValueString(const std::string& hay, const std::string& key, std::string& out) {
-    std::string needle = "\"" + key + "\":\"";
-    size_t p = hay.find(needle);
+    out.clear();
+
+    // Find the first occurrence of "key"
+    const std::string k = "\"" + key + "\"";
+    size_t p = hay.find(k);
     if (p == std::string::npos) return false;
-    p += needle.size();
-    size_t q = hay.find('"', p);
-    if (q == std::string::npos) return false;
-    out = hay.substr(p, q - p);
-    return !out.empty();
+    p += k.size();
+
+    // Skip whitespace
+    auto is_ws = [](unsigned char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; };
+    while (p < hay.size() && is_ws((unsigned char)hay[p])) ++p;
+
+    // Expect ':'
+    if (p >= hay.size() || hay[p] != ':') return false;
+    ++p;
+
+    // Skip whitespace
+    while (p < hay.size() && is_ws((unsigned char)hay[p])) ++p;
+
+    // Expect opening quote
+    if (p >= hay.size() || hay[p] != '"') return false;
+    ++p;
+
+    // Read until an unescaped quote
+    std::string v;
+    v.reserve(64);
+    bool esc = false;
+    for (; p < hay.size(); ++p) {
+        char c = hay[p];
+        if (esc) {
+            // Keep escaped char as-is (good enough for IDs/tokens)
+            v.push_back(c);
+            esc = false;
+            continue;
+        }
+        if (c == '\\') { esc = true; continue; }
+        if (c == '"') break;
+        v.push_back(c);
+    }
+
+    if (v.empty()) return false;
+    out = std::move(v);
+    return true;
 }
 
 // Extract a JSON object literal that appears after a marker (e.g. "ytcfg.set(" or "var ytInitialData = ").
@@ -512,6 +547,24 @@ void YouTubeLiveChatService::worker(std::string handleIn, ChatAggregator* chat, 
 
     std::string videoId;
     if (!ExtractFirstJsonValueString(liveHtml.body, "videoId", videoId) || videoId.empty()) {
+        // Fallback: look for watch?v=VIDEOID (11 chars)
+        // Common patterns: /watch?v=XXXXXXXXXXX or "watch?v=XXXXXXXXXXX"
+        size_t w = liveHtml.body.find("watch?v=");
+        if (w != std::string::npos && w + 8 + 11 <= liveHtml.body.size()) {
+            std::string cand = liveHtml.body.substr(w + 8, 11);
+            auto ok = [](char c) {
+                return (c >= 'A' && c <= 'Z') ||
+                    (c >= 'a' && c <= 'z') ||
+                    (c >= '0' && c <= '9') ||
+                    c == '_' || c == '-';
+                };
+            bool good = true;
+            for (char c : cand) if (!ok(c)) { good = false; break; }
+            if (good) videoId = cand;
+        }
+    }
+
+    if (videoId.empty()) {
         Log(L"YOUTUBE: could not find videoId on /live page (are they live?)");
         running_.store(false);
         return;

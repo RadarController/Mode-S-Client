@@ -40,6 +40,17 @@
 #include "floating/FloatingChat.h"
 #include "platform/PlatformControl.h"
 
+// Web UI log capture: LogLine() will also push into AppState so /api/log can display it.
+static AppState* gStateForWebLog = nullptr;
+
+static std::string ToUtf8(const std::wstring& w) {
+    if (w.empty()) return "";
+    int len = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
+    std::string s(len, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), s.data(), len, nullptr, nullptr);
+    return s;
+}
+
 // --------------------------- WebView2 (Modern UI host) ----------------------
 #if !defined(HAVE_WEBVIEW2)
 #  if defined(__has_include)
@@ -217,6 +228,10 @@ static void AppendLogOnUiThread(const std::wstring& s)
 
 static void LogLine(const std::wstring& s)
 {
+    // Also feed the Web UI log buffer (served via /api/log)
+    if (gStateForWebLog) {
+        gStateForWebLog->push_log_utf8(ToUtf8(s));
+    }
     // If called from a worker thread, marshal to the UI thread to avoid deadlocks/freezes.
     if (gUiThreadId != 0 && GetCurrentThreadId() != gUiThreadId) {
         if (gMainWnd) {
@@ -238,6 +253,7 @@ static std::wstring ToW(const std::string& s) {
     MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), w.data(), len);
     return w;
 }
+
 
 
 struct HttpResult {
@@ -328,13 +344,6 @@ static std::string UrlEncode(const std::string& s)
         }
     }
     return out;
-}
-static std::string ToUtf8(const std::wstring& w) {
-    if (w.empty()) return "";
-    int len = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-    std::string s(len, '\0');
-    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), s.data(), len, nullptr, nullptr);
-    return s;
 }
 
 static std::wstring GetWindowTextWString(HWND h) {
@@ -1332,9 +1341,12 @@ switch (msg) {
             wcscpy_s(lf.lfFaceName, L"Segoe UI");
             gFontUi = CreateFontIndirectW(&lf);
         }
-
+        }
         // Load config first (so edits start populated)
         (void)config.Load();
+
+        // Allow LogLine() to feed the Web UI (/api/log)
+        gStateForWebLog = &state;
 
         // Log what AppConfig actually loaded (helps diagnose mismatched JSON keys vs. AppConfig mapping).
         {
@@ -1346,6 +1358,8 @@ switch (msg) {
             snap += L"' twitch_client_secret_len=";
             snap += std::to_wstring(config.twitch_client_secret.size());
             LogLine(snap.c_str());
+        }
+
         
         // If enabled, host the new modern UI (HTML/CSS) directly inside the main window via WebView2.
         // This keeps all existing backend threads + HTTP API intact, but replaces the legacy Win32 control layout.
@@ -1402,9 +1416,7 @@ switch (msg) {
             // Kick off backend init (HTTP server, pollers, etc.)
             PostMessageW(hwnd, WM_APP + 1, 0, 0);
             return 0;
-        }
 #endif
-}
 
         // Group boxes
         hGroupTikTok = CreateWindowW(L"BUTTON", L"TikTok", WS_CHILD | WS_VISIBLE | BS_GROUPBOX, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
@@ -1654,8 +1666,6 @@ LogLine(L"TIKTOK: starting followers poller thread");
                 LogLine(L"TWITCH: OAuth token refresh worker started");
             }
         }
-
-
 
         // Signal that the app has finished initializing and the main window can be shown.
         PostMessageW(hwnd, WM_APP_SPLASH_READY, 0, 0);

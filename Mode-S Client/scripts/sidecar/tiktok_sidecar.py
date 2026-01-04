@@ -354,6 +354,7 @@ async def main_async() -> int:
         emit_event("follow", user, "followed", ts_ms)
 
     @client.on(ShareEvent)
+    async def on_like(event: ShareEvent):
         return  # likes disabled for now
 
     @client.on(LikeEvent)
