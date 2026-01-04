@@ -84,12 +84,8 @@ nlohmann::json AppState::metrics_json() const {
 nlohmann::json AppState::chat_json() const {
     nlohmann::json arr = nlohmann::json::array();
     for (auto& c : recent_chat()) {
-        arr.push_back({
-            {"platform", c.platform},
-            {"user", c.user},
-            {"message", c.message},
-            {"ts_ms", c.ts_ms}
-            });
+        nlohmann::json j = c; // uses to_json(ChatMessage)
+        arr.push_back(std::move(j));
     }
     return arr;
 }
@@ -196,6 +192,7 @@ nlohmann::json AppState::youtube_events_json(size_t limit) const {
     out["events"] = std::move(arr);
     return out;
 }
+
 void AppState::push_log_utf8(const std::string& msg) {
     if (msg.empty()) return;
 
