@@ -526,6 +526,71 @@ def main():
                             "message": m.get("message", ""),
                         })
 
+        # Super Chat (paid message)
+        if "liveChatPaidMessageRenderer" in node and isinstance(node["liveChatPaidMessageRenderer"], dict):
+            r = node["liveChatPaidMessageRenderer"]
+            mid = r.get("id") or ""
+            user = ""
+            msg = ""
+            amount = ""
+            try:
+                user = (r.get("authorName", {}) or {}).get("simpleText", "") or ""
+                amount = (r.get("purchaseAmountText", {}) or {}).get("simpleText", "") or ""
+                msg = runs_to_text((r.get("message", {}) or {}).get("runs", []))
+            except Exception:
+                pass
+            label = f"[SUPERCHAT {amount}] " if amount else "[SUPERCHAT] "
+            out_msgs.append({
+                "platform": "youtube",
+                "user": user or "YouTube",
+                "message": (label + msg).strip(),
+                "ts_ms": now_ms(),
+                "id": f"yt_sc|{mid}" if mid else f"yt_sc|{now_ms()}|{user}|{hash(msg)}",
+                "type": "youtube.chat"
+            })
+
+        # Super Sticker (paid sticker)
+        if "liveChatPaidStickerRenderer" in node and isinstance(node["liveChatPaidStickerRenderer"], dict):
+            r = node["liveChatPaidStickerRenderer"]
+            mid = r.get("id") or ""
+            user = ""
+            amount = ""
+            try:
+                user = (r.get("authorName", {}) or {}).get("simpleText", "") or ""
+                amount = (r.get("purchaseAmountText", {}) or {}).get("simpleText", "") or ""
+            except Exception:
+                pass
+            label = f"[SUPERSTICKER {amount}]" if amount else "[SUPERSTICKER]"
+            out_msgs.append({
+                "platform": "youtube",
+                "user": user or "YouTube",
+                "message": label,
+                "ts_ms": now_ms(),
+                "id": f"yt_ss|{mid}" if mid else f"yt_ss|{now_ms()}|{user}",
+                "type": "youtube.chat"
+            })
+
+        # Membership (new member / milestone)
+        if "liveChatMembershipItemRenderer" in node and isinstance(node["liveChatMembershipItemRenderer"], dict):
+            r = node["liveChatMembershipItemRenderer"]
+            mid = r.get("id") or ""
+            user = ""
+            msg = ""
+            try:
+                user = (r.get("authorName", {}) or {}).get("simpleText", "") or ""
+                header = (r.get("headerSubtext", {}) or {}).get("simpleText", "") or ""
+                msg = header or "became a member"
+            except Exception:
+                pass
+            out_msgs.append({
+                "platform": "youtube",
+                "user": user or "YouTube",
+                "message": f"[MEMBERSHIP] {msg}".strip(),
+                "ts_ms": now_ms(),
+                "id": f"yt_mem|{mid}" if mid else f"yt_mem|{now_ms()}|{user}",
+                "type": "youtube.chat"
+            })
+
             # Sleep based on server hint (or backoff on error)
             time.sleep(max(0.25, min(10.0, sleep_ms / 1000.0)))
         else:

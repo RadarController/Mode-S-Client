@@ -165,43 +165,31 @@ static std::string EnsureAtHandle(const std::string& s) {
     return "@" + t;
 }
 
-// crude: finds `"key":"VALUE"` and returns VALUE
+// tolerant: finds `"key" : "VALUE"` with optional whitespace and escaped chars
 static bool ExtractFirstJsonValueString(const std::string& hay, const std::string& key, std::string& out) {
     out.clear();
 
-    // Find the first occurrence of "key"
     const std::string k = "\"" + key + "\"";
     size_t p = hay.find(k);
     if (p == std::string::npos) return false;
     p += k.size();
 
-    // Skip whitespace
     auto is_ws = [](unsigned char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; };
-    while (p < hay.size() && is_ws((unsigned char)hay[p])) ++p;
 
-    // Expect ':'
+    while (p < hay.size() && is_ws((unsigned char)hay[p])) ++p;
     if (p >= hay.size() || hay[p] != ':') return false;
     ++p;
 
-    // Skip whitespace
     while (p < hay.size() && is_ws((unsigned char)hay[p])) ++p;
-
-    // Expect opening quote
     if (p >= hay.size() || hay[p] != '"') return false;
     ++p;
 
-    // Read until an unescaped quote
     std::string v;
     v.reserve(64);
     bool esc = false;
     for (; p < hay.size(); ++p) {
         char c = hay[p];
-        if (esc) {
-            // Keep escaped char as-is (good enough for IDs/tokens)
-            v.push_back(c);
-            esc = false;
-            continue;
-        }
+        if (esc) { v.push_back(c); esc = false; continue; }
         if (c == '\\') { esc = true; continue; }
         if (c == '"') break;
         v.push_back(c);
@@ -297,13 +285,23 @@ static bool ExtractInitialContinuation(const std::string& html, std::string& con
     continuation.clear();
 
     std::string initialStr;
-    if (ExtractJsonObjectAfterMarker(html, "ytInitialData", initialStr)) {
+
+    // Try several common markers/assignments
+    if (!ExtractJsonObjectAfterMarker(html, "var ytInitialData", initialStr)) {
+        ExtractJsonObjectAfterMarker(html, "window[\"ytInitialData\"]", initialStr);
+    }
+    if (initialStr.empty()) {
+        ExtractJsonObjectAfterMarker(html, "ytInitialData", initialStr);
+    }
+
+    if (!initialStr.empty()) {
         try {
             json init = json::parse(initialStr);
             if (FindFirstStringByKeyRecursive(init, "continuation", continuation) && !continuation.empty()) {
                 return true;
             }
-        } catch (...) {}
+        }
+        catch (...) {}
     }
 
     size_t p = html.find("liveChatRenderer");
