@@ -11,9 +11,27 @@ struct ChatMessage {
     std::string platform;
     std::string user;
     std::string message;
+
+    // Optional rich message representation (e.g. YouTube "runs" containing emoji thumbnails).
+    // When present, overlays can render emojis as images while retaining `message` as a plain-text fallback.
+    nlohmann::json runs; // null or array
+
     std::string color; // optional username color (e.g. "#FF0000")
     std::int64_t ts_ms{};
 };
+
+// JSON serialization for ChatMessage (used by /api/chat and overlays).
+// Backward-compatible: `runs` is omitted unless it's a non-empty array.
+inline void to_json(nlohmann::json& j, const ChatMessage& c) {
+    j = nlohmann::json{
+        {"platform", c.platform},
+        {"user", c.user},
+        {"message", c.message},
+        {"ts_ms", c.ts_ms}
+    };
+    if (!c.color.empty()) j["color"] = c.color;
+    if (c.runs.is_array() && !c.runs.empty()) j["runs"] = c.runs;
+}
 
 struct EventItem {
     std::string platform; // "tiktok"
@@ -80,7 +98,7 @@ private:
     Metrics metrics_{};
     std::deque<ChatMessage> chat_; // last 200
     std::deque<EventItem> tiktok_events_; // last 200
-	std::deque<EventItem> youtube_events_; // last 200
+    std::deque<EventItem> youtube_events_; // last 200
     std::deque<nlohmann::json> twitch_eventsub_events_; // last 200 by default
 
     // EventSub status + events kept small for UI/debugging.
@@ -104,5 +122,4 @@ private:
 
     std::deque<LogEntry> log_;          // ring buffer
     std::uint64_t log_next_id_ = 0;     // monotonically increasing
-    
 };

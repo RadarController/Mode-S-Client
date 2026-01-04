@@ -321,6 +321,85 @@ static bool LooksLikeConsentWall(const std::string& html) {
 }
 
 static void ExtractChatMessages(const json& j, std::vector<ChatMessage>& outMsgs) {
+    // Build both a plain-text message (for backward compatibility) and a rich `runs` array
+    // that includes emoji thumbnail URLs.
+    auto BuildPlainAndRuns = [](const json& runsIn, std::string& outPlain, json& outRuns) {
+        outPlain.clear();
+        outRuns = json::array();
+
+        if (!runsIn.is_array()) return;
+
+        auto AppendTextRun = [&](const std::string& t) {
+            if (t.empty()) return;
+            outPlain += t;
+            outRuns.push_back(json{ {"t","text"}, {"text",t} });
+            };
+
+        for (const auto& run : runsIn) {
+            try {
+                if (run.contains("text") && run["text"].is_string()) {
+                    AppendTextRun(run["text"].get<std::string>());
+                    continue;
+                }
+
+                if (run.contains("emoji") && run["emoji"].is_object()) {
+                    const auto& e = run["emoji"];
+
+                    std::string shortcut;
+                    try {
+                        if (e.contains("shortcuts") && e["shortcuts"].is_array() && !e["shortcuts"].empty() && e["shortcuts"][0].is_string()) {
+                            shortcut = e["shortcuts"][0].get<std::string>();
+                        }
+                    }
+                    catch (...) {}
+
+                    std::string emojiId;
+                    try {
+                        if (e.contains("emojiId") && e["emojiId"].is_string()) emojiId = e["emojiId"].get<std::string>();
+                    }
+                    catch (...) {}
+
+                    if (shortcut.empty() && !emojiId.empty()) shortcut = ":" + emojiId + ":";
+                    if (shortcut.empty()) shortcut = "�";
+
+                    // Choose the largest thumbnail (YouTube usually orders small->large)
+                    std::string url;
+                    int w = 0, h = 0;
+                    try {
+                        if (e.contains("image") && e["image"].is_object()) {
+                            const auto& img = e["image"];
+                            if (img.contains("thumbnails") && img["thumbnails"].is_array() && !img["thumbnails"].empty()) {
+                                const auto& t = img["thumbnails"].back();
+                                if (t.contains("url") && t["url"].is_string()) url = t["url"].get<std::string>();
+                                if (t.contains("width")) w = t.value("width", 0);
+                                if (t.contains("height")) h = t.value("height", 0);
+                            }
+                        }
+                    }
+                    catch (...) {}
+
+                    outPlain += shortcut;
+
+                    json jr;
+                    jr["t"] = "emoji";
+                    jr["shortcut"] = shortcut;
+                    if (!emojiId.empty()) jr["emojiId"] = emojiId;
+                    if (!url.empty()) jr["url"] = url;
+                    if (w > 0) jr["w"] = w;
+                    if (h > 0) jr["h"] = h;
+                    outRuns.push_back(std::move(jr));
+                    continue;
+                }
+            }
+            catch (...) {
+                // ignore a bad run
+            }
+        }
+
+        // If we didn't capture anything useful, keep runs null so we don't bloat /api/chat.
+        if (outRuns.empty()) outRuns = json();
+        };
+
     if (j.is_object()) {
         auto it = j.find("liveChatTextMessageRenderer");
         if (it != j.end() && it->is_object()) {
@@ -332,28 +411,19 @@ static void ExtractChatMessages(const json& j, std::vector<ChatMessage>& outMsgs
             try {
                 if (r.contains("authorName") && r["authorName"].contains("simpleText"))
                     m.user = r["authorName"]["simpleText"].get<std::string>();
-            } catch (...) {}
+            }
+            catch (...) {}
 
             try {
                 if (r.contains("message") && r["message"].contains("runs") && r["message"]["runs"].is_array()) {
-                    std::string msg;
-                    for (const auto& run : r["message"]["runs"]) {
-                        if (run.contains("text")) {
-                            msg += run["text"].get<std::string>();
-                        } else if (run.contains("emoji")) {
-                            const auto& e = run["emoji"];
-                            if (e.contains("shortcuts") && e["shortcuts"].is_array() && !e["shortcuts"].empty()) {
-                                msg += e["shortcuts"][0].get<std::string>();
-                            } else if (e.contains("emojiId")) {
-                                msg += ":" + e["emojiId"].get<std::string>() + ":";
-                            } else {
-                                msg += "�";
-                            }
-                        }
-                    }
-                    m.message = msg;
+                    std::string plain;
+                    json runs;
+                    BuildPlainAndRuns(r["message"]["runs"], plain, runs);
+                    m.message = std::move(plain);
+                    m.runs = std::move(runs);
                 }
-            } catch (...) {}
+            }
+            catch (...) {}
 
             if (!m.user.empty() && !m.message.empty()) outMsgs.push_back(std::move(m));
         }
@@ -361,12 +431,11 @@ static void ExtractChatMessages(const json& j, std::vector<ChatMessage>& outMsgs
         for (auto it2 = j.begin(); it2 != j.end(); ++it2) {
             ExtractChatMessages(it2.value(), outMsgs);
         }
-    } else if (j.is_array()) {
+    }
+    else if (j.is_array()) {
         for (const auto& v : j) ExtractChatMessages(v, outMsgs);
     }
 }
-
-
 
 static std::string ExtractRunsOrSimpleText(const json& obj, const std::string& key) {
     try {
