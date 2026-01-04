@@ -58,14 +58,21 @@ nlohmann::json ChatAggregator::RecentJson(size_t limit) const
         std::size_t msgHash = std::hash<std::string>{}(m.message);
         std::string id = platform + "|" + m.user + "|" + std::to_string(m.ts_ms) + "|" + std::to_string(msgHash);
 
-        out.push_back({
+        nlohmann::json item = {
             {"platform", platform},
             {"user", m.user},
             {"message", m.message},
             {"ts_ms", m.ts_ms},
             {"id", id},
             {"color", m.color}
-        });
+        };
+
+        // Include rich runs when present (YouTube custom emojis, etc.)
+        if (m.runs.is_array() && !m.runs.empty()) {
+            item["runs"] = m.runs;
+        }
+
+        out.push_back(std::move(item));
     }
     return out;
 }

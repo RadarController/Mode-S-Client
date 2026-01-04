@@ -16,7 +16,7 @@
 
         body {
             font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
-            color: #000;
+            color: 000;
         }
         /* Make the log take full viewport width and be scrollable vertically. Hide scrollbars visually but keep scrolling. */
         #log {
@@ -30,50 +30,50 @@
             -ms-overflow-style: none;
         }
 
-        #log .line {
-            margin: 2px 0;
-            display: flex;
-            align-items: flex-start;
-        }
+            #log .line {
+                margin: 2px 0;
+                display: flex;
+                align-items: flex-start;
+            }
 
-        #log .line {
-            margin: 2px 0;
-            display: flex;
-            align-items: flex-start;
-        }
+            #log .line {
+                margin: 2px 0;
+                display: flex;
+                align-items: flex-start;
+            }
 
-        #log .icon {
-            width: 20px;
-            height: 20px;
-            flex: 0 0 20px;
-            margin-right: 8px;
-        }
+            #log .icon {
+                width: 20px;
+                height: 20px;
+                flex: 0 0 20px;
+                margin-right: 8px;
+            }
 
-        /* 🔧 Normalize inline SVG icon sizing */
-        #log .icon svg {
-            width: 100%; !important
-            height: 100%; !important
-            display: block;
-        }
+                /* 🔧 Normalize inline SVG icon sizing */
+                #log .icon svg {
+                    width: 100%;
+                    !important height: 100%;
+                    !important display: block;
+                }
 
-        #log .text {
-            white-space: normal;
-            word-break: break-word;
-            flex: 1 1 auto;
-        }
+            #log .text {
+                white-space: normal;
+                word-break: break-word;
+                flex: 1 1 auto;
+            }
 
-        /* Remove extra horizontal gap on the username so the colon added in JS produces a single space: "username: message" */
-        #log .user {
-            font-weight: 600;
-            margin-right: 0;
-        }
+            /* Remove extra horizontal gap on the username so the colon added in JS produces a single space: "username: message" */
+            #log .user {
+                font-weight: 600;
+                margin-right: 0;
+            }
 
-        /* Hide scrollbar for WebKit-based browsers */
-        #log::-webkit-scrollbar {
-            width: 0px;
-            height: 0px;
-            display: none;
-        }
+            /* Hide scrollbar for WebKit-based browsers */
+            #log::-webkit-scrollbar {
+                width: 0px;
+                height: 0px;
+                display: none;
+            }
 
         /* Event alert styling (EventSub merged into chat feed) */
         .line.event {
@@ -83,9 +83,9 @@
             padding: 4px 6px;
         }
 
-        .line.event .text, .line.event .text span, .line.event .user {
-            color: #fff !important;
-        }
+            .line.event .text, .line.event .text span, .line.event .user {
+                color: #fff !important;
+            }
 
         .yt-emoji {
             width: 20px;
@@ -93,7 +93,6 @@
             vertical-align: -4px;
             margin: 0 1px;
         }
-
     </style>
     <script src="/assets/mergedChatFeed.js"></script>
 </head>
@@ -166,7 +165,7 @@
             const color = String(pick(m, ["color", "user_color"], ""));
             const id = String(pick(m, ["id", "message_id", "msg_id", "uuid"], platform + "|" + user + "|" + ts + "|" + text));
             const runs = (m && Array.isArray(m.runs)) ? m.runs : null;
-            return { platform, user, text, ts, id, color, raw: m, is_event: false };
+            return { platform, user, text, ts, id, color, runs, raw: m, is_event: false };
         }
 
         function normalizeEvent(raw) {
@@ -275,6 +274,7 @@
             if (runs && runs.length) {
                 for (const run of runs) {
                     if (!run || typeof run !== 'object') continue;
+
                     if (run.t === 'text' && typeof run.text === 'string') {
                         msgSpan.appendChild(document.createTextNode(run.text));
                     } else if (run.t === 'emoji') {
@@ -294,6 +294,7 @@
             } else {
                 msgSpan.appendChild(document.createTextNode(n.text));
             }
+
             txt.appendChild(msgSpan);
 
             line.appendChild(txt);

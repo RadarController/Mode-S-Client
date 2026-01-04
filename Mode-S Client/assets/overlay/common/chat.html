@@ -6,11 +6,36 @@
     <title>Chat</title>
     <style>
         /* Minimal styling to ensure the log is scrollable in OBS browser sources */
-        html, body { margin: 0; padding: 0; height: 100%; background: transparent; overflow: hidden; }
-        body { font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color: #fff; }
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            background: transparent;
+            overflow: hidden;
+        }
+
+        body {
+            font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+            color: #fff;
+        }
         /* Make the log take full viewport width and be scrollable vertically. Hide scrollbars visually but keep scrolling. */
-        #log { padding: 8px; overflow-y: auto; height: 100vh; box-sizing: border-box; width: 100vw; scroll-behavior: smooth; }
-        #log .line { margin: 2px 0; display: flex; align-items: flex-start; }
+        #log {
+            padding: 8px;
+            overflow-y: auto;
+            height: 100vh;
+            box-sizing: border-box;
+            width: 100vw;
+            scroll-behavior: smooth;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+        }
+
+            #log .line {
+                margin: 2px 0;
+                display: flex;
+                align-items: flex-start;
+            }
+
             #log .line {
                 margin: 2px 0;
                 display: flex;
@@ -23,23 +48,33 @@
                 flex: 0 0 20px;
                 margin-right: 8px;
             }
+
                 /* 🔧 Normalize inline SVG icon sizing */
                 #log .icon svg {
                     width: 100%;
-                    height: 100%;
-                    display: block;
+                    !important height: 100%;
+                    !important display: block;
                 }
-        #log .text { white-space: normal; word-break: break-word; flex: 1 1 auto; }
-        /* Remove extra horizontal gap on the username so the colon added in JS produces a single space: "username: message" */
-        #log .user { font-weight: 600; margin-right: 0; }
 
-        /* Hide scrollbar for WebKit-based browsers */
-        #log::-webkit-scrollbar { width: 0px; height: 0px; display: none; }
-        /* Hide scrollbar for Firefox */
-        #log { scrollbar-width: none; }
-        /* Hide scrollbar for IE, Edge */
-        #log { -ms-overflow-style: none; }
-    
+            #log .text {
+                white-space: normal;
+                word-break: break-word;
+                flex: 1 1 auto;
+            }
+
+            /* Remove extra horizontal gap on the username so the colon added in JS produces a single space: "username: message" */
+            #log .user {
+                font-weight: 600;
+                margin-right: 0;
+            }
+
+            /* Hide scrollbar for WebKit-based browsers */
+            #log::-webkit-scrollbar {
+                width: 0px;
+                height: 0px;
+                display: none;
+            }
+
         /* Event alert styling (EventSub merged into chat feed) */
         .line.event {
             background: #025492;
@@ -47,11 +82,18 @@
             border-radius: 10px;
             padding: 4px 6px;
         }
-        .line.event .text, .line.event .text span, .line.event .user {
-            color: #fff !important;
+
+            .line.event .text, .line.event .text span, .line.event .user {
+                color: #fff !important;
+            }
+
+        .yt-emoji {
+            width: 20px;
+            height: 20px;
+            vertical-align: -4px;
+            margin: 0 1px;
         }
-    
-</style>
+    </style>
   <script src="/assets/mergedChatFeed.js"></script>
 </head>
 <body>
@@ -122,7 +164,8 @@
             const ts = pick(m, ["ts_ms", "timestamp", "ts", "time", "created_at"], Date.now());
             const color = String(pick(m, ["color", "user_color"], ""));
             const id = String(pick(m, ["id", "message_id", "msg_id", "uuid"], platform + "|" + user + "|" + ts + "|" + text));
-            return { platform, user, text, ts, id, color, raw: m, is_event: false };
+            const runs = (m && Array.isArray(m.runs)) ? m.runs : null;
+            return { platform, user, text, ts, id, color, runs, raw: m, is_event: false };
         }
 
         function normalizeEvent(raw) {
@@ -225,7 +268,33 @@
             txt.appendChild(userSpan);
 
             const msgSpan = document.createElement('span');
-            msgSpan.textContent = ': ' + n.text;
+            msgSpan.appendChild(document.createTextNode(': '));
+
+            const runs = (n && Array.isArray(n.runs)) ? n.runs : null;
+            if (runs && runs.length) {
+                for (const run of runs) {
+                    if (!run || typeof run !== 'object') continue;
+
+                    if (run.t === 'text' && typeof run.text === 'string') {
+                        msgSpan.appendChild(document.createTextNode(run.text));
+                    } else if (run.t === 'emoji') {
+                        const shortcut = (typeof run.shortcut === 'string' && run.shortcut.length) ? run.shortcut : '';
+                        if (run.url && typeof run.url === 'string' && run.url.length) {
+                            const img = document.createElement('img');
+                            img.className = 'yt-emoji';
+                            img.src = run.url;
+                            img.alt = shortcut || 'emoji';
+                            img.loading = 'lazy';
+                            msgSpan.appendChild(img);
+                        } else if (shortcut) {
+                            msgSpan.appendChild(document.createTextNode(shortcut));
+                        }
+                    }
+                }
+            } else {
+                msgSpan.appendChild(document.createTextNode(n.text));
+            }
+
             txt.appendChild(msgSpan);
 
             line.appendChild(txt);
