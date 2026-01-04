@@ -31,12 +31,7 @@
         }
 
             #log .line {
-                margin: 2px 0;
-                display: flex;
-                align-items: flex-start;
-            }
-
-            #log .line {
+                min-height: 20px;
                 margin: 2px 0;
                 display: flex;
                 align-items: flex-start;
@@ -49,11 +44,10 @@
                 margin-right: 8px;
             }
 
-                /* 🔧 Normalize inline SVG icon sizing */
                 #log .icon svg {
-                    width: 100%;
-                    !important height: 100%;
-                    !important display: block;
+                    width: 100% !important;
+                    height: 100% !important;
+                    display: block !important;
                 }
 
             #log .text {
@@ -94,13 +88,71 @@
             margin: 0 1px;
         }
     </style>
-  <script src="/assets/mergedChatFeed.js"></script>
+    <script src="/assets/mergedChatFeed.js"></script>
 </head>
 <body>
     <div id="log"></div>
+    <div id="diag" style="
+  position: fixed;
+  left: 8px;
+  bottom: 8px;
+  font: 12px/1.2 monospace;
+  background: rgba(255,255,255,0.85);
+  padding: 6px 8px;
+  border-radius: 6px;
+  z-index: 9999;
+  max-width: 70vw;
+  white-space: pre;
+"></div>
 
     <script>
         const LOG = document.getElementById("log");
+
+        const DIAG = document.getElementById('diag');
+        const DEBUG_ENABLED = false;
+
+        const dbg = {
+            received: 0,
+            rendered: 0,
+            skip_empty: 0,
+            skip_dupe: 0,
+            skip_other: 0,
+            appended_without_icon: 0,
+            appended_without_text: 0,
+            lastSkip: "",
+            lastAppendWarn: ""
+        };
+
+        function setDiag() {
+            if (!DEBUG_ENABLED || !DIAG) return;
+            DIAG.textContent =
+                `recv=${dbg.received}  rend=${dbg.rendered}
+                        skip_empty=${dbg.skip_empty}  skip_dupe=${dbg.skip_dupe}  skip_other=${dbg.skip_other}
+                        warn_no_icon=${dbg.appended_without_icon}  warn_no_text=${dbg.appended_without_text}
+                        lastSkip=${dbg.lastSkip}
+                        lastWarn=${dbg.lastAppendWarn}`;
+        }
+
+        function extractGateText(n) {
+            const runs = Array.isArray(n?.runs) ? n.runs : null;
+            const baseText =
+                (n?.text !== undefined && n?.text !== null) ? String(n.text) :
+                    (n?.message !== undefined && n?.message !== null) ? String(n.message) :
+                        "";
+
+            let gate = "";
+            if (runs && runs.length) {
+                for (const run of runs) {
+                    if (!run || typeof run !== "object") continue;
+                    if (run.t === "text" && typeof run.text === "string") gate += run.text;
+                    else if (run.t === "emoji" && typeof run.shortcut === "string") gate += run.shortcut;
+                    else if (run.t === "emoji" && typeof run.url === "string" && run.url.length) gate += "🙂";
+                }
+            } else {
+                gate = baseText;
+            }
+            return gate;
+        }
 
         const ENDPOINTS = [
             "/api/chat?limit=200",
@@ -256,59 +308,129 @@
         }
 
         function addLine(n) {
-            if (!n.text) return;
-            const line = document.createElement('div'); line.className = 'line';
-            if (n.is_event) line.classList.add('event');
-            const icon = iconFor(n.platform); line.appendChild(icon);
+            dbg.received++;
 
-            const txt = document.createElement('div'); txt.className = 'text';
-            // username span (colored for twitch if available, otherwise deterministic fallback)
+            if (!n) {
+                dbg.lastSkip = "n was null/undefined";
+                setDiag();
+                return;
+            }
+
+            // --- DUPLICATE CHECK (keeps your existing behaviour if you have seen/ids) ---
+            // If your file already has a "seen" set somewhere, KEEP USING IT.
+            // If it does not, this block is harmless and you can delete it later.
+            window.__seen = window.__seen || new Set();
+            const id = n.id || `${n.platform}|${n.user}|${n.ts_ms}|${extractGateText(n).slice(0, 40)}`;
+            if (window.__seen.has(id)) {
+                dbg.skip_dupe++;
+                dbg.lastSkip = `dupe id=${id}`;
+                setDiag();
+                return;
+            }
+            window.__seen.add(id);
+            // --- /DUPLICATE CHECK ---
+
+            // Gate: if it will render as empty, do not append anything (prevents icon drift)
+            const gate = extractGateText(n);
+            if (gate.replace(/\u200B/g, "").trim().length === 0) {
+                dbg.skip_empty++;
+                dbg.lastSkip = `empty gate platform=${n.platform || "?"}`;
+                setDiag();
+                return;
+            }
+
+            // Build the line DOM (icon + text are appended together)
+            const line = document.createElement('div');
+            line.className = 'line';
+            if (n.is_event) line.classList.add('event');
+
+            const icon = iconFor(n.platform);
+            line.appendChild(icon);
+
+            const txt = document.createElement('div');
+            txt.className = 'text';
+
+            // user
             const userSpan = document.createElement('span');
             userSpan.className = 'user';
-            userSpan.textContent = n.user;
-            if (n.is_event) { try { userSpan.style.color = '#fff'; } catch (e) { } }
-            if (!n.is_event && n.platform && n.platform.indexOf('twitch') === 0) {
-                const provided = (n.color || '').trim();
-                const col = provided || colorFromName(n.user);
-                try { userSpan.style.color = col; } catch (e) { /* ignore invalid color */ }
-            }
+            userSpan.textContent = n.user || '';
             txt.appendChild(userSpan);
 
+            // message
             const msgSpan = document.createElement('span');
             msgSpan.appendChild(document.createTextNode(': '));
 
-            const runs = (n && Array.isArray(n.runs)) ? n.runs : null;
+            const runs = Array.isArray(n.runs) ? n.runs : null;
+            const baseText =
+                (n.text !== undefined && n.text !== null) ? String(n.text) :
+                    (n.message !== undefined && n.message !== null) ? String(n.message) :
+                        "";
+
+            let appended = false;
+
             if (runs && runs.length) {
                 for (const run of runs) {
                     if (!run || typeof run !== 'object') continue;
 
                     if (run.t === 'text' && typeof run.text === 'string') {
+                        if (run.text.length) appended = true;
                         msgSpan.appendChild(document.createTextNode(run.text));
                     } else if (run.t === 'emoji') {
-                        const shortcut = (typeof run.shortcut === 'string' && run.shortcut.length) ? run.shortcut : '';
-                        if (run.url && typeof run.url === 'string' && run.url.length) {
+                        const shortcut = (typeof run.shortcut === 'string') ? run.shortcut : '';
+                        if (typeof run.url === 'string' && run.url.length) {
                             const img = document.createElement('img');
                             img.className = 'yt-emoji';
                             img.src = run.url;
                             img.alt = shortcut || 'emoji';
                             img.loading = 'lazy';
                             msgSpan.appendChild(img);
+                            appended = true;
                         } else if (shortcut) {
                             msgSpan.appendChild(document.createTextNode(shortcut));
+                            appended = true;
                         }
+                    } else if (run.t === 'mention' && typeof run.text === 'string') {
+                        // Defensive if mentions exist
+                        if (run.text.length) appended = true;
+                        msgSpan.appendChild(document.createTextNode(run.text));
                     }
                 }
-            } else {
-                msgSpan.appendChild(document.createTextNode(n.text));
+            }
+
+            if (!appended && baseText) {
+                msgSpan.appendChild(document.createTextNode(baseText));
             }
 
             txt.appendChild(msgSpan);
-
             line.appendChild(txt);
+
+            // Append
             LOG.appendChild(line);
+            dbg.rendered++;
+
+            // Sanity checks — if these rise, we found the exact failure mode
+            const iconEl = line.querySelector('.icon, img.platform, svg');
+            const textEl = line.querySelector('.text');
+            if (!iconEl) {
+                dbg.warn_no_icon++;
+                dbg.lastWarn = `NO ICON platform=${n.platform || "?"}`;
+            }
+            if (!textEl || textEl.textContent.replace(/\u200B/g, "").trim().length === 0) {
+                dbg.warn_no_text++;
+                dbg.lastWarn = `NO TEXT platform=${n.platform || "?"}`;
+            }
+
+            // keep within MAX_LINES (uses your existing constant)
             while (LOG.childNodes.length > MAX_LINES) LOG.removeChild(LOG.firstChild);
-            // Smooth scroll new line into view
-            try { line.scrollIntoView({ behavior: 'smooth', block: 'end' }); } catch (e) { LOG.scrollTop = LOG.scrollHeight; }
+
+            setDiag();
+
+            // scroll
+            try {
+                line.scrollIntoView({ behavior: 'smooth', block: 'end' });
+            } catch (e) {
+                LOG.scrollTop = LOG.scrollHeight;
+            }
         }
 
         async function fetchFirstWorkingEndpoint() {
@@ -391,6 +513,9 @@
         preloadIcons()
             .catch(() => { })  // fall back to inline SVGs if icon files can't be fetched
             .finally(() => startMergedFeed());
+
+        // setDiag();
+
 
     </script>
 </body>
