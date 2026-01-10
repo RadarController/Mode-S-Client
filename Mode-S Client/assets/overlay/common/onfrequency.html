@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>On Frequency</title>
+  <style>
+    :root{
+      --bg: rgba(0,0,0,.65);
+      --border: rgba(255,255,255,.10);
+      --text: rgba(255,255,255,.92);
+      --muted: rgba(255,255,255,.65);
+    }
+
+    html,body{
+      margin:0;
+      padding:0;
+      background: transparent;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      color: var(--text);
+    }
+
+    .panel{
+      width: 320px;
+      max-width: 92vw;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px 12px 10px;
+      box-sizing: border-box;
+    }
+
+    .header{
+      font-weight: 800;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      font-size: 12px;
+      color: var(--muted);
+      display:flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .badge{
+      font-weight: 700;
+      font-size: 12px;
+      letter-spacing: .04em;
+      color: var(--text);
+      opacity:.9;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,.06);
+      white-space: nowrap;
+    }
+
+    .list{
+      display:flex;
+      flex-direction: column;
+      gap: 6px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      max-height: 260px; /* keep it tidy on stream */
+      overflow: hidden;
+    }
+
+    .row{
+      display:flex;
+      align-items:center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 6px 10px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,.08);
+      background: rgba(255,255,255,.04);
+      font-weight: 750;
+      letter-spacing: .02em;
+      font-size: 15px;
+    }
+
+    .empty{
+      padding: 10px;
+      border-radius: 10px;
+      border: 1px dashed rgba(255,255,255,.16);
+      color: var(--muted);
+      background: rgba(255,255,255,.03);
+      font-size: 13px;
+      line-height: 1.25;
+    }
+
+    .footer{
+      margin-top: 8px;
+      font-size: 11px;
+      color: rgba(255,255,255,.45);
+      display:flex;
+      justify-content: space-between;
+      gap: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="panel">
+    <div class="header">
+      <div>on frequency</div>
+      <div class="badge" id="countBadge">0</div>
+    </div>
+
+    <ul class="list" id="callsignList"></ul>
+    <div class="empty" id="emptyState" style="display:none;">No aircraft assumed.</div>
+
+    <div class="footer">
+      <div id="statusText">—</div>
+      <div id="updatedText">—</div>
+    </div>
+  </div>
+
+  <script>
+    const ENDPOINT = "/api/euroscope";
+    const POLL_MS = 750;
+
+    const elList = document.getElementById("callsignList");
+    const elEmpty = document.getElementById("emptyState");
+    const elCount = document.getElementById("countBadge");
+    const elStatus = document.getElementById("statusText");
+    const elUpdated = document.getElementById("updatedText");
+
+    let lastGoodTs = 0;
+
+    function setStatus(ok, msg){
+      elStatus.textContent = msg;
+      elStatus.style.opacity = ok ? 0.7 : 1.0;
+    }
+
+    function fmtTime(tsMs){
+      if(!tsMs) return "—";
+      const d = new Date(tsMs);
+      // simple HH:MM:SS local
+      return d.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", second:"2-digit"});
+    }
+
+    function render(list){
+      // normalize + sort
+      const callsigns = Array.isArray(list) ? list.filter(Boolean).map(String) : [];
+      callsigns.sort((a,b)=>a.localeCompare(b));
+
+      elCount.textContent = String(callsigns.length);
+
+      elList.innerHTML = "";
+      if(callsigns.length === 0){
+        elEmpty.style.display = "block";
+        return;
+      }
+      elEmpty.style.display = "none";
+
+      for(const cs of callsigns){
+        const li = document.createElement("li");
+        li.className = "row";
+        li.textContent = cs;
+        elList.appendChild(li);
+      }
+    }
+
+    async function poll(){
+      try{
+        const res = await fetch(ENDPOINT, { cache: "no-store" });
+        if(!res.ok) throw new Error("HTTP " + res.status);
+        const data = await res.json();
+
+        // expected: { assumed_list: [...], assumed_now: n, handled_session: n, ts_ms: ... }
+        render(data.assumed_list);
+
+        if(typeof data.ts_ms === "number") lastGoodTs = data.ts_ms;
+        elUpdated.textContent = "updated " + fmtTime(lastGoodTs);
+
+        // Optional: if counts exist, show a nicer status
+        const now = (typeof data.assumed_now === "number") ? data.assumed_now : null;
+        const sess = (typeof data.handled_session === "number") ? data.handled_session : null;
+        if(now !== null && sess !== null){
+          setStatus(true, `now ${now} • session ${sess}`);
+        }else{
+          setStatus(true, "live");
+        }
+      }catch(e){
+        setStatus(false, "offline / no data");
+        // Don’t clear list; keep last known good for stream stability
+      }
+    }
+
+    poll();
+    setInterval(poll, POLL_MS);
+  </script>
+</body>
+</html>

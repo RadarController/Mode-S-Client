@@ -92,18 +92,18 @@
 </head>
 <body>
     <div id="log"></div>
-    <div id="diag" style="
-  position: fixed;
-  left: 8px;
-  bottom: 8px;
-  font: 12px/1.2 monospace;
-  background: rgba(255,255,255,0.85);
-  padding: 6px 8px;
-  border-radius: 6px;
-  z-index: 9999;
-  max-width: 70vw;
-  white-space: pre;
-"></div>
+    <!-- <div id="diag" style="
+      position: fixed;
+      left: 8px;
+      bottom: 8px;
+      font: 12px/1.2 monospace;
+      background: rgba(255,255,255,0.85);
+      padding: 6px 8px;
+      border-radius: 6px;
+      z-index: 9999;
+      max-width: 70vw;
+      white-space: pre;
+    "></div>-->
 
     <script>
         const LOG = document.getElementById("log");
@@ -127,10 +127,10 @@
             if (!DEBUG_ENABLED || !DIAG) return;
             DIAG.textContent =
                 `recv=${dbg.received}  rend=${dbg.rendered}
-                    skip_empty=${dbg.skip_empty}  skip_dupe=${dbg.skip_dupe}  skip_other=${dbg.skip_other}
-                    warn_no_icon=${dbg.appended_without_icon}  warn_no_text=${dbg.appended_without_text}
-                    lastSkip=${dbg.lastSkip}
-                    lastWarn=${dbg.lastAppendWarn}`;
+                        skip_empty=${dbg.skip_empty}  skip_dupe=${dbg.skip_dupe}  skip_other=${dbg.skip_other}
+                        warn_no_icon=${dbg.appended_without_icon}  warn_no_text=${dbg.appended_without_text}
+                        lastSkip=${dbg.lastSkip}
+                        lastWarn=${dbg.lastAppendWarn}`;
         }
 
         function extractGateText(n) {

@@ -21,6 +21,9 @@ using Microsoft::WRL::ComPtr;
 
 std::atomic<bool> FloatingChat::registered_{ false };
 
+// Popout chat URL (served by the local overlay server)
+static constexpr const wchar_t* kPopoutChatUrl = L"http://localhost:17845/overlay/chat.html";
+
 FloatingChat::FloatingChat() = default;
 FloatingChat::~FloatingChat()
 {
@@ -30,6 +33,9 @@ FloatingChat::~FloatingChat()
 bool FloatingChat::Open(HWND parent)
 {
     if (wnd_) {
+        // Re-assert TOPMOST in case something changed Z-order.
+        SetWindowPos(wnd_, HWND_TOPMOST, 0, 0, 0, 0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
         SetForegroundWindow(wnd_);
         return true;
     }
@@ -77,6 +83,7 @@ bool FloatingChat::Open(HWND parent)
     }
     if (x < 0) x = 0;
 
+    // Layered + topmost so we can apply whole-window opacity and keep it always-on-top.
     HWND wnd = CreateWindowExW(WS_EX_LAYERED | WS_EX_TOPMOST,
         kClass, L"Floating Chat",
         WS_OVERLAPPEDWINDOW | WS_VISIBLE | WS_SYSMENU | WS_THICKFRAME,
@@ -84,8 +91,16 @@ bool FloatingChat::Open(HWND parent)
         nullptr, nullptr, GetModuleHandleW(nullptr), this);
     if (!wnd) return false;
 
-    const BYTE alpha = (BYTE)84; // ~33% opaque -> 67% transparent
+    // ~65% opaque black background.
+    const BYTE alpha = (BYTE)166;
     SetLayeredWindowAttributes(wnd, 0, alpha, LWA_ALPHA);
+
+    // Reinforce "always on top" (helps if other code changes Z-order later).
+    SetWindowPos(wnd, HWND_TOPMOST, 0, 0, 0, 0,
+        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+
+    ShowWindow(wnd, SW_SHOWNORMAL);
+    UpdateWindow(wnd);
 
     wnd_ = wnd;
     running_ = true;
@@ -130,6 +145,41 @@ LRESULT CALLBACK FloatingChat::WndProcThunk(HWND hwnd, UINT msg, WPARAM wParam, 
 LRESULT CALLBACK FloatingChat::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     switch (msg) {
+    case WM_SHOWWINDOW:
+        if (wParam) {
+            // Keep the popout always-on-top even if other windows try to reorder Z.
+            SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        }
+        return 0;
+
+    case WM_ACTIVATE:
+        if (LOWORD(wParam) != WA_INACTIVE) {
+            SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        }
+        break;
+
+    case WM_WINDOWPOSCHANGING: {
+        // Enforce TOPMOST continuously.
+        auto* wp = reinterpret_cast<WINDOWPOS*>(lParam);
+        if (wp) {
+            wp->hwndInsertAfter = HWND_TOPMOST;
+            wp->flags &= ~SWP_NOZORDER;
+        }
+        break;
+    }
+
+    case WM_ERASEBKGND: {
+        // Paint a solid black background; combined with WS_EX_LAYERED alpha this gives
+        // a black translucent window behind the chat content.
+        HDC hdc = (HDC)wParam;
+        RECT rc; GetClientRect(hwnd, &rc);
+        HBRUSH b = CreateSolidBrush(RGB(0, 0, 0));
+        FillRect(hdc, &rc, b);
+        DeleteObject(b);
+        return 1; // we handled background erase
+    }
     case WM_CREATE: {
 #if HAVE_WEBVIEW2
         // Initialize WebView2 environment and controller
@@ -152,6 +202,17 @@ LRESULT CALLBACK FloatingChat::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
                                 webview_controller_->get_CoreWebView2(&core);
                                 if (core) {
                                     webview_window_.Attach(core);
+
+                                    // Let the layered host window show through (we paint black + apply opacity).
+                                    // NOTE: DefaultBackgroundColor is on ICoreWebView2Controller2+.
+                                    COREWEBVIEW2_COLOR transparent{ 0, 0, 0, 0 }; // A,R,G,B
+                                    {
+                                        ComPtr<ICoreWebView2Controller2> controller2;
+                                        if (SUCCEEDED(webview_controller_.As(&controller2)) && controller2) {
+                                            controller2->put_DefaultBackgroundColor(transparent);
+                                        }
+                                    }
+
                                     // Make background transparent if supported
                                     ICoreWebView2Settings* settings = nullptr;
                                     webview_window_->get_Settings(&settings);
@@ -162,9 +223,26 @@ LRESULT CALLBACK FloatingChat::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
                                         settings->Release();
                                     }
 
-                                    // Navigate to local overlay chat.html served by local HTTP server
-                                    // Navigate to the dedicated floating chat page (separate from /overlay/chat.html)
-                                    webview_window_->Navigate(L"http://127.0.0.1:17845/assets/app/chat.html");
+                                    // IMPORTANT:
+                                    // WebView2 renders into its own child surface, so the host window's
+                                    // WS_EX_LAYERED alpha does not reliably apply to the *page* background.
+                                    // To guarantee a black ~65% translucent background, inject a small script
+                                    // that runs on every document before any content is shown.
+                                    webview_window_->AddScriptToExecuteOnDocumentCreated(
+                                        LR"((function(){
+  try {
+    // Force a translucent black background inside the page.
+    // Using a <style> element works even before <body> exists.
+    document.documentElement.style.background = 'transparent';
+    var style = document.createElement('style');
+    style.textContent = 'html, body { background: rgba(0,0,0,0.65) !important; margin: 0 !important; }';
+    document.documentElement.appendChild(style);
+  } catch(e) {}
+})();)" ,
+                                        nullptr);
+
+                                    // Navigate the popout to the overlay chat page.
+                                    webview_window_->Navigate(kPopoutChatUrl);
                                 }
 
                                 // Show controller and set bounds
@@ -178,7 +256,7 @@ LRESULT CALLBACK FloatingChat::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
         (void)hr; // ignore; best-effort initialization
 #else
         // WebView2 not available: open default browser to the overlay page as fallback
-        ShellExecuteW(nullptr, L"open", L"http://127.0.0.1:17845/overlay/chat.html", nullptr, nullptr, SW_SHOW);
+        ShellExecuteW(nullptr, L"open", kPopoutChatUrl, nullptr, nullptr, SW_SHOW);
 #endif
         return 0;
     }
