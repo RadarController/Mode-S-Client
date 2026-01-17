@@ -19,6 +19,7 @@
 #include <ctime>
 #include <memory>
 #include <mutex>
+#include <unordered_map>
 
 #include "httplib.h"
 #include "json.hpp"
@@ -145,6 +146,54 @@ static HWND hOpenFloatingChatBtn = nullptr;
 static std::unique_ptr<class FloatingChat> gFloatingChat;
 
 static std::atomic<bool> gRunning{ true };
+
+// --------------------------- Chatbot (local, overlay-only for now) ----------
+// NOTE: There is currently no outbound "send chat" implementation for Twitch/YouTube/TikTok.
+// This bot therefore injects responses back into ChatAggregator so overlays (and /api/chat)
+// show them immediately. When you add per-platform senders later, you can reuse the same
+// command parsing + cooldown logic and send the same text outward.
+
+static inline std::int64_t NowMs() {
+    using namespace std::chrono;
+    return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+}
+
+static std::string ToLowerAscii(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return (char)std::tolower(c); });
+    return s;
+}
+
+static bool ParseBangCommand(const std::string& msg, std::string& outCmd, std::string& outArgs) {
+    outCmd.clear();
+    outArgs.clear();
+    if (msg.size() < 2 || msg[0] != '!') return false;
+
+    // Trim leading '!'+spaces
+    size_t i = 1;
+    while (i < msg.size() && (msg[i] == ' ' || msg[i] == '\t')) i++;
+    if (i >= msg.size()) return false;
+
+    // Command token
+    size_t start = i;
+    while (i < msg.size() && msg[i] != ' ' && msg[i] != '\t' && msg[i] != '\r' && msg[i] != '\n') i++;
+    outCmd = msg.substr(start, i - start);
+
+    // Remainder as args (trim)
+    while (i < msg.size() && (msg[i] == ' ' || msg[i] == '\t')) i++;
+    if (i < msg.size()) outArgs = msg.substr(i);
+
+    outCmd = ToLowerAscii(outCmd);
+    return !outCmd.empty();
+}
+
+static void ReplaceAllInPlace(std::string& s, const std::string& from, const std::string& to) {
+    if (from.empty()) return;
+    size_t pos = 0;
+    while ((pos = s.find(from, pos)) != std::string::npos) {
+        s.replace(pos, from.size(), to);
+        pos += to.size();
+    }
+}
 
 
 // Helix poller is restartable independently of full app shutdown.
@@ -1279,6 +1328,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     static EuroScopeIngestService euroscope;
     static ObsWsClient obs;
 
+    // Chatbot cooldown state (shared across all platforms)
+    static std::mutex botMu;
+    static std::unordered_map<std::string, std::int64_t> botLastMs; // key -> last_ts
+
     // Restartable Helix poller (needed when Twitch channel/login changes).
     auto RestartTwitchHelixPoller = [&](const std::string& reason) {
         const std::string login = config.twitch_login;
@@ -1347,6 +1400,98 @@ switch (msg) {
 
         // Allow LogLine() to feed the Web UI (/api/log)
         gStateForWebLog = &state;
+
+        // Bot command persistence: store bot_commands.json next to the exe.
+        // (Commands are edited via /app/bot.html and served by /api/bot/commands)
+        try {
+            const std::filesystem::path botPath = std::filesystem::path(GetExeDir()) / "bot_commands.json";
+            state.set_bot_commands_storage_path(botPath.u8string());
+            (void)state.load_bot_commands_from_disk();
+        } catch (...) {}
+
+        // Seed some default bot commands if none exist on disk yet.
+        // (You can replace them at runtime via POST /api/bot/commands)
+        try {
+            if (!state.bot_commands_json().is_array() || state.bot_commands_json().empty()) {
+                nlohmann::json defaults = nlohmann::json::array({
+                    { {"command","help"}, {"response","Commands: !help, !about, !discord"}, {"enabled",true}, {"cooldown_ms",3000} },
+                    { {"command","about"}, {"response","StreamingATC.Live Mode-S Client"}, {"enabled",true}, {"cooldown_ms",3000} },
+                    { {"command","discord"}, {"response","Join the Discord: (set your invite in the bot UI)"}, {"enabled",true}, {"cooldown_ms",5000} }
+                });
+                state.set_bot_commands(defaults);
+            }
+        } catch (...) {}
+
+        // Subscribe chatbot to incoming messages.
+        // This only injects replies into the aggregator (overlay), it does not send to platforms.
+        chat.Subscribe([&](const ChatMessage& in) {
+            // Don't respond to ourselves.
+            if (in.user == "StreamingATC.Bot") return;
+
+            std::string cmd, args;
+            if (!ParseBangCommand(in.message, cmd, args)) return;
+
+            const std::int64_t now = NowMs();
+
+            // Global + per-user rate limit (keeps overlays sane and is a good default for future outbound send).
+            {
+                std::lock_guard<std::mutex> lk(botMu);
+                const std::string keyGlobal = "g|" + ToLowerAscii(in.platform);
+                const std::string keyUser = "u|" + ToLowerAscii(in.platform) + "|" + ToLowerAscii(in.user);
+                const std::int64_t lastG = botLastMs.count(keyGlobal) ? botLastMs[keyGlobal] : 0;
+                const std::int64_t lastU = botLastMs.count(keyUser) ? botLastMs[keyUser] : 0;
+                if (now - lastG < 1200) return;
+                if (now - lastU < 5000) return;
+                botLastMs[keyGlobal] = now;
+                botLastMs[keyUser] = now;
+            }
+
+            std::string response;
+
+            if (cmd == "help" || cmd == "commands") {
+                // Build a list of enabled commands
+                try {
+                    auto arr = state.bot_commands_json();
+                    std::vector<std::string> names;
+                    if (arr.is_array()) {
+                        for (const auto& c : arr) {
+                            if (!c.is_object()) continue;
+                            if (!c.value("enabled", true)) continue;
+                            std::string name = c.value("command", "");
+                            if (name.empty()) continue;
+                            if (name[0] != '!') name = "!" + name;
+                            names.push_back(name);
+                        }
+                    }
+                    std::sort(names.begin(), names.end());
+                    names.erase(std::unique(names.begin(), names.end()), names.end());
+
+                    response = "Commands: ";
+                    for (size_t i = 0; i < names.size(); ++i) {
+                        if (i) response += ", ";
+                        response += names[i];
+                    }
+                    if (names.empty()) response = "No commands configured.";
+                } catch (...) {
+                    response = "Commands: (unavailable)";
+                }
+            } else {
+                response = state.bot_lookup_response(cmd);
+                if (response.empty()) return;
+            }
+
+            // Basic template vars
+            ReplaceAllInPlace(response, "{user}", in.user);
+            ReplaceAllInPlace(response, "{platform}", in.platform);
+
+            ChatMessage out{};
+            out.platform = in.platform;
+            out.user = "StreamingATC.Bot";
+            out.message = response;
+            out.color = "#00E5FF";
+            out.ts_ms = now;
+            chat.Add(std::move(out));
+        });
 
         // Log what AppConfig actually loaded (helps diagnose mismatched JSON keys vs. AppConfig mapping).
         {

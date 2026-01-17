@@ -270,6 +270,11 @@ function wireActions(){
     window.open("/app/chat.html", "_blank", "noopener");
   });
 
+  $("#btnOpenBot")?.addEventListener("click", () => {
+    // Navigate within the same WebView/app window.
+    window.location.href = "/app/bot.html";
+  });
+
   $("#btnStartAll")?.addEventListener("click", async () => {
     logLine("start-all", "starting all platforms");
     const platforms = ["tiktok", "twitch", "youtube"];

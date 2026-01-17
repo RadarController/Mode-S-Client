@@ -410,6 +410,43 @@ void HttpServer::RegisterRoutes() {
     svr.Get("/api/chat/recent", handle_chat_recent);
     svr.Get("/api/chat", handle_chat_recent);
 
+    // --- API: bot commands ---
+    // GET  /api/bot/commands  -> current command list
+    // POST /api/bot/commands  -> replace command list
+    // Body can be either: {"commands":[...]} or a raw array [...]
+    svr.Get("/api/bot/commands", [&](const httplib::Request&, httplib::Response& res) {
+        json out;
+        out["ts_ms"] = (long long)std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        out["commands"] = state_.bot_commands_json();
+        res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+        res.set_header("Pragma", "no-cache");
+        res.set_content(out.dump(2), "application/json; charset=utf-8");
+    });
+
+    svr.Post("/api/bot/commands", [&](const httplib::Request& req, httplib::Response& res) {
+        json body;
+        try {
+            body = json::parse(req.body);
+        } catch (...) {
+            res.status = 400;
+            res.set_content(R"({"ok":false,"error":"bad_json"})", "application/json; charset=utf-8");
+            return;
+        }
+
+        json commands = body;
+        if (body.is_object() && body.contains("commands")) commands = body["commands"];
+
+        state_.set_bot_commands(commands);
+
+        json out;
+        out["ok"] = true;
+        out["commands"] = state_.bot_commands_json();
+        res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+        res.set_header("Pragma", "no-cache");
+        res.set_content(out.dump(2), "application/json; charset=utf-8");
+    });
+
 
     // --- API: chat diagnostics ---
     // Returns address of the ChatAggregator instance and current buffered count.

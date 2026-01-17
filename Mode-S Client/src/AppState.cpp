@@ -1,5 +1,14 @@
 #include "AppState.h"
 
+#include <algorithm>
+#include <fstream>
+#include <filesystem>
+
+static std::string ToLower(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return (char)std::tolower(c); });
+    return s;
+}
+
 std::int64_t AppState::now_ms() {
     using namespace std::chrono;
     return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
@@ -191,6 +200,151 @@ nlohmann::json AppState::youtube_events_json(size_t limit) const {
 
     out["events"] = std::move(arr);
     return out;
+}
+
+// --- Bot commands ---
+void AppState::set_bot_commands_storage_path(const std::string& path_utf8) {
+    std::lock_guard<std::mutex> lk(mtx_);
+    bot_commands_path_utf8_ = path_utf8;
+}
+
+static bool AtomicWriteUtf8File(const std::string& path_utf8, const std::string& content) {
+    try {
+        std::filesystem::path p = std::filesystem::u8path(path_utf8);
+        std::filesystem::create_directories(p.parent_path());
+        std::filesystem::path tmp = p;
+        tmp += ".tmp";
+
+        {
+            std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
+            if (!f) return false;
+            f.write(content.data(), (std::streamsize)content.size());
+            if (!f) return false;
+        }
+
+        std::error_code ec;
+        std::filesystem::rename(tmp, p, ec);
+        if (ec) {
+            // On Windows, rename fails if target exists; fall back to remove+rename.
+            std::filesystem::remove(p, ec);
+            ec.clear();
+            std::filesystem::rename(tmp, p, ec);
+            if (ec) {
+                std::filesystem::remove(tmp, ec);
+                return false;
+            }
+        }
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+bool AppState::load_bot_commands_from_disk() {
+    std::string path;
+    {
+        std::lock_guard<std::mutex> lk(mtx_);
+        path = bot_commands_path_utf8_;
+    }
+    if (path.empty()) return false;
+
+    try {
+        std::filesystem::path p = std::filesystem::u8path(path);
+        std::ifstream f(p, std::ios::binary);
+        if (!f) return false;
+        std::string s((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        if (s.empty()) return false;
+
+        nlohmann::json j = nlohmann::json::parse(s, nullptr, false);
+        if (j.is_discarded()) return false;
+
+        // Don't auto-save while loading.
+        std::lock_guard<std::mutex> lk(mtx_);
+        bot_cmds_.clear();
+        if (!j.is_array()) return false;
+
+        for (const auto& c : j) {
+            if (!c.is_object()) continue;
+            std::string cmd = c.value("command", "");
+            if (cmd.empty()) continue;
+            if (!cmd.empty() && cmd[0] == '!') cmd.erase(cmd.begin());
+            cmd = ToLower(cmd);
+            if (cmd.empty()) continue;
+
+            BotCmd bc;
+            bc.response = c.value("response", "");
+            bc.enabled = c.value("enabled", true);
+            bc.cooldown_ms = c.value("cooldown_ms", 3000);
+            if (bc.cooldown_ms < 0) bc.cooldown_ms = 0;
+            if (bc.cooldown_ms > 600000) bc.cooldown_ms = 600000;
+            bot_cmds_[cmd] = std::move(bc);
+        }
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+void AppState::set_bot_commands(const nlohmann::json& commands) {
+    std::string path;
+    {
+        std::lock_guard<std::mutex> lk(mtx_);
+        bot_cmds_.clear();
+
+        if (commands.is_array()) {
+            for (const auto& c : commands) {
+                if (!c.is_object()) continue;
+                std::string cmd = c.value("command", "");
+                if (cmd.empty()) continue;
+                if (!cmd.empty() && cmd[0] == '!') cmd.erase(cmd.begin());
+                cmd = ToLower(cmd);
+                if (cmd.empty()) continue;
+
+                BotCmd bc;
+                bc.response = c.value("response", "");
+                bc.enabled = c.value("enabled", true);
+                bc.cooldown_ms = c.value("cooldown_ms", 3000);
+                if (bc.cooldown_ms < 0) bc.cooldown_ms = 0;
+                if (bc.cooldown_ms > 600000) bc.cooldown_ms = 600000;
+                bot_cmds_[cmd] = std::move(bc);
+            }
+        }
+
+        path = bot_commands_path_utf8_;
+    }
+
+    // Persist (best-effort). We write the incoming array (not the map) to preserve ordering.
+    if (!path.empty()) {
+        try {
+            nlohmann::json out = commands;
+            if (!out.is_array()) out = nlohmann::json::array();
+            (void)AtomicWriteUtf8File(path, out.dump(2));
+        } catch (...) {
+            // ignore
+        }
+    }
+}
+
+nlohmann::json AppState::bot_commands_json() const {
+    std::lock_guard<std::mutex> lk(mtx_);
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& kv : bot_cmds_) {
+        nlohmann::json j;
+        j["command"] = kv.first;
+        j["response"] = kv.second.response;
+        j["enabled"] = kv.second.enabled;
+        j["cooldown_ms"] = kv.second.cooldown_ms;
+        arr.push_back(std::move(j));
+    }
+    return arr;
+}
+
+std::string AppState::bot_lookup_response(const std::string& command_lc) const {
+    std::lock_guard<std::mutex> lk(mtx_);
+    auto it = bot_cmds_.find(command_lc);
+    if (it == bot_cmds_.end()) return {};
+    if (!it->second.enabled) return {};
+    return it->second.response;
 }
 
 void AppState::push_log_utf8(const std::string& msg) {

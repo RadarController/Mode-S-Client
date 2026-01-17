@@ -70,6 +70,8 @@ body{
   margin-top:16px;
 }
 
+.grid--single{grid-template-columns:1fr}
+
 .card{
   background:linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.03));
   border:1px solid var(--border);
@@ -190,6 +192,34 @@ body{
   border-color:rgba(255,255,255,.10);
   padding:10px 14px;
 }
+
+/* Simple table + form helpers (used by /app/bot.html and future admin pages) */
+.toolbar{
+  display:flex;
+  gap:10px;
+  align-items:center;
+  flex-wrap:wrap;
+}
+.toolbar__spacer{margin-left:auto}
+
+.table{width:100%; border-collapse:collapse}
+.table th,
+.table td{
+  padding:10px;
+  border-bottom:1px solid rgba(255,255,255,.06);
+  vertical-align:top;
+}
+.table th{color:var(--muted2); font-size:12px; text-align:left; font-weight:800}
+.table td:last-child,
+.table th:last-child{text-align:right}
+
+.textarea{
+  width:100%;
+  min-height:44px;
+  resize:vertical;
+}
+
+.note{color:var(--muted); font-size:12px; line-height:1.4}
 
 .log{
   height:540px;

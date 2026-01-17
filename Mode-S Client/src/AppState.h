@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <chrono>
 #include <vector>
+#include <unordered_map>
 #include "json.hpp"
 
 struct ChatMessage {
@@ -91,6 +92,18 @@ public:
     void push_youtube_event(const EventItem& e);
     nlohmann::json youtube_events_json(size_t limit = 200) const;
 
+    // --- Simple chatbot command store (configurable via HTTP + app UI) ---
+    // Commands are stored without the leading '!'. Matching is case-insensitive.
+    // Persistence: call set_bot_commands_storage_path() once at startup to enable
+    // saving/loading between sessions.
+    void set_bot_commands_storage_path(const std::string& path_utf8);
+    bool load_bot_commands_from_disk();
+    void set_bot_commands(const nlohmann::json& commands);
+    nlohmann::json bot_commands_json() const;
+
+    // Convenience: get a response for a command. Returns empty string if not found/disabled.
+    std::string bot_lookup_response(const std::string& command_lc) const;
+
 private:
     static std::int64_t now_ms();
 
@@ -100,6 +113,16 @@ private:
     std::deque<EventItem> tiktok_events_; // last 200
     std::deque<EventItem> youtube_events_; // last 200
     std::deque<nlohmann::json> twitch_eventsub_events_; // last 200 by default
+
+    struct BotCmd {
+        std::string response;
+        bool enabled = true;
+        int cooldown_ms = 3000;
+    };
+    std::unordered_map<std::string, BotCmd> bot_cmds_;
+    std::string bot_commands_path_utf8_; // empty => no persistence
+    std::string bot_commands_path_;
+    void save_bot_commands_to_disk_locked() const;
 
     // EventSub status + events kept small for UI/debugging.
     nlohmann::json twitch_eventsub_status_ = nlohmann::json{
