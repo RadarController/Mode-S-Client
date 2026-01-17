@@ -11,6 +11,10 @@
     .statusMsg.good{color:#9f9}
     .statusMsg.bad{color:#f99}
     .input.small{max-width:130px}
+    .testGrid{display:grid;grid-template-columns:160px 180px 1fr auto;gap:10px;align-items:end}
+    .testFlags{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:10px}
+    @media (max-width: 900px){.testGrid{grid-template-columns:1fr;}}
+    .testOut{margin-top:10px;font-size:12px;color:var(--muted);white-space:pre-wrap}
   </style>
 </head>
 <body>
@@ -58,7 +62,8 @@
       <tr>
         <th style="width:160px;">Command</th>
         <th>Response</th>
-        <th style="width:120px;">Cooldown (ms)</th>
+        <th style="width:140px;">Cooldown (s)</th>
+        <th style="width:130px;">Scope</th>
         <th style="width:90px;">Enabled</th>
         <th style="width:70px;"></th>
       </tr>
@@ -76,12 +81,22 @@
     statusEl.classList.toggle('bad', !ok);
   }
 
-  function rowTemplate(cmd={command:'', response:'', cooldown_ms:3000, enabled:true}) {
+  function rowTemplate(cmd={command:'', response:'', cooldown_ms:3000, cooldown_s:null, enabled:true, scope:'all'}) {
+    const cooldownMs = Number.isFinite(cmd.cooldown_ms) ? cmd.cooldown_ms : null;
+    const cooldownS = Number.isFinite(cmd.cooldown_s) ? cmd.cooldown_s : (cooldownMs!=null ? Math.round(cooldownMs/1000) : 3);
+    const scope = (cmd.scope||'all').toLowerCase();
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td><input class="input" type="text" placeholder="help" value="${escapeHtml(cmd.command||'')}"></td>
       <td><textarea class="input textarea" placeholder="Your response">${escapeHtml(cmd.response||'')}</textarea></td>
-      <td><input class="input small" type="number" min="0" max="600000" value="${Number.isFinite(cmd.cooldown_ms)?cmd.cooldown_ms:3000}"></td>
+      <td><input class="input small" type="number" min="0" max="600" value="${Number.isFinite(cooldownS)?cooldownS:3}"></td>
+      <td>
+        <select class="input">
+          <option value="all" ${scope==='all'?'selected':''}>All users</option>
+          <option value="mods" ${scope==='mods'?'selected':''}>Mods only</option>
+          <option value="broadcaster" ${scope==='broadcaster'?'selected':''}>Broadcaster only</option>
+        </select>
+      </td>
       <td style="text-align:center;"><input type="checkbox" ${cmd.enabled? 'checked':''}></td>
       <td><button class="btn btn--danger btnDel" type="button">Delete</button></td>
     `;
@@ -99,10 +114,12 @@
     for (const r of rows) {
       const command = r.querySelector('td:nth-child(1) input').value.trim();
       const response = r.querySelector('td:nth-child(2) textarea').value;
-      const cooldown_ms = parseInt(r.querySelector('td:nth-child(3) input').value||'3000', 10);
-      const enabled = r.querySelector('td:nth-child(4) input[type=checkbox]').checked;
+      const cooldown_s = parseInt(r.querySelector('td:nth-child(3) input').value||'3', 10);
+      const scope = (r.querySelector('td:nth-child(4) select').value||'all').toLowerCase();
+      const enabled = r.querySelector('td:nth-child(5) input[type=checkbox]').checked;
       if (!command) continue;
-      out.push({ command, response, cooldown_ms: isFinite(cooldown_ms)?cooldown_ms:3000, enabled });
+      const cs = isFinite(cooldown_s) ? Math.max(0, Math.min(600, cooldown_s)) : 3;
+      out.push({ command, response, cooldown_ms: cs*1000, enabled, scope });
     }
     return out;
   }
@@ -150,6 +167,120 @@
 </script>
           </div>
       </section>
+
+      <section class="card">
+        <div class="card__head">
+          <div class="card__title">Test (no live stream needed)</div>
+          <div class="card__hint">
+            This injects a fake user message and bot reply into the local chat feed so you can see it immediately in <span class="mono">/app/chat.html</span> and <span class="mono">/overlay/chat.html</span>. It does not post to Twitch/YouTube/TikTok.
+          </div>
+        </div>
+
+        <div style="padding:12px">
+          <div class="testGrid">
+            <label>
+              <div class="label">User</div>
+              <input class="input" id="testUser" type="text" value="TestUser" />
+            </label>
+
+            <label>
+              <div class="label">Platform</div>
+              <input class="input" id="testPlatform" type="text" value="twitch" />
+            </label>
+
+            <label>
+              <div class="label">Message</div>
+              <input class="input" id="testMessage" type="text" placeholder="!help" />
+            </label>
+
+            <button class="btn btn--primary" id="btnRunTest" type="button">Run test</button>
+          </div>
+
+          <div class="testFlags">
+            <label class="pill" style="cursor:pointer;user-select:none;">
+              <input id="testIsMod" type="checkbox" style="margin-right:8px;vertical-align:middle;" />
+              <span class="pill__k">Role</span><span class="pill__v">Mod</span>
+            </label>
+            <label class="pill" style="cursor:pointer;user-select:none;">
+              <input id="testIsBroadcaster" type="checkbox" style="margin-right:8px;vertical-align:middle;" />
+              <span class="pill__k">Role</span><span class="pill__v">Broadcaster</span>
+            </label>
+          </div>
+
+          <div id="testOut" class="testOut"></div>
+        </div>
+      </section>
+
+      <script>
+        (function(){
+          const out = document.getElementById('testOut');
+          const inpUser = document.getElementById('testUser');
+          const inpPlatform = document.getElementById('testPlatform');
+          const inpMsg = document.getElementById('testMessage');
+          const chkMod = document.getElementById('testIsMod');
+          const chkBroadcaster = document.getElementById('testIsBroadcaster');
+          const btn = document.getElementById('btnRunTest');
+
+          function normalizeCommand(s){
+            s = (s||'').trim();
+            if (!s.startsWith('!')) return null;
+            s = s.slice(1);
+            if (!s) return null;
+            const parts = s.split(/\s+/);
+            return { cmd: (parts[0]||'').toLowerCase(), args: parts.slice(1) };
+          }
+
+          function applyPlaceholders(text, user, platform){
+            return (text||'')
+              .replaceAll('{user}', user)
+              .replaceAll('{platform}', platform);
+          }
+
+          async function run(){
+            const user = (inpUser.value||'').trim() || 'User';
+            const platform = (inpPlatform.value||'').trim() || 'platform';
+            const msg = (inpMsg.value||'').trim();
+            const is_mod = !!(chkMod && chkMod.checked);
+            const is_broadcaster = !!(chkBroadcaster && chkBroadcaster.checked);
+            const parsed = normalizeCommand(msg);
+            if (!parsed){
+              out.textContent = 'Enter a command message starting with ! (e.g. !help)';
+              return;
+            }
+
+            // Persist any unsaved edits first so the server test uses the same command set.
+            try {
+              await save();
+            } catch (_) {
+              // save() already reports status; still attempt a test with whatever is currently stored on the server.
+            }
+
+            try {
+              const res = await fetch('/api/bot/test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ platform, user, message: msg, is_mod, is_broadcaster })
+              });
+              const j = await res.json().catch(() => ({}));
+              if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+              if (j.matched) {
+                out.textContent = `Injected into chat feed.\nMatched: !${j.command}\nReply: ${j.reply || ''}`;
+              } else {
+                const note = j.note ? ` (${j.note})` : '';
+                out.textContent = `Injected user message, but no bot reply for !${parsed.cmd}${note}`;
+              }
+            } catch (e) {
+              out.textContent = 'Test failed: ' + e;
+            }
+          }
+
+          btn.addEventListener('click', run);
+          inpMsg.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); run(); }
+          });
+        })();
+      </script>
     </main>
 
     <footer class="footer">

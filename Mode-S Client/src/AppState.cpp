@@ -274,9 +274,21 @@ bool AppState::load_bot_commands_from_disk() {
             BotCmd bc;
             bc.response = c.value("response", "");
             bc.enabled = c.value("enabled", true);
-            bc.cooldown_ms = c.value("cooldown_ms", 3000);
+            // Back-compat: prefer cooldown_ms, else accept cooldown_s.
+            if (c.contains("cooldown_ms")) {
+                bc.cooldown_ms = c.value("cooldown_ms", 3000);
+            } else {
+                int cs = c.value("cooldown_s", 3);
+                bc.cooldown_ms = cs * 1000;
+            }
             if (bc.cooldown_ms < 0) bc.cooldown_ms = 0;
             if (bc.cooldown_ms > 600000) bc.cooldown_ms = 600000;
+
+            // Scope: all | mods | broadcaster
+            bc.scope = ToLower(c.value("scope", "all"));
+            if (bc.scope != "all" && bc.scope != "mods" && bc.scope != "broadcaster") {
+                bc.scope = "all";
+            }
             bot_cmds_[cmd] = std::move(bc);
         }
         return true;
@@ -303,9 +315,19 @@ void AppState::set_bot_commands(const nlohmann::json& commands) {
                 BotCmd bc;
                 bc.response = c.value("response", "");
                 bc.enabled = c.value("enabled", true);
-                bc.cooldown_ms = c.value("cooldown_ms", 3000);
+                if (c.contains("cooldown_ms")) {
+                    bc.cooldown_ms = c.value("cooldown_ms", 3000);
+                } else {
+                    int cs = c.value("cooldown_s", 3);
+                    bc.cooldown_ms = cs * 1000;
+                }
                 if (bc.cooldown_ms < 0) bc.cooldown_ms = 0;
                 if (bc.cooldown_ms > 600000) bc.cooldown_ms = 600000;
+
+                bc.scope = ToLower(c.value("scope", "all"));
+                if (bc.scope != "all" && bc.scope != "mods" && bc.scope != "broadcaster") {
+                    bc.scope = "all";
+                }
                 bot_cmds_[cmd] = std::move(bc);
             }
         }
@@ -334,6 +356,7 @@ nlohmann::json AppState::bot_commands_json() const {
         j["response"] = kv.second.response;
         j["enabled"] = kv.second.enabled;
         j["cooldown_ms"] = kv.second.cooldown_ms;
+        j["scope"] = kv.second.scope;
         arr.push_back(std::move(j));
     }
     return arr;
@@ -345,6 +368,34 @@ std::string AppState::bot_lookup_response(const std::string& command_lc) const {
     if (it == bot_cmds_.end()) return {};
     if (!it->second.enabled) return {};
     return it->second.response;
+}
+
+std::string AppState::bot_try_get_response(
+    const std::string& command_lc,
+    bool is_mod,
+    bool is_broadcaster,
+    std::int64_t now_ms)
+{
+    std::lock_guard<std::mutex> lk(mtx_);
+
+    auto it = bot_cmds_.find(command_lc);
+    if (it == bot_cmds_.end()) return {};
+    BotCmd& cmd = it->second;
+    if (!cmd.enabled) return {};
+
+    const bool has_mod = is_mod || is_broadcaster;
+    if (cmd.scope == "mods" && !has_mod) return {};
+    if (cmd.scope == "broadcaster" && !is_broadcaster) return {};
+
+    if (cmd.cooldown_ms > 0) {
+        const std::int64_t since = now_ms - cmd.last_fire_ms;
+        if (cmd.last_fire_ms != 0 && since >= 0 && since < cmd.cooldown_ms) {
+            return {};
+        }
+    }
+
+    cmd.last_fire_ms = now_ms;
+    return cmd.response;
 }
 
 void AppState::push_log_utf8(const std::string& msg) {

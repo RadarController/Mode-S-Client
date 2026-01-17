@@ -1,0 +1,30 @@
+[
+  {
+    "command": "help",
+    "cooldown_ms": 3000,
+    "enabled": true,
+    "response": "Commands: !help, !about, !discord",
+    "scope": "all"
+  },
+  {
+    "command": "about",
+    "cooldown_ms": 3000,
+    "enabled": true,
+    "response": "StreamingATC.Live Mode-S Client",
+    "scope": "all"
+  },
+  {
+    "command": "discord",
+    "cooldown_ms": 5000,
+    "enabled": true,
+    "response": "Join the Discord: (set your invite in the bot UI)",
+    "scope": "all"
+  },
+  {
+    "command": "bacon",
+    "cooldown_ms": 3000,
+    "enabled": true,
+    "response": "I like bacon",
+    "scope": "all"
+  }
+]

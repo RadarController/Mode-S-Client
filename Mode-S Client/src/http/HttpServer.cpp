@@ -447,6 +447,102 @@ void HttpServer::RegisterRoutes() {
         res.set_content(out.dump(2), "application/json; charset=utf-8");
     });
 
+    // --- API: bot test inject ---
+    // POST /api/bot/test
+    // Body: {"platform":"twitch","user":"TestUser","message":"!help"}
+    // Injects ONLY the user message into ChatAggregator so it follows the real chat flow.
+    // The normal bot pipeline (already in your app) should create the single bot reply.
+    svr.Post("/api/bot/test", [&](const httplib::Request& req, httplib::Response& res) {
+        json body;
+        try {
+            body = json::parse(req.body);
+        }
+        catch (...) {
+            res.status = 400;
+            res.set_content(R"({"ok":false,"error":"bad_json"})", "application/json; charset=utf-8");
+            return;
+        }
+
+        std::string platform = body.value("platform", "test");
+        std::string user = body.value("user", "TestUser");
+        std::string message = body.value("message", "");
+
+        auto now_ms_ll = (long long)std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+
+        auto to_lower = [](std::string s) {
+            std::transform(s.begin(), s.end(), s.begin(),
+                [](unsigned char c) { return (char)std::tolower(c); });
+            return s;
+            };
+
+        auto replace_all = [](std::string s, const std::string& from, const std::string& to) {
+            if (from.empty()) return s;
+            size_t pos = 0;
+            while ((pos = s.find(from, pos)) != std::string::npos) {
+                s.replace(pos, from.size(), to);
+                pos += to.size();
+            }
+            return s;
+            };
+
+        // Prepare response JSON (best-effort preview of what the bot WILL say)
+        json out;
+        out["ok"] = true;
+        out["ts_ms"] = now_ms_ll;
+
+        // Determine if it looks like a command and (optionally) preview reply from current state_
+        std::string cmd_lc;
+        if (!message.empty() && message.size() >= 2 && message[0] == '!') {
+            size_t start = 1;
+            while (start < message.size() && std::isspace((unsigned char)message[start])) start++;
+            size_t end = start;
+            while (end < message.size() && !std::isspace((unsigned char)message[end])) end++;
+            if (end > start) cmd_lc = to_lower(message.substr(start, end - start));
+        }
+
+        if (cmd_lc.empty()) {
+            out["matched"] = false;
+            out["note"] = "not_a_command";
+        }
+        else {
+            // For test endpoint, allow role simulation via request body
+            bool is_mod = body.value("is_mod", false);
+            bool is_broadcaster = body.value("is_broadcaster", false);
+
+            // Rule-aware lookup (enforces enabled/cooldown/scope).
+            // Returns empty string if blocked or no match.
+            std::string template_reply = state_.bot_try_get_response(cmd_lc, is_mod, is_broadcaster, now_ms_ll);
+            if (template_reply.empty()) {
+                out["matched"] = false;
+                out["command"] = cmd_lc;
+                out["note"] = "blocked_or_no_match";
+            }
+            else {
+                std::string reply = template_reply;
+                reply = replace_all(reply, "{user}", user);
+                reply = replace_all(reply, "{platform}", to_lower(platform));
+                out["matched"] = true;
+                out["command"] = cmd_lc;
+                out["reply"] = reply;
+                out["note"] = "reply_preview_only"; // actual injection happens via normal pipeline
+            }
+        }
+
+        // Inject ONLY the user message (this should trigger your existing bot logic exactly once)
+        if (!message.empty()) {
+            ChatMessage m{};
+            m.platform = platform;
+            m.user = user;
+            m.message = message;
+            m.ts_ms = now_ms_ll;
+            chat_.Add(std::move(m));
+        }
+
+        res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+        res.set_header("Pragma", "no-cache");
+        res.set_content(out.dump(2), "application/json; charset=utf-8");
+        });
 
     // --- API: chat diagnostics ---
     // Returns address of the ChatAggregator instance and current buffered count.

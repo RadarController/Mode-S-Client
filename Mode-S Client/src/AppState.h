@@ -104,6 +104,17 @@ public:
     // Convenience: get a response for a command. Returns empty string if not found/disabled.
     std::string bot_lookup_response(const std::string& command_lc) const;
 
+    // Checks enabled/scope/cooldown; if allowed returns the response template and updates
+    // the command cooldown timer. Returns empty string otherwise.
+    // Notes:
+    // - 'is_broadcaster' is treated as having mod permissions.
+    // - Cooldowns are per-command (global), not per-user.
+    std::string bot_try_get_response(
+        const std::string& command_lc,
+        bool is_mod,
+        bool is_broadcaster,
+        std::int64_t now_ms);
+
 private:
     static std::int64_t now_ms();
 
@@ -118,6 +129,11 @@ private:
         std::string response;
         bool enabled = true;
         int cooldown_ms = 3000;
+        // all | mods | broadcaster
+        std::string scope = "all";
+
+        // runtime only
+        std::int64_t last_fire_ms = 0;
     };
     std::unordered_map<std::string, BotCmd> bot_cmds_;
     std::string bot_commands_path_utf8_; // empty => no persistence
