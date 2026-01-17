@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<!-- Optimized for a 1080x150 browser source / overlay -->
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Glass Header (1080x150)</title>
+
+<style>
+  :root{
+    --blue:#1e6dff;
+    --panel: rgba(18,22,28,.72);
+    --stroke: rgba(255,255,255,.12);
+    --text: rgba(233,238,247,.92);
+    --muted: rgba(233,238,247,.70);
+  }
+
+  html,body{
+    width:100%;
+    height:100%;
+    margin:0;
+    background:transparent;
+    font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif;
+    overflow:hidden;
+  }
+
+  /* Hard target size: makes the layout "feel" right at 1080x150.
+     If your browser source is exactly 1080x150, this will be pixel-perfect. */
+  body{
+    width:1080px;
+    height:150px;
+  }
+
+  .bar{
+    width:100%;
+    height:100%;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:18px 28px;
+    box-sizing:border-box;
+    background:var(--panel);
+    backdrop-filter:blur(10px);
+    -webkit-backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--stroke);
+    pointer-events:none;
+    gap:18px;
+  }
+
+  .left{
+    display:flex;
+    align-items:center;
+    gap:14px;
+    min-width:0;
+    flex:1 1 auto;
+  }
+
+  .badge{
+    width:10px;
+    height:10px;
+    border-radius:50%;
+    background:rgba(30,109,255,.95);
+    box-shadow:0 0 0 4px rgba(30,109,255,.18);
+    flex:0 0 auto;
+  }
+
+  .titles{
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+    min-width:0;
+  }
+
+  .title{
+    font-weight:750;
+    letter-spacing:.10em;
+    text-transform:uppercase;
+    font-size:22px;
+    line-height:1.05;
+    color:var(--text);
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    max-width:680px; /* Leaves room for right-side stats */
+  }
+
+  .sub{
+    font-size:16px;
+    line-height:1.1;
+    color:var(--muted);
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    max-width:680px;
+  }
+
+  .right{
+    display:flex;
+    align-items:center;
+    justify-content:flex-end;
+    gap:12px;
+    flex:0 0 auto;
+  }
+
+  .stat{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:10px 14px;
+    border-radius:14px;
+    background:rgba(10,14,18,.35);
+    border:1px solid rgba(255,255,255,.12);
+    font-size:16px;
+    font-weight:700;
+    color:var(--text);
+    white-space:nowrap;
+    min-width:132px;
+    justify-content:center;
+  }
+
+  .dot{
+    width:8px;
+    height:8px;
+    border-radius:50%;
+    background:rgba(30,109,255,.9);
+  }
+
+  .label{
+    color:var(--muted);
+    font-weight:800;
+    letter-spacing:.10em;
+    text-transform:uppercase;
+    font-size:12px;
+    margin-right:2px;
+  }
+
+  /* Tiny "bump" on value changes */
+  .bump{animation:bump .22s ease-out;}
+  @keyframes bump{
+    0%{transform:translateY(0)}
+    45%{transform:translateY(-1px)}
+    100%{transform:translateY(0)}
+  }
+
+  /* If someone uses a smaller browser source width, keep it readable */
+  @media (max-width: 1080px){
+    body{ width:100%; height:100%; }
+    .title,.sub{ max-width:55vw; }
+    .stat{ min-width:118px; font-size:15px; padding:9px 12px; }
+  }
+</style>
+</head>
+
+<body>
+<div class="bar">
+  <div class="left">
+    <span class="badge"></span>
+    <div class="titles">
+      <div class="title">VATSIM UK</div>
+      <div class="sub">MANCHESTER | EGCC</div>
+    </div>
+  </div>
+
+  <div class="right">
+    <div class="stat">
+      <span class="dot"></span>
+      <span class="label">VIEWERS</span>
+      <span id="viewers">0</span>
+    </div>
+    <div class="stat">
+      <span class="dot"></span>
+      <span class="label">FOLLOWERS</span>
+      <span id="followers">0</span>
+    </div>
+    <div class="stat">
+      <span class="dot"></span>
+      <span class="label">AIRCRAFT</span>
+      <span id="aircraft">— / —</span>
+    </div>
+  </div>
+</div>
+
+<script>
+  const METRICS_URL = "/api/metrics";
+  const POLL_MS = 1000;
+
+  const elViewers   = document.getElementById("viewers");
+  const elFollowers = document.getElementById("followers");
+  const elAircraft  = document.getElementById("aircraft");
+
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  function toNum(v){
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  }
+  function fmt(n){
+    return Math.round(n).toLocaleString();
+  }
+
+  function makeAnimator(el){
+    return {
+      el, current:0, target:0, lastText:"",
+      set(n){ this.target = Math.max(0, toNum(n)); },
+      tick(){
+        const d = this.target - this.current;
+        this.current += Math.abs(d) < 0.05 ? d : d * 0.2;
+        const txt = fmt(this.current);
+        if (txt !== this.lastText){
+          this.el.textContent = txt;
+          this.lastText = txt;
+        }
+      },
+      bump(prev){
+        if (prev !== this.target){
+          this.el.classList.remove("bump");
+          void this.el.offsetWidth;
+          this.el.classList.add("bump");
+        }
+      }
+    };
+  }
+
+  function makePairAnimator(el){
+    return {
+      el, aCur:0,aTgt:0,bCur:0,bTgt:0,lastText:"",connected:false,
+      set(a,b,c){
+        this.connected=c;
+        if (!c) return;
+        this.aTgt=Math.max(0,toNum(a));
+        this.bTgt=Math.max(0,toNum(b));
+      },
+      tick(){
+        if (!this.connected){
+          if (this.lastText!=="— / —"){
+            this.el.textContent="— / —";
+            this.lastText="— / —";
+          }
+          return;
+        }
+        this.aCur += (this.aTgt-this.aCur)*0.2;
+        this.bCur += (this.bTgt-this.bCur)*0.2;
+        const txt=`${fmt(this.aCur)} / ${fmt(this.bCur)}`;
+        if (txt!==this.lastText){
+          this.el.textContent=txt;
+          this.lastText=txt;
+        }
+      },
+      bump(pa,pb){
+        if (!this.connected) return;
+        if (pa!==this.aTgt||pb!==this.bTgt){
+          this.el.classList.remove("bump");
+          void this.el.offsetWidth;
+          this.el.classList.add("bump");
+        }
+      }
+    };
+  }
+
+  const animViewers   = makeAnimator(elViewers);
+  const animFollowers = makeAnimator(elFollowers);
+  const animAircraft  = makePairAnimator(elAircraft);
+
+  (function raf(){
+    animViewers.tick();
+    animFollowers.tick();
+    animAircraft.tick();
+    requestAnimationFrame(raf);
+  })();
+
+  async function poll(){
+    while(true){
+      try{
+        const r = await fetch(METRICS_URL,{cache:"no-store"});
+        if(!r.ok) throw 0;
+        const j = await r.json();
+
+        let p;
+        p=animViewers.target;   animViewers.set(j.total_viewers);   animViewers.bump(p);
+        p=animFollowers.target; animFollowers.set(j.total_followers); animFollowers.bump(p);
+
+        const a=j?.euroscope?.assumed_now??0;
+        const b=j?.euroscope?.handled_session??0;
+        const c=j.euroscope_connected===true;
+        animAircraft.set(a,b,c);
+      }catch{}
+      await sleep(POLL_MS);
+    }
+  }
+  poll();
+</script>
+</body>
+</html>

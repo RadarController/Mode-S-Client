@@ -350,7 +350,23 @@ void HttpServer::RegisterRoutes() {
         res.set_content(R"({"ok":true})", "application/json; charset=utf-8");
         });
 
-    // --- API: chat (stable shape) ---
+    
+    // EuroScope traffic snapshot (derived from last ingest)
+    // Returns the "euroscope" object from /api/metrics as a standalone payload.
+    svr.Get("/api/euroscope/traffic", [&](const httplib::Request&, httplib::Response& res) {
+        const uint64_t now_ms = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()
+        ).count();
+
+        nlohmann::json j = euroscope_.Metrics(now_ms);
+        if (!j.is_object() || !j.contains("euroscope")) {
+            res.set_content(R"({"ts_ms":0,"error":"no euroscope data"})", "application/json; charset=utf-8");
+            return;
+        }
+
+        res.set_content(j["euroscope"].dump(2), "application/json; charset=utf-8");
+        });
+// --- API: chat (stable shape) ---
     auto handle_chat_recent = [&](const httplib::Request& req, httplib::Response& res) {
         int limit = 200;
         if (req.has_param("limit")) {

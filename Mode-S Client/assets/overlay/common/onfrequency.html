@@ -3,194 +3,272 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>On Frequency</title>
+  <title>EuroScope Traffic (Cycle)</title>
   <style>
+    /* Match chat.html base first */
     :root{
-      --bg: rgba(0,0,0,.65);
-      --border: rgba(255,255,255,.10);
-      --text: rgba(255,255,255,.92);
-      --muted: rgba(255,255,255,.65);
+      --font: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+      --overlay-h: 200px;  /* fixed OBS-friendly height */
+
+      /* Borrowed vibe from alerts.css */
+      --edge: rgba(255, 255, 255, 0.08);
+      --ink: rgba(230, 237, 243, 0.95);
+      --muted: rgba(230, 237, 243, 0.65);
+      --bg0: rgba(11, 15, 20, 0.78);
+      --bg1: rgba(11, 15, 20, 0.62);
     }
 
-    html,body{
+    html, body{
       margin:0;
       padding:0;
       background: transparent;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      color: var(--text);
+      overflow: hidden;
+      height: var(--overlay-h);
     }
 
-    .panel{
-      width: 320px;
-      max-width: 92vw;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 12px 12px 10px;
+    body{
+      font-family: var(--font);
+      color: #fff;
+    }
+
+    .wrap{
+      width: 520px;
+      height: var(--overlay-h);
+      box-sizing: border-box;
+      color: var(--ink);
+      overflow: hidden;
+      border-radius: 18px;
+      background: linear-gradient(180deg, var(--bg0), var(--bg1));
+      border: 1px solid var(--edge);
+      box-shadow: 0 18px 40px rgba(0,0,0,0.35);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+
+    .top{
+      padding: 10px 12px;
+      display:flex;
+      align-items:baseline;
+      justify-content:space-between;
+      gap: 10px;
+      border-bottom: 1px solid var(--edge);
+    }
+    .title{
+      font-weight: 800;
+      letter-spacing: .18em;
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+
+    .body{
+      padding: 10px 12px 12px 12px;
+      height: calc(var(--overlay-h) - 44px);
       box-sizing: border-box;
     }
 
-    .header{
-      font-weight: 800;
-      letter-spacing: .12em;
-      text-transform: uppercase;
-      font-size: 12px;
+    .slideTitle{
+      font-size: 11px;
       color: var(--muted);
-      display:flex;
-      align-items: baseline;
-      justify-content: space-between;
-      gap: 10px;
-      margin-bottom: 10px;
+      text-transform: uppercase;
+      letter-spacing: .14em;
+      margin-bottom: 8px;
     }
 
-    .badge{
-      font-weight: 700;
-      font-size: 12px;
-      letter-spacing: .04em;
-      color: var(--text);
-      opacity:.9;
-      padding: 2px 8px;
-      border-radius: 999px;
-      border: 1px solid var(--border);
-      background: rgba(255,255,255,.06);
-      white-space: nowrap;
+    .big{
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: .2px;
+      line-height: 1.05;
     }
 
-    .list{
-      display:flex;
-      flex-direction: column;
-      gap: 6px;
+    ul{
       margin: 0;
-      padding: 0;
-      list-style: none;
-      max-height: 260px; /* keep it tidy on stream */
+      padding: 0 0 0 16px;
+      columns: 2;
+      column-gap: 18px;
+      max-height: 76px; /* keep fixed height */
       overflow: hidden;
+    }
+    li{
+      margin: 0 0 4px 0;
+      padding: 0;
+      font-size: 14px;
+      break-inside: avoid;
     }
 
     .row{
       display:flex;
-      align-items:center;
-      justify-content: space-between;
-      gap: 10px;
-      padding: 6px 10px;
-      border-radius: 10px;
-      border: 1px solid rgba(255,255,255,.08);
-      background: rgba(255,255,255,.04);
-      font-weight: 750;
-      letter-spacing: .02em;
-      font-size: 15px;
+      align-items:baseline;
+      justify-content:space-between;
+      gap: 12px;
+      margin: 6px 0;
+      font-size: 14px;
+    }
+    .row .k{ color: var(--muted); }
+    .row .v{ font-weight: 650; }
+    .pill{
+      display:inline-block;
+      padding: 2px 8px;
+      border: 1px solid rgba(131,174,252,0.28);
+      border-radius: 999px;
+      font-size: 12px;
+      color: rgba(131,174,252,0.95);
+      background: rgba(131,174,252,0.08);
     }
 
-    .empty{
-      padding: 10px;
-      border-radius: 10px;
-      border: 1px dashed rgba(255,255,255,.16);
-      color: var(--muted);
-      background: rgba(255,255,255,.03);
-      font-size: 13px;
-      line-height: 1.25;
+    .fade{
+      opacity: 0;
+      transform: translateY(4px);
+      transition: opacity .25s ease, transform .25s ease;
     }
-
-    .footer{
-      margin-top: 8px;
-      font-size: 11px;
-      color: rgba(255,255,255,.45);
-      display:flex;
-      justify-content: space-between;
-      gap: 10px;
+    .fade.on{
+      opacity: 1;
+      transform: translateY(0);
     }
   </style>
 </head>
 <body>
-  <div class="panel">
-    <div class="header">
-      <div>on frequency</div>
-      <div class="badge" id="countBadge">0</div>
-    </div>
+  <div class="wrap">
+    <div class="top">
+      <div class="title">EuroScope Traffic</div>
+</div>
 
-    <ul class="list" id="callsignList"></ul>
-    <div class="empty" id="emptyState" style="display:none;">No aircraft assumed.</div>
-
-    <div class="footer">
-      <div id="statusText">—</div>
-      <div id="updatedText">—</div>
+    <div class="body">
+      <div class="slideTitle" id="slideTitle">—</div>
+      <div id="slide" class="fade">—</div>
     </div>
   </div>
 
-  <script>
-    const ENDPOINT = "/api/euroscope";
-    const POLL_MS = 750;
+<script>
+(() => {
+  const ENDPOINT = "/api/euroscope/traffic";
+  const POLL_MS = 900;      // frequent but cheap (we diff before rendering)
+  const SLIDE_MS = 6000;
 
-    const elList = document.getElementById("callsignList");
-    const elEmpty = document.getElementById("emptyState");
-    const elCount = document.getElementById("countBadge");
-    const elStatus = document.getElementById("statusText");
-    const elUpdated = document.getElementById("updatedText");
+  const slideTitleEl = document.getElementById("slideTitle");
+  const slideA = document.getElementById("slideA");
+  const slideB = document.getElementById("slideB");
 
-    let lastGoodTs = 0;
+  let front = slideA;
+  let back  = slideB;
 
-    function setStatus(ok, msg){
-      elStatus.textContent = msg;
-      elStatus.style.opacity = ok ? 0.7 : 1.0;
+  let latest = null;
+  let lastTs = 0;
+  let slideIx = 0;
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, (c) => ({
+      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+    }[c]));
+  }
+
+  function swapSlide(html){
+    // Cross-fade: never blank the front layer (prevents OBS flicker).
+    back.innerHTML = html;
+    back.classList.remove("hide");
+    back.classList.add("show");
+    front.classList.remove("show");
+    front.classList.add("hide");
+
+    // Swap references after fade completes
+    const oldFront = front;
+    front = back;
+    back = oldFront;
+
+    // Make sure the now-back layer is fully hidden after transition and won't capture focus
+    setTimeout(() => {
+      back.classList.remove("show");
+      back.classList.add("hide");
+    }, 260);
+  }
+
+  function setTitle(t){ slideTitleEl.textContent = t; }
+
+  function renderOnFreq(d){
+    setTitle("On frequency");
+    const list = (d && Array.isArray(d.assumed_list)) ? d.assumed_list : [];
+    if (!list.length){
+      swapSlide(
+        `<div class="big">0</div>
+         <div class="row"><span class="k">Assumed now</span><span class="pill">No aircraft assumed</span></div>`
+      );
+      return;
     }
+    const max = 24;
+    const items = list.slice(0, max).map(cs => `<li>${escapeHtml(cs)}</li>`).join("");
+    const more = list.length > max
+      ? `<div class="row"><span class="k">More</span><span class="v">+${list.length-max}</span></div>`
+      : "";
+    swapSlide(
+      `<div class="row"><span class="k">Assumed now</span><span class="v">${list.length}</span></div>
+       <ul class="list">${items}</ul>
+       ${more}`
+    );
+  }
 
-    function fmtTime(tsMs){
-      if(!tsMs) return "—";
-      const d = new Date(tsMs);
-      // simple HH:MM:SS local
-      return d.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", second:"2-digit"});
+  function formatMiles(nm){
+    if (nm == null || !isFinite(nm)) return "—";
+    return (nm < 10 ? nm.toFixed(1) : nm.toFixed(0)) + "nm";
+  }
+
+  function renderNextArrival(d){
+    setTitle("Next arrival");
+    const a = d && d.next_arrival;
+    if (!a){
+      swapSlide(`<div class="big">—</div><div class="row"><span class="pill">No inbound detected</span></div>`);
+      return;
     }
+    swapSlide(
+      `<div class="big">${escapeHtml(a.callsign || "—")}</div>
+       <div class="row"><span class="k">Runway</span><span class="v">${escapeHtml(a.runway || "—")}</span></div>
+       <div class="row"><span class="k">Distance</span><span class="v">${formatMiles(a.dist_nm)}</span></div>
+       <div class="row"><span class="k">Alt</span><span class="v">${(a.alt_ft!=null && isFinite(a.alt_ft)) ? Math.round(a.alt_ft) + "ft" : "—"}</span></div>`
+    );
+  }
 
-    function render(list){
-      // normalize + sort
-      const callsigns = Array.isArray(list) ? list.filter(Boolean).map(String) : [];
-      callsigns.sort((a,b)=>a.localeCompare(b));
+  function renderNextDeparture(d){
+    setTitle("Next departure");
+    const a = d && d.next_departure;
+    if (!a){
+      swapSlide(`<div class="big">—</div><div class="row"><span class="pill">No DEPA detected</span></div>`);
+      return;
+    }
+    swapSlide(
+      `<div class="big">${escapeHtml(a.callsign || "—")}</div>
+       <div class="row"><span class="k">Runway</span><span class="v">${escapeHtml(a.runway || "—")}</span></div>
+       <div class="row"><span class="k">Distance</span><span class="v">${formatMiles(a.dist_nm)}</span></div>`
+    );
+  }
 
-      elCount.textContent = String(callsigns.length);
+  function renderSlide(){
+    const d = latest || {};
+    // Cycle slides: On frequency -> Next arrival -> Next departure
+    const fns = [renderOnFreq, renderNextArrival, renderNextDeparture];
+    fns[slideIx % fns.length](d);
+    slideIx = (slideIx + 1) % fns.length;
+  }
 
-      elList.innerHTML = "";
-      if(callsigns.length === 0){
-        elEmpty.style.display = "block";
-        return;
+  async function poll(){
+    try{
+      const r = await fetch(ENDPOINT, { cache: "no-store" });
+      if (!r.ok) return;
+      const d = await r.json();
+      // Only accept updates when ts_ms changes (prevents unnecessary DOM churn)
+      const ts = (d && typeof d.ts_ms === "number") ? d.ts_ms : 0;
+      if (ts && ts !== lastTs){
+        lastTs = ts;
+        latest = d;
       }
-      elEmpty.style.display = "none";
+    }catch(_e){}
+  }
 
-      for(const cs of callsigns){
-        const li = document.createElement("li");
-        li.className = "row";
-        li.textContent = cs;
-        elList.appendChild(li);
-      }
-    }
+  // Start
+  poll();
+  renderSlide();
+  setInterval(poll, POLL_MS);
+  setInterval(() => requestAnimationFrame(renderSlide), SLIDE_MS);
+})();
 
-    async function poll(){
-      try{
-        const res = await fetch(ENDPOINT, { cache: "no-store" });
-        if(!res.ok) throw new Error("HTTP " + res.status);
-        const data = await res.json();
-
-        // expected: { assumed_list: [...], assumed_now: n, handled_session: n, ts_ms: ... }
-        render(data.assumed_list);
-
-        if(typeof data.ts_ms === "number") lastGoodTs = data.ts_ms;
-        elUpdated.textContent = "updated " + fmtTime(lastGoodTs);
-
-        // Optional: if counts exist, show a nicer status
-        const now = (typeof data.assumed_now === "number") ? data.assumed_now : null;
-        const sess = (typeof data.handled_session === "number") ? data.handled_session : null;
-        if(now !== null && sess !== null){
-          setStatus(true, `now ${now} • session ${sess}`);
-        }else{
-          setStatus(true, "live");
-        }
-      }catch(e){
-        setStatus(false, "offline / no data");
-        // Don’t clear list; keep last known good for stream stability
-      }
-    }
-
-    poll();
-    setInterval(poll, POLL_MS);
-  </script>
+</script>
 </body>
 </html>

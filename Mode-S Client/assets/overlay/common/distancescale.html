@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>EuroScope Distance Scale</title>
+  <style>
+    /* Match chat.html base first */
+    :root{
+      --font: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+      --overlay-h: 200px; /* fixed OBS-friendly height */
+
+      /* Borrowed vibe from alerts.css */
+      --edge: rgba(255, 255, 255, 0.08);
+      --ink: rgba(230, 237, 243, 0.95);
+      --muted: rgba(230, 237, 243, 0.65);
+      --bg0: rgba(11, 15, 20, 0.78);
+      --bg1: rgba(11, 15, 20, 0.62);
+
+      --rail: rgba(131,174,252,0.28);
+      --rail2: rgba(131,174,252,0.12);
+    }
+    html,body{ margin:0; padding:0; background:transparent; font-family:var(--font); overflow:hidden; height: var(--overlay-h); }
+
+    .wrap{
+      width: 920px;
+      height: var(--overlay-h);
+      box-sizing: border-box;
+      padding: 10px 12px 10px 12px;
+      color: var(--ink);
+      overflow: hidden;
+      border-radius: 18px;
+      background: linear-gradient(180deg, var(--bg0), var(--bg1));
+      border: 1px solid var(--edge);
+    }
+    .top{
+      display:flex;
+      align-items:baseline;
+      justify-content:space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .title{
+      font-weight: 800;
+      letter-spacing: .18em;
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+
+    .scale{
+      position: relative;
+      height: 90px;
+      border-top: 1px solid var(--edge);
+      margin-top: 6px;
+      padding-top: 14px;
+    }
+
+    .line{
+      position:absolute;
+      left: 10px;
+      right: 10px;
+      top: 40px;
+      height: 2px;
+      background: var(--rail2);
+      border-radius: 999px;
+    }
+
+    .tick{
+      position:absolute;
+      top: 30px;
+      width: 1px;
+      height: 20px;
+      background: var(--rail2);
+    }
+    .tickLabel{
+      position:absolute;
+      top: 54px;
+      transform: translateX(-50%);
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .airport{
+      position:absolute;
+      right: 10px;
+      top: 10px;
+      font-weight: 800;
+      letter-spacing: .14em;
+      font-size: 12px;
+      padding: 4px 10px;
+      border: 1px solid var(--edge);
+      border-radius: 999px;
+      background: rgba(255,255,255,0.06);
+    }
+
+    .marker{
+      position:absolute;
+      top: 12px;
+      transform: translateX(-50%);
+      white-space: nowrap;
+      font-size: 12px;
+      padding: 3px 7px;
+      border: 1px solid var(--edge);
+      border-radius: 999px;
+      background: rgba(255,255,255,0.06);
+      backdrop-filter: blur(4px);
+    }
+    .marker.arr{ top: 8px; }
+    .marker.dep{ top: 54px; }
+
+    .marker .cs{ font-weight: 750; }
+    .marker .sub{ color: var(--muted); margin-left: 6px; font-size: 11px; }
+
+    .legend{
+      margin-top: 6px;
+      font-size: 12px;
+      color: var(--muted);
+      display:flex;
+      gap: 10px;
+      flex-wrap: nowrap;
+      align-items:center;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .pill{
+      display:inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(131,174,252,0.28);
+      background: rgba(131,174,252,0.08);
+      color: rgba(131,174,252,0.95);
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="top">
+      <div class="title">Traffic Tracker</div>
+</div>
+
+    <div class="scale" id="scale">
+      <div class="line"></div>
+      <div class="airport" id="airportPill">—</div>
+      <!-- ticks + markers inserted -->
+    </div>
+
+    <div class="legend">
+      <span class="pill">Arrivals (top)</span>
+      <span class="pill">Departures (bottom)</span>
+      <span id="rangePill" class="pill">Range —</span>
+    </div>
+  </div>
+
+<script>
+(() => {
+  const ENDPOINT = "/api/euroscope/traffic";
+  const POLL_MS = 1000;
+  const MAX_NM = 60;  // left edge = MAX_NM out, right edge = 0nm (airport)
+  const scaleEl = document.getElementById("scale");
+  const airportPill = document.getElementById("airportPill");
+  const rangePill = document.getElementById("rangePill");
+
+  function fmtNm(n){
+    if (typeof n !== "number" || !isFinite(n)) return "—";
+    return n.toFixed(n < 10 ? 1 : 0) + "nm";
+  }
+  function fmtAlt(a){
+    if (typeof a !== "number" || !isFinite(a)) return "—";
+    return Math.round(a/100)*100 + "ft";
+  }
+
+  function clearDynamic(){
+    [...scaleEl.querySelectorAll(".tick,.tickLabel,.marker")].forEach(n => n.remove());
+  }
+
+  function addTicks(){
+    const left = 10, right = 10;
+    const w = scaleEl.clientWidth - left - right;
+
+    const marks = [60, 40, 20, 10, 5, 0].filter(v => v <= MAX_NM);
+    for (const nm of marks){
+      const x = (1 - (nm / MAX_NM));
+      const px = left + x * w;
+
+      const t = document.createElement("div");
+      t.className = "tick";
+      t.style.left = px + "px";
+      scaleEl.appendChild(t);
+
+      const lbl = document.createElement("div");
+      lbl.className = "tickLabel";
+      lbl.style.left = px + "px";
+      lbl.textContent = nm + "nm";
+      scaleEl.appendChild(lbl);
+    }
+  }
+
+  function addMarker(kind, item, idx){
+    const left = 10, right = 10;
+    const w = scaleEl.clientWidth - left - right;
+
+    const d = (typeof item.dist_nm === "number") ? item.dist_nm : null;
+    if (d === null) return;
+
+    const clamped = Math.max(0, Math.min(MAX_NM, d));
+    const x = (1 - (clamped / MAX_NM));
+    const px = left + x * w;
+
+    const m = document.createElement("div");
+    m.className = "marker " + kind;
+    m.style.left = px + "px";
+
+    // Slightly stagger vertically within band to reduce overlaps
+    const jitter = (idx % 4) * 2;
+    if (kind === "arr") m.style.top = (8 + jitter) + "px";
+    if (kind === "dep") m.style.top = (54 + jitter) + "px";
+
+    const cs = item.callsign || "—";
+    const alt = fmtAlt(item.alt_ft);
+    m.innerHTML = `<span class="cs">${cs}</span><span class="sub">${alt}</span>`;
+    scaleEl.appendChild(m);
+  }
+
+  async function poll(){
+    try{
+      const res = await fetch(ENDPOINT, { cache: "no-store" });
+      if(!res.ok) throw new Error("HTTP " + res.status);
+      const d = await res.json();
+
+      airportPill.textContent = (d.airport || "—") + (d.landing_runway ? (" • " + d.landing_runway) : "");
+      rangePill.textContent = "Range " + MAX_NM + "nm";
+
+      clearDynamic();
+      addTicks();
+
+      const inbound = Array.isArray(d.inbound) ? d.inbound.slice() : [];
+      inbound.sort((a,b) => (a.score||1e9) - (b.score||1e9));
+      inbound.slice(0, 10).forEach((it, i) => addMarker("arr", it, i));
+
+      const depa = Array.isArray(d.depa) ? d.depa.slice() : [];
+      depa.sort((a,b) => (a.score||1e9) - (b.score||1e9));
+      depa.slice(0, 10).forEach((it, i) => addMarker("dep", it, i));
+    }catch(e){
+      airportPill.textContent = "—";
+      clearDynamic();
+      addTicks();
+    }finally{
+      setTimeout(poll, POLL_MS);
+    }
+  }
+
+  poll();
+})();
+</script>
+</body>
+</html>
