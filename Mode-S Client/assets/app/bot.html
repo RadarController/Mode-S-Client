@@ -57,6 +57,31 @@
             <span id="status" class="statusMsg toolbar__spacer"></span>
           </div>
 
+          <div class="card" style="margin-bottom:12px;padding:12px;border:1px solid rgba(255,255,255,0.08);">
+            <div style="font-weight:600;margin-bottom:8px;">Safety settings</div>
+            <div class="grid" style="grid-template-columns:180px 180px 180px 1fr;gap:10px;align-items:end;">
+              <label>
+                <div class="label">Per-user gap (ms)</div>
+                <input class="input" id="setUserGap" type="number" min="0" max="600000" value="3000" />
+              </label>
+              <label>
+                <div class="label">Per-platform gap (ms)</div>
+                <input class="input" id="setPlatformGap" type="number" min="0" max="600000" value="1000" />
+              </label>
+              <label>
+                <div class="label">Max reply length</div>
+                <input class="input" id="setMaxReplyLen" type="number" min="0" max="2000" value="400" />
+              </label>
+              <label class="pill" style="cursor:pointer;user-select:none;justify-self:start;">
+                <input id="setSilentMode" type="checkbox" style="margin-right:8px;vertical-align:middle;" />
+                <span class="pill__k">Mode</span><span class="pill__v">Silent</span>
+              </label>
+            </div>
+            <div style="margin-top:8px;font-size:12px;color:var(--muted)">
+              Silent mode disables bot replies without rebuilding (commands still match/preview via test).
+            </div>
+          </div>
+
           <table id="tbl" class="table">
     <thead>
       <tr>
@@ -74,6 +99,11 @@
 <script>
   const statusEl = document.getElementById('status');
   const tbody = document.querySelector('#tbl tbody');
+
+  const inpUserGap = document.getElementById('setUserGap');
+  const inpPlatformGap = document.getElementById('setPlatformGap');
+  const inpMaxReplyLen = document.getElementById('setMaxReplyLen');
+  const chkSilentMode = document.getElementById('setSilentMode');
 
   function setStatus(text, ok=true) {
     statusEl.textContent = text;
@@ -128,6 +158,7 @@
     setStatus('Loading...');
     tbody.innerHTML = '';
     try {
+      await loadSettings();
       const res = await fetch('/api/bot/commands', { cache: 'no-store' });
       const j = await res.json();
       const cmds = (j && j.commands) ? j.commands : [];
@@ -139,10 +170,51 @@
     }
   }
 
+  function clampNum(v, lo, hi, fallback){
+    const n = parseInt(v, 10);
+    if (!isFinite(n)) return fallback;
+    return Math.max(lo, Math.min(hi, n));
+  }
+
+  function collectSettings(){
+    return {
+      per_user_gap_ms: clampNum(inpUserGap.value, 0, 600000, 3000),
+      per_platform_gap_ms: clampNum(inpPlatformGap.value, 0, 600000, 1000),
+      max_reply_len: clampNum(inpMaxReplyLen.value, 0, 2000, 400),
+      silent_mode: !!(chkSilentMode && chkSilentMode.checked)
+    };
+  }
+
+  async function loadSettings(){
+    try {
+      const res = await fetch('/api/bot/settings', { cache: 'no-store' });
+      const j = await res.json();
+      const s = (j && j.settings) ? j.settings : {};
+      if (inpUserGap) inpUserGap.value = clampNum(s.per_user_gap_ms, 0, 600000, 3000);
+      if (inpPlatformGap) inpPlatformGap.value = clampNum(s.per_platform_gap_ms, 0, 600000, 1000);
+      if (inpMaxReplyLen) inpMaxReplyLen.value = clampNum(s.max_reply_len, 0, 2000, 400);
+      if (chkSilentMode) chkSilentMode.checked = !!s.silent_mode;
+    } catch (_) {
+      // keep defaults
+    }
+  }
+
+  async function saveSettings(){
+    const settings = collectSettings();
+    const res = await fetch('/api/bot/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ settings })
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return res.json().catch(() => ({}));
+  }
+
   async function save() {
     setStatus('Saving...');
-    const commands = collect();
     try {
+      await saveSettings();
+      const commands = collect();
       const res = await fetch('/api/bot/commands', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

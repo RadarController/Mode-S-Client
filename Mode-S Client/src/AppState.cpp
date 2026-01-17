@@ -4,6 +4,8 @@
 #include <fstream>
 #include <filesystem>
 
+static bool AtomicWriteUtf8File(const std::string& path_utf8, const std::string& content);
+
 static std::string ToLower(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return (char)std::tolower(c); });
     return s;
@@ -206,6 +208,131 @@ nlohmann::json AppState::youtube_events_json(size_t limit) const {
 void AppState::set_bot_commands_storage_path(const std::string& path_utf8) {
     std::lock_guard<std::mutex> lk(mtx_);
     bot_commands_path_utf8_ = path_utf8;
+}
+
+// --- Bot safety settings ---
+void AppState::set_bot_settings_storage_path(const std::string& path_utf8) {
+    std::lock_guard<std::mutex> lk(mtx_);
+    bot_settings_path_utf8_ = path_utf8;
+}
+
+static AppState::BotSettings ClampBotSettings(AppState::BotSettings s) {
+    // Prevent pathological values.
+    if (s.per_user_gap_ms < 0) s.per_user_gap_ms = 0;
+    if (s.per_user_gap_ms > 600000) s.per_user_gap_ms = 600000;
+
+    if (s.per_platform_gap_ms < 0) s.per_platform_gap_ms = 0;
+    if (s.per_platform_gap_ms > 600000) s.per_platform_gap_ms = 600000;
+
+    // reply len: allow 0 (effectively "no reply"), but keep a sane upper bound.
+    if (s.max_reply_len > 2000) s.max_reply_len = 2000;
+    return s;
+}
+
+bool AppState::load_bot_settings_from_disk() {
+    std::string path;
+    {
+        std::lock_guard<std::mutex> lk(mtx_);
+        path = bot_settings_path_utf8_;
+    }
+    if (path.empty()) return false;
+
+    try {
+        std::filesystem::path p = std::filesystem::u8path(path);
+        std::ifstream f(p, std::ios::binary);
+        if (!f) return false;
+        std::string s((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        if (s.empty()) return false;
+
+        nlohmann::json j = nlohmann::json::parse(s, nullptr, false);
+        if (j.is_discarded() || !j.is_object()) return false;
+
+        BotSettings loaded;
+        loaded.per_user_gap_ms = j.value("per_user_gap_ms", loaded.per_user_gap_ms);
+        loaded.per_platform_gap_ms = j.value("per_platform_gap_ms", loaded.per_platform_gap_ms);
+
+        // max_reply_len may be stored as number; accept int/size.
+        if (j.contains("max_reply_len")) {
+            try {
+                long long v = j["max_reply_len"].get<long long>();
+                if (v < 0) v = 0;
+                loaded.max_reply_len = (size_t)v;
+            } catch (...) {
+                // ignore and keep default
+            }
+        }
+        loaded.silent_mode = j.value("silent_mode", loaded.silent_mode);
+
+        loaded = ClampBotSettings(std::move(loaded));
+
+        {
+            std::lock_guard<std::mutex> lk(mtx_);
+            bot_settings_ = std::move(loaded);
+        }
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+bool AppState::set_bot_settings(const nlohmann::json& settings_obj, std::string* err) {
+    if (!settings_obj.is_object()) {
+        if (err) *err = "not_object";
+        return false;
+    }
+
+    BotSettings s;
+    {
+        std::lock_guard<std::mutex> lk(mtx_);
+        s = bot_settings_;
+    }
+
+    if (settings_obj.contains("per_user_gap_ms")) s.per_user_gap_ms = settings_obj.value("per_user_gap_ms", (long long)s.per_user_gap_ms);
+    if (settings_obj.contains("per_platform_gap_ms")) s.per_platform_gap_ms = settings_obj.value("per_platform_gap_ms", (long long)s.per_platform_gap_ms);
+
+    if (settings_obj.contains("max_reply_len")) {
+        try {
+            long long v = settings_obj["max_reply_len"].get<long long>();
+            if (v < 0) v = 0;
+            s.max_reply_len = (size_t)v;
+        } catch (...) {
+            if (err) *err = "bad_max_reply_len";
+            return false;
+        }
+    }
+
+    if (settings_obj.contains("silent_mode")) s.silent_mode = settings_obj.value("silent_mode", s.silent_mode);
+
+    s = ClampBotSettings(std::move(s));
+
+    std::string path;
+    {
+        std::lock_guard<std::mutex> lk(mtx_);
+        bot_settings_ = s;
+        path = bot_settings_path_utf8_;
+    }
+
+    if (!path.empty()) {
+        try {
+            (void)AtomicWriteUtf8File(path, bot_settings_json().dump(2));
+        } catch (...) {}
+    }
+    return true;
+}
+
+nlohmann::json AppState::bot_settings_json() const {
+    std::lock_guard<std::mutex> lk(mtx_);
+    nlohmann::json j;
+    j["per_user_gap_ms"] = bot_settings_.per_user_gap_ms;
+    j["per_platform_gap_ms"] = bot_settings_.per_platform_gap_ms;
+    j["max_reply_len"] = bot_settings_.max_reply_len;
+    j["silent_mode"] = bot_settings_.silent_mode;
+    return j;
+}
+
+AppState::BotSettings AppState::bot_settings_snapshot() const {
+    std::lock_guard<std::mutex> lk(mtx_);
+    return bot_settings_;
 }
 
 static std::string NormalizeCommandKey(std::string cmd) {

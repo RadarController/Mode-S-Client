@@ -138,6 +138,30 @@ public:
         bool is_broadcaster,
         std::int64_t now_ms) const;
 
+    // --- Bot safety settings (chatbot) ---
+    struct BotSettings {
+        // Extra throttles on top of per-command cooldowns.
+        std::int64_t per_user_gap_ms = 3000;      // one bot reply per user per 3s
+        std::int64_t per_platform_gap_ms = 1000;  // one bot reply per platform per 1s
+
+        // Conservative safety clamp for platform message length.
+        std::size_t max_reply_len = 400;
+
+        // If true, bot will not emit replies (commands still match/preview via API).
+        bool silent_mode = false;
+    };
+
+    // Storage path should be set once at startup (utf-8 path). If empty, settings are in-memory only.
+    void set_bot_settings_storage_path(const std::string& path_utf8);
+    // Returns true if settings were loaded.
+    bool load_bot_settings_from_disk();
+
+    // Replace settings (and persist best-effort).
+    // Accepts JSON object: {"per_user_gap_ms":3000,"per_platform_gap_ms":1000,"max_reply_len":400,"silent_mode":false}
+    bool set_bot_settings(const nlohmann::json& settings_obj, std::string* err = nullptr);
+    nlohmann::json bot_settings_json() const;
+    BotSettings bot_settings_snapshot() const;
+
 private:
     static std::int64_t now_ms();
 
@@ -159,6 +183,9 @@ private:
 
     std::unordered_map<std::string, BotCmd> bot_cmds_; // key is lowercase command (no '!')
     std::string bot_commands_path_utf8_;
+    // --- Bot safety settings ---
+    BotSettings bot_settings_{};
+    std::string bot_settings_path_utf8_;
 
     // EventSub status + events kept small for UI/debugging.
     nlohmann::json twitch_eventsub_status_ = nlohmann::json{

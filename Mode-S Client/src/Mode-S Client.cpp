@@ -1369,6 +1369,24 @@ switch (msg) {
             LogLine(L"BOT: failed to set/load bot commands storage path");
         }
 
+        // -----------------------------------------------------------------
+        // Bot safety settings persistence (2.3)
+        // Store bot_settings.json next to the exe, and load it at startup.
+        // -----------------------------------------------------------------
+        try {
+            std::filesystem::path setPath = std::filesystem::path(GetExeDir()) / "bot_settings.json";
+            state.set_bot_settings_storage_path(ToUtf8(setPath.wstring()));
+            if (state.load_bot_settings_from_disk()) {
+                LogLine(L"BOT: loaded settings from bot_settings.json");
+            }
+            else {
+                LogLine(L"BOT: no bot_settings.json found (or empty/invalid) - using defaults");
+            }
+        }
+        catch (...) {
+            LogLine(L"BOT: failed to set/load bot settings storage path");
+        }
+
         // Allow LogLine() to feed the Web UI (/api/log)
         gStateForWebLog = &state;
 
@@ -1418,6 +1436,12 @@ switch (msg) {
                 const long long now_ms_ll = (long long)std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::system_clock::now().time_since_epoch()).count();
 
+                // Load bot safety settings (configurable via bot_settings.json).
+                const AppState::BotSettings bot_settings = pState->bot_settings_snapshot();
+                if (bot_settings.silent_mode) {
+                    return;
+                }
+
                 // -----------------------------------------------------------------
                 // Global safety limits (2.3): per-user + per-platform rate limiting
                 // -----------------------------------------------------------------
@@ -1427,21 +1451,25 @@ switch (msg) {
                 static std::unordered_map<std::string, long long> last_by_user;
                 static std::unordered_map<std::string, long long> last_by_platform;
 
-                constexpr long long kUserGapMs = 3000;      // one bot reply per user per 3s
-                constexpr long long kPlatformGapMs = 1000;   // one bot reply per platform per 1s
+                const long long kUserGapMs = (long long)bot_settings.per_user_gap_ms;
+                const long long kPlatformGapMs = (long long)bot_settings.per_platform_gap_ms;
 
                 std::string platform_lc = to_lower(m.platform);
                 std::string user_key = platform_lc + "|" + m.user;
 
                 {
                     std::lock_guard<std::mutex> lk(rl_mu);
-                    auto itp = last_by_platform.find(platform_lc);
-                    if (itp != last_by_platform.end() && (now_ms_ll - itp->second) < kPlatformGapMs) {
-                        return;
+                    if (kPlatformGapMs > 0) {
+                        auto itp = last_by_platform.find(platform_lc);
+                        if (itp != last_by_platform.end() && (now_ms_ll - itp->second) < kPlatformGapMs) {
+                            return;
+                        }
                     }
-                    auto itu = last_by_user.find(user_key);
-                    if (itu != last_by_user.end() && (now_ms_ll - itu->second) < kUserGapMs) {
-                        return;
+                    if (kUserGapMs > 0) {
+                        auto itu = last_by_user.find(user_key);
+                        if (itu != last_by_user.end() && (now_ms_ll - itu->second) < kUserGapMs) {
+                            return;
+                        }
                     }
                     // Reserve slots now (so parallel threads don't double-fire).
                     last_by_platform[platform_lc] = now_ms_ll;
@@ -1462,9 +1490,13 @@ switch (msg) {
                 reply = replace_all(reply, "{platform}", platform_lc);
 
                 // Clamp reply length for safety (platform limits vary; keep conservative).
-                constexpr size_t kMaxReplyLen = 400;
-                if (reply.size() > kMaxReplyLen) {
+                const size_t kMaxReplyLen = bot_settings.max_reply_len;
+                if (kMaxReplyLen > 0 && reply.size() > kMaxReplyLen) {
                     reply.resize(kMaxReplyLen);
+                }
+                if (kMaxReplyLen == 0) {
+                    // Explicitly configured to suppress replies.
+                    return;
                 }
 
                 ChatMessage bot{};

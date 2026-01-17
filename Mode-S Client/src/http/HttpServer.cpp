@@ -410,6 +410,25 @@ void HttpServer::RegisterRoutes() {
     svr.Get("/api/chat/recent", handle_chat_recent);
     svr.Get("/api/chat", handle_chat_recent);
 
+    // --- Safety: restrict bot mutation routes to localhost only ---
+    // Even if the server is later bound to 0.0.0.0 or exposed via tunnels/port-forwarding,
+    // we do NOT want remote clients to be able to modify bot commands/settings or inject test chat.
+    auto is_local_request = [](const httplib::Request& req) -> bool {
+        // cpp-httplib provides the peer address in remote_addr.
+        // Accept IPv4 loopback and IPv6 loopback.
+        if (req.remote_addr == "127.0.0.1" || req.remote_addr == "::1") return true;
+        // Some builds may report other 127/8 loopback values; allow them too.
+        if (req.remote_addr.rfind("127.", 0) == 0) return true;
+        return false;
+    };
+
+    auto require_local = [&](const httplib::Request& req, httplib::Response& res) -> bool {
+        if (is_local_request(req)) return true;
+        res.status = 403;
+        res.set_content(R"({"ok":false,"error":"forbidden"})", "application/json; charset=utf-8");
+        return false;
+    };
+
     // --- API: bot commands ---
     // GET  /api/bot/commands  -> current command list
     // POST /api/bot/commands  -> replace command list
@@ -427,7 +446,54 @@ void HttpServer::RegisterRoutes() {
         res.set_content(out.dump(2), "application/json; charset=utf-8");
     });
 
+    // --- API: bot settings ---
+    // GET  /api/bot/settings  -> current safety settings (loaded from bot_settings.json)
+    // POST /api/bot/settings  -> replace/update settings
+    svr.Get("/api/bot/settings", [&](const httplib::Request&, httplib::Response& res) {
+        json out;
+        out["ts_ms"] = (long long)std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        out["settings"] = state_.bot_settings_json();
+        res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+        res.set_header("Pragma", "no-cache");
+        res.set_content(out.dump(2), "application/json; charset=utf-8");
+    });
+
+    svr.Post("/api/bot/settings", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!require_local(req, res)) return;
+        json body;
+        try {
+            body = json::parse(req.body);
+        } catch (...) {
+            res.status = 400;
+            res.set_content(R"({"ok":false,"error":"bad_json"})", "application/json; charset=utf-8");
+            return;
+        }
+
+        json settings = body;
+        if (body.is_object() && body.contains("settings")) settings = body["settings"];
+
+        std::string err;
+        if (!state_.set_bot_settings(settings, &err)) {
+            res.status = 400;
+            json out;
+            out["ok"] = false;
+            out["error"] = err.empty() ? "invalid_settings" : err;
+            out["settings"] = state_.bot_settings_json();
+            res.set_content(out.dump(2), "application/json; charset=utf-8");
+            return;
+        }
+
+        json out;
+        out["ok"] = true;
+        out["settings"] = state_.bot_settings_json();
+        res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+        res.set_header("Pragma", "no-cache");
+        res.set_content(out.dump(2), "application/json; charset=utf-8");
+    });
+
     svr.Post("/api/bot/commands", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!require_local(req, res)) return;
         json body;
         try {
             body = json::parse(req.body);
@@ -479,6 +545,7 @@ void HttpServer::RegisterRoutes() {
     // Upsert a single command without replacing the full list.
     // Body: {"command":"help","response":"...","enabled":true,"cooldown_ms":3000,"scope":"all"}
     svr.Post("/api/bot/commands/upsert", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!require_local(req, res)) return;
         json body;
         try {
             body = json::parse(req.body);
@@ -526,6 +593,7 @@ void HttpServer::RegisterRoutes() {
     };
 
     svr.Delete(R"(/api/bot/commands/(.+))", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!require_local(req, res)) return;
         if (req.matches.size() >= 2) {
             handle_bot_delete(req.matches[1].str(), res);
         }
@@ -536,6 +604,7 @@ void HttpServer::RegisterRoutes() {
     });
 
     svr.Delete("/api/bot/commands", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!require_local(req, res)) return;
         if (!req.has_param("command")) {
             res.status = 400;
             res.set_content(R"({"ok":false,"error":"missing_command"})", "application/json; charset=utf-8");
@@ -550,6 +619,7 @@ void HttpServer::RegisterRoutes() {
     // Injects ONLY the user message into ChatAggregator so it follows the real chat flow.
     // The normal bot pipeline (already in your app) should create the single bot reply.
     svr.Post("/api/bot/test", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!require_local(req, res)) return;
         json body;
         try {
             body = json::parse(req.body);
@@ -607,6 +677,11 @@ void HttpServer::RegisterRoutes() {
             bool is_mod = body.value("is_mod", false);
             bool is_broadcaster = body.value("is_broadcaster", false);
 
+            const AppState::BotSettings bs = state_.bot_settings_snapshot();
+            if (bs.silent_mode) {
+                out["silent_mode"] = true;
+            }
+
             // Rule-aware lookup (enforces enabled/cooldown/scope).
             // Returns empty string if blocked or no match.
             // Preview only: do NOT consume cooldown timers.
@@ -620,10 +695,21 @@ void HttpServer::RegisterRoutes() {
                 std::string reply = template_reply;
                 reply = replace_all(reply, "{user}", user);
                 reply = replace_all(reply, "{platform}", to_lower(platform));
+
+                if (bs.max_reply_len == 0) {
+                    out["matched"] = false;
+                    out["command"] = cmd_lc;
+                    out["note"] = bs.silent_mode ? "silent_mode" : "max_reply_len_zero";
+                }
+                else {
+                    if (bs.max_reply_len > 0 && reply.size() > bs.max_reply_len) {
+                        reply.resize(bs.max_reply_len);
+                    }
                 out["matched"] = true;
                 out["command"] = cmd_lc;
                 out["reply"] = reply;
-                out["note"] = "reply_preview_only"; // actual injection happens via normal pipeline
+                out["note"] = bs.silent_mode ? "silent_mode_reply_preview" : "reply_preview_only"; // actual injection happens via normal pipeline
+                }
             }
         }
 
