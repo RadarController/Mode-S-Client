@@ -512,7 +512,8 @@ void HttpServer::RegisterRoutes() {
 
             // Rule-aware lookup (enforces enabled/cooldown/scope).
             // Returns empty string if blocked or no match.
-            std::string template_reply = state_.bot_try_get_response(cmd_lc, is_mod, is_broadcaster, now_ms_ll);
+            // Preview only: do NOT consume cooldown timers.
+            std::string template_reply = state_.bot_peek_response(cmd_lc, is_mod, is_broadcaster, now_ms_ll);
             if (template_reply.empty()) {
                 out["matched"] = false;
                 out["command"] = cmd_lc;

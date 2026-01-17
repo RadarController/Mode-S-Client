@@ -115,6 +115,14 @@ public:
         bool is_broadcaster,
         std::int64_t now_ms);
 
+    // Preview-only: checks enabled/scope/cooldown but does NOT update the cooldown timer.
+    // Useful for test UI endpoints so previews don't consume cooldowns.
+    std::string bot_peek_response(
+        const std::string& command_lc,
+        bool is_mod,
+        bool is_broadcaster,
+        std::int64_t now_ms) const;
+
 private:
     static std::int64_t now_ms();
 

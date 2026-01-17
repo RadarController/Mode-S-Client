@@ -398,6 +398,33 @@ std::string AppState::bot_try_get_response(
     return cmd.response;
 }
 
+std::string AppState::bot_peek_response(
+    const std::string& command_lc,
+    bool is_mod,
+    bool is_broadcaster,
+    std::int64_t now_ms) const
+{
+    std::lock_guard<std::mutex> lk(mtx_);
+
+    auto it = bot_cmds_.find(command_lc);
+    if (it == bot_cmds_.end()) return {};
+    const BotCmd& cmd = it->second;
+    if (!cmd.enabled) return {};
+
+    const bool has_mod = is_mod || is_broadcaster;
+    if (cmd.scope == "mods" && !has_mod) return {};
+    if (cmd.scope == "broadcaster" && !is_broadcaster) return {};
+
+    if (cmd.cooldown_ms > 0) {
+        const std::int64_t since = now_ms - cmd.last_fire_ms;
+        if (cmd.last_fire_ms != 0 && since >= 0 && since < cmd.cooldown_ms) {
+            return {};
+        }
+    }
+
+    return cmd.response;
+}
+
 void AppState::push_log_utf8(const std::string& msg) {
     if (msg.empty()) return;
 
