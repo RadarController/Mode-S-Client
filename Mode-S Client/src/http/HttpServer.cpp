@@ -410,6 +410,323 @@ void HttpServer::RegisterRoutes() {
     svr.Get("/api/chat/recent", handle_chat_recent);
     svr.Get("/api/chat", handle_chat_recent);
 
+    // --- Safety: restrict bot mutation routes to localhost only ---
+    // Even if the server is later bound to 0.0.0.0 or exposed via tunnels/port-forwarding,
+    // we do NOT want remote clients to be able to modify bot commands/settings or inject test chat.
+    auto is_local_request = [](const httplib::Request& req) -> bool {
+        // cpp-httplib provides the peer address in remote_addr.
+        // Accept IPv4 loopback and IPv6 loopback.
+        if (req.remote_addr == "127.0.0.1" || req.remote_addr == "::1") return true;
+        // Some builds may report other 127/8 loopback values; allow them too.
+        if (req.remote_addr.rfind("127.", 0) == 0) return true;
+        return false;
+    };
+
+    auto require_local = [&](const httplib::Request& req, httplib::Response& res) -> bool {
+        if (is_local_request(req)) return true;
+        res.status = 403;
+        res.set_content(R"({"ok":false,"error":"forbidden"})", "application/json; charset=utf-8");
+        return false;
+    };
+
+    // --- API: bot commands ---
+    // GET  /api/bot/commands  -> current command list
+    // POST /api/bot/commands  -> replace command list
+    // POST /api/bot/commands/upsert -> add/update a single command
+    // DELETE /api/bot/commands/<command> -> delete a single command
+    // DELETE /api/bot/commands?command=<command> -> delete a single command (fallback)
+    // Body can be either: {"commands":[...]} or a raw array [...]
+    svr.Get("/api/bot/commands", [&](const httplib::Request&, httplib::Response& res) {
+        json out;
+        out["ts_ms"] = (long long)std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        out["commands"] = state_.bot_commands_json();
+        res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+        res.set_header("Pragma", "no-cache");
+        res.set_content(out.dump(2), "application/json; charset=utf-8");
+    });
+
+    // --- API: bot settings ---
+    // GET  /api/bot/settings  -> current safety settings (loaded from bot_settings.json)
+    // POST /api/bot/settings  -> replace/update settings
+    svr.Get("/api/bot/settings", [&](const httplib::Request&, httplib::Response& res) {
+        json out;
+        out["ts_ms"] = (long long)std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        out["settings"] = state_.bot_settings_json();
+        res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+        res.set_header("Pragma", "no-cache");
+        res.set_content(out.dump(2), "application/json; charset=utf-8");
+    });
+
+    svr.Post("/api/bot/settings", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!require_local(req, res)) return;
+        json body;
+        try {
+            body = json::parse(req.body);
+        } catch (...) {
+            res.status = 400;
+            res.set_content(R"({"ok":false,"error":"bad_json"})", "application/json; charset=utf-8");
+            return;
+        }
+
+        json settings = body;
+        if (body.is_object() && body.contains("settings")) settings = body["settings"];
+
+        std::string err;
+        if (!state_.set_bot_settings(settings, &err)) {
+            res.status = 400;
+            json out;
+            out["ok"] = false;
+            out["error"] = err.empty() ? "invalid_settings" : err;
+            out["settings"] = state_.bot_settings_json();
+            res.set_content(out.dump(2), "application/json; charset=utf-8");
+            return;
+        }
+
+        json out;
+        out["ok"] = true;
+        out["settings"] = state_.bot_settings_json();
+        res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+        res.set_header("Pragma", "no-cache");
+        res.set_content(out.dump(2), "application/json; charset=utf-8");
+    });
+
+    svr.Post("/api/bot/commands", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!require_local(req, res)) return;
+        json body;
+        try {
+            body = json::parse(req.body);
+        } catch (...) {
+            res.status = 400;
+            res.set_content(R"({"ok":false,"error":"bad_json"})", "application/json; charset=utf-8");
+            return;
+        }
+
+        json commands = body;
+        if (body.is_object() && body.contains("commands")) commands = body["commands"];
+
+        state_.set_bot_commands(commands);
+
+        json out;
+        out["ok"] = true;
+        out["commands"] = state_.bot_commands_json();
+        res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+        res.set_header("Pragma", "no-cache");
+        res.set_content(out.dump(2), "application/json; charset=utf-8");
+    });
+
+    auto url_decode = [](const std::string& in) -> std::string {
+        std::string out;
+        out.reserve(in.size());
+        for (size_t i = 0; i < in.size(); ++i) {
+            char c = in[i];
+            if (c == '%' && i + 2 < in.size()) {
+                auto hex = [](char h) -> int {
+                    if (h >= '0' && h <= '9') return h - '0';
+                    if (h >= 'a' && h <= 'f') return 10 + (h - 'a');
+                    if (h >= 'A' && h <= 'F') return 10 + (h - 'A');
+                    return -1;
+                };
+                int hi = hex(in[i + 1]);
+                int lo = hex(in[i + 2]);
+                if (hi >= 0 && lo >= 0) {
+                    out.push_back((char)((hi << 4) | lo));
+                    i += 2;
+                    continue;
+                }
+            }
+            if (c == '+') { out.push_back(' '); continue; }
+            out.push_back(c);
+        }
+        return out;
+    };
+
+    // Upsert a single command without replacing the full list.
+    // Body: {"command":"help","response":"...","enabled":true,"cooldown_ms":3000,"scope":"all"}
+    svr.Post("/api/bot/commands/upsert", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!require_local(req, res)) return;
+        json body;
+        try {
+            body = json::parse(req.body);
+        }
+        catch (...) {
+            res.status = 400;
+            res.set_content(R"({"ok":false,"error":"bad_json"})", "application/json; charset=utf-8");
+            return;
+        }
+
+        std::string err;
+        if (!state_.bot_upsert_command(body, &err)) {
+            res.status = 400;
+            json out;
+            out["ok"] = false;
+            out["error"] = err.empty() ? "invalid_command" : err;
+            res.set_content(out.dump(2), "application/json; charset=utf-8");
+            return;
+        }
+
+        json out;
+        out["ok"] = true;
+        out["commands"] = state_.bot_commands_json();
+        res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+        res.set_header("Pragma", "no-cache");
+        res.set_content(out.dump(2), "application/json; charset=utf-8");
+    });
+
+    // Delete a single command.
+    // Supports both:
+    //  - DELETE /api/bot/commands/<command>
+    //  - DELETE /api/bot/commands?command=<command>
+    auto handle_bot_delete = [&](const std::string& cmd_raw, httplib::Response& res) {
+        const std::string cmd = url_decode(cmd_raw);
+        bool removed = state_.bot_delete_command(cmd);
+
+        json out;
+        out["ok"] = removed;
+        out["removed"] = removed;
+        out["command"] = cmd;
+        out["commands"] = state_.bot_commands_json();
+        res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+        res.set_header("Pragma", "no-cache");
+        res.set_content(out.dump(2), "application/json; charset=utf-8");
+    };
+
+    svr.Delete(R"(/api/bot/commands/(.+))", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!require_local(req, res)) return;
+        if (req.matches.size() >= 2) {
+            handle_bot_delete(req.matches[1].str(), res);
+        }
+        else {
+            res.status = 400;
+            res.set_content(R"({"ok":false,"error":"missing_command"})", "application/json; charset=utf-8");
+        }
+    });
+
+    svr.Delete("/api/bot/commands", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!require_local(req, res)) return;
+        if (!req.has_param("command")) {
+            res.status = 400;
+            res.set_content(R"({"ok":false,"error":"missing_command"})", "application/json; charset=utf-8");
+            return;
+        }
+        handle_bot_delete(req.get_param_value("command"), res);
+    });
+
+    // --- API: bot test inject ---
+    // POST /api/bot/test
+    // Body: {"platform":"twitch","user":"TestUser","message":"!help"}
+    // Injects ONLY the user message into ChatAggregator so it follows the real chat flow.
+    // The normal bot pipeline (already in your app) should create the single bot reply.
+    svr.Post("/api/bot/test", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!require_local(req, res)) return;
+        json body;
+        try {
+            body = json::parse(req.body);
+        }
+        catch (...) {
+            res.status = 400;
+            res.set_content(R"({"ok":false,"error":"bad_json"})", "application/json; charset=utf-8");
+            return;
+        }
+
+        std::string platform = body.value("platform", "test");
+        std::string user = body.value("user", "TestUser");
+        std::string message = body.value("message", "");
+
+        auto now_ms_ll = (long long)std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+
+        auto to_lower = [](std::string s) {
+            std::transform(s.begin(), s.end(), s.begin(),
+                [](unsigned char c) { return (char)std::tolower(c); });
+            return s;
+            };
+
+        auto replace_all = [](std::string s, const std::string& from, const std::string& to) {
+            if (from.empty()) return s;
+            size_t pos = 0;
+            while ((pos = s.find(from, pos)) != std::string::npos) {
+                s.replace(pos, from.size(), to);
+                pos += to.size();
+            }
+            return s;
+            };
+
+        // Prepare response JSON (best-effort preview of what the bot WILL say)
+        json out;
+        out["ok"] = true;
+        out["ts_ms"] = now_ms_ll;
+
+        // Determine if it looks like a command and (optionally) preview reply from current state_
+        std::string cmd_lc;
+        if (!message.empty() && message.size() >= 2 && message[0] == '!') {
+            size_t start = 1;
+            while (start < message.size() && std::isspace((unsigned char)message[start])) start++;
+            size_t end = start;
+            while (end < message.size() && !std::isspace((unsigned char)message[end])) end++;
+            if (end > start) cmd_lc = to_lower(message.substr(start, end - start));
+        }
+
+        if (cmd_lc.empty()) {
+            out["matched"] = false;
+            out["note"] = "not_a_command";
+        }
+        else {
+            // For test endpoint, allow role simulation via request body
+            bool is_mod = body.value("is_mod", false);
+            bool is_broadcaster = body.value("is_broadcaster", false);
+
+            const AppState::BotSettings bs = state_.bot_settings_snapshot();
+            if (bs.silent_mode) {
+                out["silent_mode"] = true;
+            }
+
+            // Rule-aware lookup (enforces enabled/cooldown/scope).
+            // Returns empty string if blocked or no match.
+            // Preview only: do NOT consume cooldown timers.
+            std::string template_reply = state_.bot_peek_response(cmd_lc, is_mod, is_broadcaster, now_ms_ll);
+            if (template_reply.empty()) {
+                out["matched"] = false;
+                out["command"] = cmd_lc;
+                out["note"] = "blocked_or_no_match";
+            }
+            else {
+                std::string reply = template_reply;
+                reply = replace_all(reply, "{user}", user);
+                reply = replace_all(reply, "{platform}", to_lower(platform));
+
+                if (bs.max_reply_len == 0) {
+                    out["matched"] = false;
+                    out["command"] = cmd_lc;
+                    out["note"] = bs.silent_mode ? "silent_mode" : "max_reply_len_zero";
+                }
+                else {
+                    if (bs.max_reply_len > 0 && reply.size() > bs.max_reply_len) {
+                        reply.resize(bs.max_reply_len);
+                    }
+                out["matched"] = true;
+                out["command"] = cmd_lc;
+                out["reply"] = reply;
+                out["note"] = bs.silent_mode ? "silent_mode_reply_preview" : "reply_preview_only"; // actual injection happens via normal pipeline
+                }
+            }
+        }
+
+        // Inject ONLY the user message (this should trigger your existing bot logic exactly once)
+        if (!message.empty()) {
+            ChatMessage m{};
+            m.platform = platform;
+            m.user = user;
+            m.message = message;
+            m.ts_ms = now_ms_ll;
+            chat_.Add(std::move(m));
+        }
+
+        res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+        res.set_header("Pragma", "no-cache");
+        res.set_content(out.dump(2), "application/json; charset=utf-8");
+        });
 
     // --- API: chat diagnostics ---
     // Returns address of the ChatAggregator instance and current buffered count.
