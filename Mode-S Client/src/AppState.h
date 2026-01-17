@@ -18,6 +18,11 @@ struct ChatMessage {
     nlohmann::json runs; // null or array
 
     std::string color; // optional username color (e.g. "#FF0000")
+
+    // Optional role flags (populated when available by platform adapters).
+    // Used by the chatbot scope rules (all/mods/broadcaster).
+    bool is_mod = false;
+    bool is_broadcaster = false;
     std::int64_t ts_ms{};
 };
 
@@ -32,6 +37,10 @@ inline void to_json(nlohmann::json& j, const ChatMessage& c) {
     };
     if (!c.color.empty()) j["color"] = c.color;
     if (c.runs.is_array() && !c.runs.empty()) j["runs"] = c.runs;
+
+    // Keep backward-compatibility: only include when true.
+    if (c.is_mod) j["is_mod"] = true;
+    if (c.is_broadcaster) j["is_broadcaster"] = true;
 }
 
 struct EventItem {
@@ -92,31 +101,37 @@ public:
     void push_youtube_event(const EventItem& e);
     nlohmann::json youtube_events_json(size_t limit = 200) const;
 
-    // --- Simple chatbot command store (configurable via HTTP + app UI) ---
-    // Commands are stored without the leading '!'. Matching is case-insensitive.
-    // Persistence: call set_bot_commands_storage_path() once at startup to enable
-    // saving/loading between sessions.
+    // --- Bot commands (chatbot) ---
+    // Storage path should be set once at startup (utf-8 path). If empty, commands are in-memory only.
     void set_bot_commands_storage_path(const std::string& path_utf8);
+    // Returns true if commands were loaded.
     bool load_bot_commands_from_disk();
+
+    // Upsert a single command object. Accepts the same fields as set_bot_commands():
+    // {"command":"help","response":"...","enabled":true,"cooldown_ms":3000,"scope":"all"}
+    // Returns true on success; on failure returns false and (optionally) sets err.
+    bool bot_upsert_command(const nlohmann::json& command_obj, std::string* err = nullptr);
+
+    // Delete a single command by name (case-insensitive, with or without leading '!').
+    // Returns true if a command was removed.
+    bool bot_delete_command(const std::string& command);
+
+    // Replace current command list using a JSON array of objects:
+    // {"command":"help","response":"...","enabled":true,"cooldown_ms":3000,"scope":"all"}
     void set_bot_commands(const nlohmann::json& commands);
     nlohmann::json bot_commands_json() const;
 
-    // Convenience: get a response for a command. Returns empty string if not found/disabled.
+    // Legacy: lookup response without consuming cooldown.
     std::string bot_lookup_response(const std::string& command_lc) const;
 
-    // Checks enabled/scope/cooldown; if allowed returns the response template and updates
-    // the command cooldown timer. Returns empty string otherwise.
-    // Notes:
-    // - 'is_broadcaster' is treated as having mod permissions.
-    // - Cooldowns are per-command (global), not per-user.
+    // Enforces enabled/cooldown/scope. Returns empty if blocked/no match.
     std::string bot_try_get_response(
         const std::string& command_lc,
         bool is_mod,
         bool is_broadcaster,
         std::int64_t now_ms);
 
-    // Preview-only: checks enabled/scope/cooldown but does NOT update the cooldown timer.
-    // Useful for test UI endpoints so previews don't consume cooldowns.
+    // Like bot_try_get_response, but does NOT consume cooldown (no last_fire_ms update).
     std::string bot_peek_response(
         const std::string& command_lc,
         bool is_mod,
@@ -133,20 +148,17 @@ private:
     std::deque<EventItem> youtube_events_; // last 200
     std::deque<nlohmann::json> twitch_eventsub_events_; // last 200 by default
 
+    // --- Bot commands ---
     struct BotCmd {
         std::string response;
         bool enabled = true;
         int cooldown_ms = 3000;
-        // all | mods | broadcaster
-        std::string scope = "all";
-
-        // runtime only
+        std::string scope = "all"; // all | mods | broadcaster
         std::int64_t last_fire_ms = 0;
     };
-    std::unordered_map<std::string, BotCmd> bot_cmds_;
-    std::string bot_commands_path_utf8_; // empty => no persistence
-    std::string bot_commands_path_;
-    void save_bot_commands_to_disk_locked() const;
+
+    std::unordered_map<std::string, BotCmd> bot_cmds_; // key is lowercase command (no '!')
+    std::string bot_commands_path_utf8_;
 
     // EventSub status + events kept small for UI/debugging.
     nlohmann::json twitch_eventsub_status_ = nlohmann::json{

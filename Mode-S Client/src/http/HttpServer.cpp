@@ -413,6 +413,9 @@ void HttpServer::RegisterRoutes() {
     // --- API: bot commands ---
     // GET  /api/bot/commands  -> current command list
     // POST /api/bot/commands  -> replace command list
+    // POST /api/bot/commands/upsert -> add/update a single command
+    // DELETE /api/bot/commands/<command> -> delete a single command
+    // DELETE /api/bot/commands?command=<command> -> delete a single command (fallback)
     // Body can be either: {"commands":[...]} or a raw array [...]
     svr.Get("/api/bot/commands", [&](const httplib::Request&, httplib::Response& res) {
         json out;
@@ -445,6 +448,100 @@ void HttpServer::RegisterRoutes() {
         res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
         res.set_header("Pragma", "no-cache");
         res.set_content(out.dump(2), "application/json; charset=utf-8");
+    });
+
+    auto url_decode = [](const std::string& in) -> std::string {
+        std::string out;
+        out.reserve(in.size());
+        for (size_t i = 0; i < in.size(); ++i) {
+            char c = in[i];
+            if (c == '%' && i + 2 < in.size()) {
+                auto hex = [](char h) -> int {
+                    if (h >= '0' && h <= '9') return h - '0';
+                    if (h >= 'a' && h <= 'f') return 10 + (h - 'a');
+                    if (h >= 'A' && h <= 'F') return 10 + (h - 'A');
+                    return -1;
+                };
+                int hi = hex(in[i + 1]);
+                int lo = hex(in[i + 2]);
+                if (hi >= 0 && lo >= 0) {
+                    out.push_back((char)((hi << 4) | lo));
+                    i += 2;
+                    continue;
+                }
+            }
+            if (c == '+') { out.push_back(' '); continue; }
+            out.push_back(c);
+        }
+        return out;
+    };
+
+    // Upsert a single command without replacing the full list.
+    // Body: {"command":"help","response":"...","enabled":true,"cooldown_ms":3000,"scope":"all"}
+    svr.Post("/api/bot/commands/upsert", [&](const httplib::Request& req, httplib::Response& res) {
+        json body;
+        try {
+            body = json::parse(req.body);
+        }
+        catch (...) {
+            res.status = 400;
+            res.set_content(R"({"ok":false,"error":"bad_json"})", "application/json; charset=utf-8");
+            return;
+        }
+
+        std::string err;
+        if (!state_.bot_upsert_command(body, &err)) {
+            res.status = 400;
+            json out;
+            out["ok"] = false;
+            out["error"] = err.empty() ? "invalid_command" : err;
+            res.set_content(out.dump(2), "application/json; charset=utf-8");
+            return;
+        }
+
+        json out;
+        out["ok"] = true;
+        out["commands"] = state_.bot_commands_json();
+        res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+        res.set_header("Pragma", "no-cache");
+        res.set_content(out.dump(2), "application/json; charset=utf-8");
+    });
+
+    // Delete a single command.
+    // Supports both:
+    //  - DELETE /api/bot/commands/<command>
+    //  - DELETE /api/bot/commands?command=<command>
+    auto handle_bot_delete = [&](const std::string& cmd_raw, httplib::Response& res) {
+        const std::string cmd = url_decode(cmd_raw);
+        bool removed = state_.bot_delete_command(cmd);
+
+        json out;
+        out["ok"] = removed;
+        out["removed"] = removed;
+        out["command"] = cmd;
+        out["commands"] = state_.bot_commands_json();
+        res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+        res.set_header("Pragma", "no-cache");
+        res.set_content(out.dump(2), "application/json; charset=utf-8");
+    };
+
+    svr.Delete(R"(/api/bot/commands/(.+))", [&](const httplib::Request& req, httplib::Response& res) {
+        if (req.matches.size() >= 2) {
+            handle_bot_delete(req.matches[1].str(), res);
+        }
+        else {
+            res.status = 400;
+            res.set_content(R"({"ok":false,"error":"missing_command"})", "application/json; charset=utf-8");
+        }
+    });
+
+    svr.Delete("/api/bot/commands", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!req.has_param("command")) {
+            res.status = 400;
+            res.set_content(R"({"ok":false,"error":"missing_command"})", "application/json; charset=utf-8");
+            return;
+        }
+        handle_bot_delete(req.get_param_value("command"), res);
     });
 
     // --- API: bot test inject ---

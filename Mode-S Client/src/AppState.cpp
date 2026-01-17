@@ -208,6 +208,23 @@ void AppState::set_bot_commands_storage_path(const std::string& path_utf8) {
     bot_commands_path_utf8_ = path_utf8;
 }
 
+static std::string NormalizeCommandKey(std::string cmd) {
+    if (!cmd.empty() && cmd[0] == '!') cmd.erase(cmd.begin());
+    cmd = ToLower(std::move(cmd));
+    // Trim surrounding whitespace
+    auto is_ws = [](unsigned char c) { return std::isspace(c) != 0; };
+    while (!cmd.empty() && is_ws((unsigned char)cmd.front())) cmd.erase(cmd.begin());
+    while (!cmd.empty() && is_ws((unsigned char)cmd.back())) cmd.pop_back();
+    // Stop at first whitespace (command token)
+    for (size_t i = 0; i < cmd.size(); ++i) {
+        if (is_ws((unsigned char)cmd[i])) {
+            cmd.resize(i);
+            break;
+        }
+    }
+    return cmd;
+}
+
 static bool AtomicWriteUtf8File(const std::string& path_utf8, const std::string& content) {
     try {
         std::filesystem::path p = std::filesystem::u8path(path_utf8);
@@ -258,17 +275,14 @@ bool AppState::load_bot_commands_from_disk() {
         nlohmann::json j = nlohmann::json::parse(s, nullptr, false);
         if (j.is_discarded()) return false;
 
-        // Don't auto-save while loading.
-        std::lock_guard<std::mutex> lk(mtx_);
-        bot_cmds_.clear();
         if (!j.is_array()) return false;
+
+        // Build a fresh map first; only swap in if parsing succeeds.
+        std::unordered_map<std::string, BotCmd> loaded;
 
         for (const auto& c : j) {
             if (!c.is_object()) continue;
-            std::string cmd = c.value("command", "");
-            if (cmd.empty()) continue;
-            if (!cmd.empty() && cmd[0] == '!') cmd.erase(cmd.begin());
-            cmd = ToLower(cmd);
+            std::string cmd = NormalizeCommandKey(c.value("command", ""));
             if (cmd.empty()) continue;
 
             BotCmd bc;
@@ -289,12 +303,79 @@ bool AppState::load_bot_commands_from_disk() {
             if (bc.scope != "all" && bc.scope != "mods" && bc.scope != "broadcaster") {
                 bc.scope = "all";
             }
-            bot_cmds_[cmd] = std::move(bc);
+            bc.last_fire_ms = 0; // never persist cooldown state
+            loaded[cmd] = std::move(bc);
+        }
+
+        {
+            std::lock_guard<std::mutex> lk(mtx_);
+            bot_cmds_ = std::move(loaded);
         }
         return true;
     } catch (...) {
         return false;
     }
+}
+
+bool AppState::bot_upsert_command(const nlohmann::json& command_obj, std::string* err) {
+    if (!command_obj.is_object()) {
+        if (err) *err = "not_object";
+        return false;
+    }
+
+    std::string cmd = NormalizeCommandKey(command_obj.value("command", ""));
+    if (cmd.empty()) {
+        if (err) *err = "missing_command";
+        return false;
+    }
+
+    BotCmd bc;
+    bc.response = command_obj.value("response", "");
+    bc.enabled = command_obj.value("enabled", true);
+    if (command_obj.contains("cooldown_ms")) {
+        bc.cooldown_ms = command_obj.value("cooldown_ms", 3000);
+    } else {
+        int cs = command_obj.value("cooldown_s", 3);
+        bc.cooldown_ms = cs * 1000;
+    }
+    if (bc.cooldown_ms < 0) bc.cooldown_ms = 0;
+    if (bc.cooldown_ms > 600000) bc.cooldown_ms = 600000;
+    bc.scope = ToLower(command_obj.value("scope", "all"));
+    if (bc.scope != "all" && bc.scope != "mods" && bc.scope != "broadcaster") bc.scope = "all";
+    bc.last_fire_ms = 0;
+
+    std::string path;
+    {
+        std::lock_guard<std::mutex> lk(mtx_);
+        bot_cmds_[cmd] = bc;
+        path = bot_commands_path_utf8_;
+    }
+
+    if (!path.empty()) {
+        try {
+            (void)AtomicWriteUtf8File(path, bot_commands_json().dump(2));
+        } catch (...) {}
+    }
+    return true;
+}
+
+bool AppState::bot_delete_command(const std::string& command) {
+    std::string cmd = NormalizeCommandKey(command);
+    if (cmd.empty()) return false;
+
+    bool removed = false;
+    std::string path;
+    {
+        std::lock_guard<std::mutex> lk(mtx_);
+        removed = (bot_cmds_.erase(cmd) > 0);
+        path = bot_commands_path_utf8_;
+    }
+    if (removed && !path.empty()) {
+        try {
+            (void)AtomicWriteUtf8File(path, bot_commands_json().dump(2));
+        } catch (...) {}
+    }
+    return removed;
 }
 
 void AppState::set_bot_commands(const nlohmann::json& commands) {
@@ -306,10 +387,7 @@ void AppState::set_bot_commands(const nlohmann::json& commands) {
         if (commands.is_array()) {
             for (const auto& c : commands) {
                 if (!c.is_object()) continue;
-                std::string cmd = c.value("command", "");
-                if (cmd.empty()) continue;
-                if (!cmd.empty() && cmd[0] == '!') cmd.erase(cmd.begin());
-                cmd = ToLower(cmd);
+                std::string cmd = NormalizeCommandKey(c.value("command", ""));
                 if (cmd.empty()) continue;
 
                 BotCmd bc;
@@ -328,6 +406,7 @@ void AppState::set_bot_commands(const nlohmann::json& commands) {
                 if (bc.scope != "all" && bc.scope != "mods" && bc.scope != "broadcaster") {
                     bc.scope = "all";
                 }
+                bc.last_fire_ms = 0;
                 bot_cmds_[cmd] = std::move(bc);
             }
         }
@@ -349,8 +428,14 @@ void AppState::set_bot_commands(const nlohmann::json& commands) {
 
 nlohmann::json AppState::bot_commands_json() const {
     std::lock_guard<std::mutex> lk(mtx_);
+    std::vector<std::string> keys;
+    keys.reserve(bot_cmds_.size());
+    for (const auto& kv : bot_cmds_) keys.push_back(kv.first);
+    std::sort(keys.begin(), keys.end());
+
     nlohmann::json arr = nlohmann::json::array();
-    for (const auto& kv : bot_cmds_) {
+    for (const auto& k : keys) {
+        const auto& kv = *bot_cmds_.find(k);
         nlohmann::json j;
         j["command"] = kv.first;
         j["response"] = kv.second.response;

@@ -19,6 +19,7 @@
 #include <ctime>
 #include <memory>
 #include <mutex>
+#include <unordered_map>
 
 #include "httplib.h"
 #include "json.hpp"
@@ -1350,6 +1351,24 @@ switch (msg) {
         // Load config first (so edits start populated)
         (void)config.Load();
 
+        // -----------------------------------------------------------------
+        // Bot commands persistence (2.2)
+        // Store bot_commands.json next to the exe, and load it at startup.
+        // -----------------------------------------------------------------
+        try {
+            std::filesystem::path botPath = std::filesystem::path(GetExeDir()) / "bot_commands.json";
+            state.set_bot_commands_storage_path(ToUtf8(botPath.wstring()));
+            if (state.load_bot_commands_from_disk()) {
+                LogLine(L"BOT: loaded commands from bot_commands.json");
+            }
+            else {
+                LogLine(L"BOT: no bot_commands.json found (or empty/invalid) - starting with in-memory defaults");
+            }
+        }
+        catch (...) {
+            LogLine(L"BOT: failed to set/load bot commands storage path");
+        }
+
         // Allow LogLine() to feed the Web UI (/api/log)
         gStateForWebLog = &state;
 
@@ -1399,13 +1418,54 @@ switch (msg) {
                 const long long now_ms_ll = (long long)std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::system_clock::now().time_since_epoch()).count();
 
-                // Enforce enabled/cooldown/scope.
-                std::string template_reply = pState->bot_try_get_response(cmd_lc, /*is_mod*/false, /*is_broadcaster*/false, now_ms_ll);
+                // -----------------------------------------------------------------
+                // Global safety limits (2.3): per-user + per-platform rate limiting
+                // -----------------------------------------------------------------
+                // These sit on top of per-command cooldowns to prevent spam/ban risk.
+                // They apply regardless of command.
+                static std::mutex rl_mu;
+                static std::unordered_map<std::string, long long> last_by_user;
+                static std::unordered_map<std::string, long long> last_by_platform;
+
+                constexpr long long kUserGapMs = 3000;      // one bot reply per user per 3s
+                constexpr long long kPlatformGapMs = 1000;   // one bot reply per platform per 1s
+
+                std::string platform_lc = to_lower(m.platform);
+                std::string user_key = platform_lc + "|" + m.user;
+
+                {
+                    std::lock_guard<std::mutex> lk(rl_mu);
+                    auto itp = last_by_platform.find(platform_lc);
+                    if (itp != last_by_platform.end() && (now_ms_ll - itp->second) < kPlatformGapMs) {
+                        return;
+                    }
+                    auto itu = last_by_user.find(user_key);
+                    if (itu != last_by_user.end() && (now_ms_ll - itu->second) < kUserGapMs) {
+                        return;
+                    }
+                    // Reserve slots now (so parallel threads don't double-fire).
+                    last_by_platform[platform_lc] = now_ms_ll;
+                    last_by_user[user_key] = now_ms_ll;
+                }
+
+                // Enforce enabled/cooldown/scope (2.2: role flags carried on ChatMessage).
+                std::string template_reply = pState->bot_try_get_response(
+                    cmd_lc,
+                    /*is_mod*/m.is_mod,
+                    /*is_broadcaster*/m.is_broadcaster,
+                    now_ms_ll
+                );
                 if (template_reply.empty()) return;
 
                 std::string reply = template_reply;
                 reply = replace_all(reply, "{user}", m.user);
-                reply = replace_all(reply, "{platform}", to_lower(m.platform));
+                reply = replace_all(reply, "{platform}", platform_lc);
+
+                // Clamp reply length for safety (platform limits vary; keep conservative).
+                constexpr size_t kMaxReplyLen = 400;
+                if (reply.size() > kMaxReplyLen) {
+                    reply.resize(kMaxReplyLen);
+                }
 
                 ChatMessage bot{};
                 bot.platform = m.platform;
