@@ -1,4 +1,5 @@
 #pragma once
+
 #include <atomic>
 #include <cstdint>
 #include <mutex>
@@ -32,20 +33,22 @@ public:
     // Forces an immediate refresh attempt (optional to call from UI/debug endpoints).
     bool RefreshNow(std::string* out_error = nullptr);
 
-    // --- Interactive OAuth (one-time re-auth to obtain/upgrade refresh token scopes) ---
-    // Build the Twitch authorize URL. Redirect URI must match the one registered in Twitch Dev Console.
-    // Example redirect URI for local app:
-    //   http://localhost:17845/auth/twitch/callback
-    std::string BuildAuthorizeUrl(const std::string& redirect_uri, std::string* out_error);
+    // ---- Interactive OAuth (one-time login to obtain/replace refresh token) ----
+    // Build the URL for the user to open in a browser.
+    // The caller must provide the redirect_uri that Twitch is configured to send the user back to.
+    // This function stores an internal anti-CSRF "state" value which is verified in HandleOAuthCallback.
+    std::string BuildAuthorizeUrl(const std::string& redirect_uri, std::string* out_error = nullptr);
 
-    // Handle the OAuth callback (exchanges authorization code for tokens, persists to config.json,
-    // and updates the in-memory snapshot used by the refresh worker).
+    // Handle the redirect callback query params ("code" and "state"), exchanging the code for tokens.
+    // On success this updates in-memory tokens and persists them back to config.json.
     bool HandleOAuthCallback(const std::string& code,
-                             const std::string& state,
-                             const std::string& redirect_uri,
-                             std::string* out_error);
+        const std::string& state,
+        const std::string& redirect_uri,
+        std::string* out_error = nullptr);
 
 private:
+    bool ValidateAndLogToken(const std::string& access_token, std::string* out_scope_joined);
+
     bool LoadFromConfig(std::string* out_error);
     bool SaveToConfig(const TokenSnapshot& snap, std::string* out_error);
 
@@ -61,12 +64,6 @@ private:
     static std::string UrlEncode(const std::string& s);
     static std::int64_t NowUnixSeconds();
 
-    static std::string MakeRandomState();
-    bool ExchangeAuthCodeForToken(const std::string& code,
-                                  const std::string& redirect_uri,
-                                  TokenSnapshot* out_snap,
-                                  std::string* out_error);
-
 private:
     // Config fields (loaded from config.json)
     std::string client_id_;
@@ -77,9 +74,9 @@ private:
     mutable std::mutex mu_;
     std::optional<TokenSnapshot> current_;
 
-    // OAuth state (for /auth/twitch/start -> /auth/twitch/callback)
+    // Pending OAuth anti-CSRF state for interactive auth
     mutable std::mutex oauth_mu_;
-    std::string last_state_;
+    std::string pending_state_;
 
     // Worker
     std::atomic<bool> running_{ false };

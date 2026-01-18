@@ -1800,8 +1800,8 @@ switch (msg) {
                                                   const std::string& state,
                                                   const std::string& redirect_uri,
                                                   std::string* out_error) -> bool {
-                std::string err;
-                const bool ok = twitchAuth.HandleOAuthCallback(code, state, redirect_uri, &err);
+                 std::string err;
+                 const bool ok = twitchAuth.HandleOAuthCallback(code, state, redirect_uri, &err);
                 if (!ok) {
                     if (out_error) *out_error = err;
                     LogLine(ToW(std::string("TWITCHAUTH: OAuth callback failed: ") + err));
