@@ -209,84 +209,6 @@ void HttpServer::ApplyOverlayTokens(std::string& html)
 void HttpServer::RegisterRoutes() {
     auto& svr = *svr_;
 
-    // --- Twitch OAuth interactive auth (optional) ---
-    // This is used to obtain a new refresh token with additional scopes (e.g. chat:read/chat:write)
-    // when silent refresh is not possible or when scopes need to change.
-    const std::string redirect_uri = std::string("http://localhost:") + std::to_string(opt_.port) + "/auth/twitch/callback";
-    const bool twitch_oauth_enabled = (bool)opt_.twitch_auth_build_authorize_url && (bool)opt_.twitch_auth_handle_callback;
-
-    SafeOutputLog(log_, twitch_oauth_enabled
-        ? L"HTTP: Twitch OAuth routes enabled: /auth/twitch/start and /auth/twitch/callback"
-        : L"HTTP: Twitch OAuth routes NOT enabled (callbacks not wired)");
-
-    // Always register the routes so you never get a confusing 404.
-    // If not wired, return 501 with a helpful message.
-    svr.Get("/auth/twitch/start", [&](const httplib::Request&, httplib::Response& res) {
-        if (!twitch_oauth_enabled) {
-            res.status = 501;
-            res.set_content("Twitch OAuth is not wired (server started without twitch_auth callbacks).", "text/plain; charset=utf-8");
-            return;
-        }
-
-        std::string err;
-        const std::string url = opt_.twitch_auth_build_authorize_url(redirect_uri, &err);
-        if (url.empty()) {
-            res.status = 500;
-            res.set_content(std::string("Twitch auth start failed: ") + err, "text/plain; charset=utf-8");
-            return;
-        }
-        res.status = 302;
-        res.set_header("Location", url.c_str());
-    });
-
-    svr.Get("/auth/twitch/callback", [&](const httplib::Request& req, httplib::Response& res) {
-        if (!twitch_oauth_enabled) {
-            res.status = 501;
-            res.set_content("Twitch OAuth is not wired (server started without twitch_auth callbacks).", "text/plain; charset=utf-8");
-            return;
-        }
-
-        // Twitch may send either ?code=... or ?error=...
-        if (req.has_param("error")) {
-            const std::string err = req.get_param_value("error");
-            const std::string desc = req.has_param("error_description") ? req.get_param_value("error_description") : std::string();
-            res.status = 400;
-            res.set_content(std::string("Twitch auth error: ") + err + (desc.empty() ? "" : ("\n" + desc)), "text/plain; charset=utf-8");
-            return;
-        }
-
-        if (!req.has_param("code") || !req.has_param("state")) {
-            res.status = 400;
-            res.set_content("Missing code/state", "text/plain; charset=utf-8");
-            return;
-        }
-
-        std::string err;
-        const std::string code = req.get_param_value("code");
-        const std::string state = req.get_param_value("state");
-
-        const bool ok = opt_.twitch_auth_handle_callback(code, state, redirect_uri, &err);
-        if (!ok) {
-            res.status = 400;
-            res.set_content(std::string("Twitch auth callback failed: ") + err, "text/plain; charset=utf-8");
-            return;
-        }
-
-        // Friendly success page
-        const char* html =
-            "<!doctype html><html><head><meta charset='utf-8'>"
-            "<title>Twitch connected</title>"
-            "<style>body{font-family:system-ui,Segoe UI,Arial;max-width:720px;margin:40px auto;line-height:1.5}"
-            ".ok{padding:14px 16px;border-radius:10px;background:#e8fff1;border:1px solid #b7f5cf}"
-            "code{background:#f3f4f6;padding:2px 6px;border-radius:6px}</style>"
-            "</head><body>"
-            "<div class='ok'><h2>✅ Twitch connected</h2>"
-            "<p>You can close this tab and return to the app.</p>"
-            "<p>If chat still shows <code>Login unsuccessful</code>, restart Twitch in the app.</p>"
-            "</div></body></html>";
-        res.set_content(html, "text/html; charset=utf-8");
-    });
-
     // --- API: log (for Web UI) ---
     svr.Get("/api/log", [&](const httplib::Request& req, httplib::Response& res) {
         std::uint64_t since = 0;
@@ -334,6 +256,68 @@ void HttpServer::RegisterRoutes() {
         auto j = state_.twitch_eventsub_events_json(limit);
         res.set_content(j.dump(2), "application/json; charset=utf-8");
         });
+
+    // --- Twitch OAuth (interactive) ---
+    // Enables one-time auth to obtain a refresh token with additional scopes (e.g. chat:read/chat:edit).
+    // Requires the main app to wire opt_.twitch_auth_build_authorize_url and opt_.twitch_auth_handle_callback.
+    //
+    // Start here:
+    //   http://localhost:17845/auth/twitch/start
+    // Callback (handled automatically by browser):
+    //   http://localhost:17845/auth/twitch/callback
+    svr.Get("/auth/twitch/start", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!opt_.twitch_auth_build_authorize_url) {
+            SafeOutputLog(log_, L"HTTP: Twitch OAuth routes NOT enabled (callbacks not wired)");
+            res.status = 404;
+            res.set_content("not wired", "text/plain; charset=utf-8");
+            return;
+        }
+
+        // Build redirect URI based on the Host header (so localhost vs 127.0.0.1 both work).
+        std::string host = req.get_header_value("Host");
+        if (host.empty()) host = "localhost:" + std::to_string(opt_.port);
+        const std::string redirect_uri = std::string("http://") + host + "/auth/twitch/callback";
+
+        std::string err;
+        const std::string url = opt_.twitch_auth_build_authorize_url(redirect_uri, &err);
+        if (url.empty()) {
+            SafeOutputLog(log_, L"HTTP: /auth/twitch/start failed to build authorize URL");
+            res.status = 500;
+            res.set_content(std::string("BuildAuthorizeUrl failed: ") + err, "text/plain; charset=utf-8");
+            return;
+        }
+
+        // Redirect the browser to Twitch.
+        res.status = 302;
+        res.set_header("Location", url);
+    });
+
+    svr.Get("/auth/twitch/callback", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!opt_.twitch_auth_handle_callback) {
+            SafeOutputLog(log_, L"HTTP: Twitch OAuth routes NOT enabled (callbacks not wired)");
+            res.status = 404;
+            res.set_content("not wired", "text/plain; charset=utf-8");
+            return;
+        }
+
+        const std::string code = req.get_param_value("code");
+        const std::string state = req.get_param_value("state");
+
+        std::string host = req.get_header_value("Host");
+        if (host.empty()) host = "localhost:" + std::to_string(opt_.port);
+        const std::string redirect_uri = std::string("http://") + host + "/auth/twitch/callback";
+
+        std::string err;
+        const bool ok = opt_.twitch_auth_handle_callback(code, state, redirect_uri, &err);
+        if (!ok) {
+            SafeOutputLog(log_, L"HTTP: /auth/twitch/callback token exchange failed");
+            res.status = 500;
+            res.set_content(std::string("OAuth callback failed: ") + err, "text/plain; charset=utf-8");
+            return;
+        }
+
+        res.set_content("OK - Twitch auth completed. You can close this tab.", "text/plain; charset=utf-8");
+    });
 
     // --- API: settings save (used by /app UI) ---
     // Accept both legacy and newer paths.

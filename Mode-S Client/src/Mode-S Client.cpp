@@ -1757,8 +1757,6 @@ switch (msg) {
                     );
                     return ok;
                 }
-
-                return false;
             };
             opt.stop_twitch = [&]() -> bool {
                 PlatformControl::StopTwitch(twitch, state, hwnd, (UINT)(WM_APP + 41), [](const std::wstring& s) { LogLine(s); });
@@ -1786,21 +1784,18 @@ switch (msg) {
                 return true;
             };
 
-            // Twitch OAuth endpoints (interactive) hosted on the existing HTTP server (17845)
-            // Ensure your Twitch Developer Console Redirect URL includes:
-            //   http://localhost:17845/auth/twitch/callback
-            //
-            // NOTE: HttpServer::Options callback signatures in your tree include redirect_uri,
-            // so we accept it here even though it is constant for your build.
+            // Twitch OAuth (interactive) endpoints
+            // Provides /auth/twitch/start and /auth/twitch/callback so you can (re)authorize with chat:read/chat:edit.
             opt.twitch_auth_build_authorize_url = [&](const std::string& redirect_uri, std::string* out_error) -> std::string {
                 std::string err;
-                std::string url = twitchAuth.BuildAuthorizeUrl(redirect_uri, &err);
+                const std::string url = twitchAuth.BuildAuthorizeUrl(redirect_uri, &err);
                 if (url.empty()) {
                     if (out_error) *out_error = err;
                     LogLine(ToW(std::string("TWITCHAUTH: BuildAuthorizeUrl failed: ") + err));
                 }
                 return url;
             };
+
             opt.twitch_auth_handle_callback = [&](const std::string& code,
                                                   const std::string& state,
                                                   const std::string& redirect_uri,
@@ -1813,7 +1808,6 @@ switch (msg) {
                 }
                 return ok;
             };
-
 
 
             gHttp = std::make_unique<HttpServer>(state, chat, euroscope, config, opt,

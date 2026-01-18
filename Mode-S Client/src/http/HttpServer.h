@@ -29,14 +29,9 @@ public:
         std::function<bool()> start_youtube;
         std::function<bool()> stop_youtube;
 
-        // --- Twitch OAuth interactive flow (optional) ---
-        // If provided, the server will expose:
-        //   GET /auth/twitch/start
-        //      Redirects the browser to Twitch's authorize endpoint.
-        //   GET /auth/twitch/callback?code=...&state=...
-        //      Exchanges the code for access/refresh tokens and persists them.
-        //
-        // The redirect URI used will be: http://localhost:<port>/auth/twitch/callback
+        // Twitch OAuth (interactive) endpoints (optional)
+        // /auth/twitch/start will call twitch_auth_build_authorize_url(redirect_uri)
+        // /auth/twitch/callback will call twitch_auth_handle_callback(code, state, redirect_uri)
         std::function<std::string(const std::string& redirect_uri, std::string* out_error)> twitch_auth_build_authorize_url;
         std::function<bool(const std::string& code,
                            const std::string& state,
