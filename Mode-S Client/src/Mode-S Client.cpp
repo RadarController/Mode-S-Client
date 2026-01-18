@@ -178,27 +178,33 @@ static std::wstring GetExeDir()
 
 // Read Twitch user access token from config.json.
 // Stored at: { "twitch": { "user_access_token": "..." } }
-static std::string ReadTwitchUserAccessToken()
+static std::pair<std::string, std::wstring> ReadTwitchUserAccessTokenWithSource()
 {
-    auto try_path = [](const std::filesystem::path& p) -> std::string {
+    auto try_path = [](const std::filesystem::path& p) -> std::pair<std::string, std::wstring> {
         try {
             std::ifstream f(p);
-            if (!f.is_open()) return {};
+            if (!f.is_open()) return { {}, L"" };
             nlohmann::json j;
             f >> j;
-            return j.value("twitch", nlohmann::json::object()).value("user_access_token", "");
+            std::string tok = j.value("twitch", nlohmann::json::object()).value("user_access_token", "");
+            if (tok.empty()) return { {}, L"" };
+            return { tok, p.wstring() };
         } catch (...) {
-            return {};
+            return { {}, L"" };
         }
     };
 
-    // Prefer config.json next to the exe
-    std::filesystem::path p1 = std::filesystem::path(GetExeDir()) / "config.json";
-    std::string tok = try_path(p1);
-    if (!tok.empty()) return tok;
+    // Prefer current working directory, then fall back to config.json next to the exe.
+    auto r0 = try_path(std::filesystem::path("config.json"));
+    if (!r0.first.empty()) return r0;
 
-    // Fallback: current working directory
-    return try_path(std::filesystem::path("config.json"));
+    std::filesystem::path p1 = std::filesystem::path(GetExeDir()) / "config.json";
+    return try_path(p1);
+}
+
+static std::string ReadTwitchUserAccessToken()
+{
+    return ReadTwitchUserAccessTokenWithSource().first;
 }
 
 static void AppendLogOnUiThread(const std::wstring& s)
@@ -1403,7 +1409,7 @@ switch (msg) {
         //   are treated as false here. The test endpoint can simulate roles.
         if (!botSubscribed) {
             botSubscribed = true;
-            chat.Subscribe([pChat=&chat, pState=&state](const ChatMessage& m) {
+            chat.Subscribe([pChat=&chat, pState=&state, pTwitch=&twitch](const ChatMessage& m) {
                 // Avoid responding to ourselves.
                 if (m.user == "StreamingATC.Bot") return;
                 if (m.message.size() < 2 || m.message[0] != '!') return;
@@ -1488,6 +1494,12 @@ switch (msg) {
                 std::string reply = template_reply;
                 reply = replace_all(reply, "{user}", m.user);
                 reply = replace_all(reply, "{platform}", platform_lc);
+
+                // If this command came from Twitch, send the reply back to Twitch chat.
+                // We still inject into the unified chat feed below so overlays stay consistent.
+                if (platform_lc == "twitch") {
+                    (void)pTwitch->send_privmsg(reply);
+                }
 
                 // Clamp reply length for safety (platform limits vary; keep conservative).
                 const size_t kMaxReplyLen = bot_settings.max_reply_len;
@@ -1945,11 +1957,38 @@ case WM_COMMAND:
                     RestartTwitchHelixPoller("channel change");
                 }
             }
-            // Use overload that sinks directly into ChatAggregator
-            bool ok = twitch.start("SCHMOOPIIE",
-                std::string("justinfan" + std::to_string(10000 + (GetTickCount() % 50000))),
-                SanitizeTwitchLogin(ToUtf8(GetWindowTextWString(hTwitch))),
-                chat);
+            // Use overload that sinks directly into ChatAggregator.
+            // IMPORTANT: If we connect with a fake PASS/NICK ("SCHMOOPIIE" / "justinfan..."), Twitch
+            // treats us as anonymous (read-only) and we cannot send PRIVMSG replies.
+            // For bot replies, we must use a real USER access token (chat:edit) and a real nick.
+
+            const std::string channelLogin = SanitizeTwitchLogin(ToUtf8(GetWindowTextWString(hTwitch)));
+            auto tokSrc = ReadTwitchUserAccessTokenWithSource(); // may be empty if OAuth not completed yet
+            std::string ircUserToken = tokSrc.first;
+            if (!tokSrc.second.empty()) {
+                LogLine(L"TWITCH: IRC token loaded from: " + tokSrc.second + L" (len=" + std::to_wstring(ircUserToken.size()) + L")");
+            } else {
+                wchar_t cwd[MAX_PATH];
+                cwd[0] = 0;
+                GetCurrentDirectoryW(MAX_PATH, cwd);
+                LogLine(L"TWITCH: IRC token NOT found. Looked for config.json in CWD='" + std::wstring(cwd) + L"' and EXE dir='" + GetExeDir() + L"'.");
+            }
+
+            std::string pass;
+            std::string nick;
+
+            if (!ircUserToken.empty() && !config.twitch_login.empty()) {
+                pass = ircUserToken;           // normalized to oauth:... inside TwitchIrcWsClient
+                nick = config.twitch_login;    // the authenticated account username
+                LogLine(L"TWITCH: IRC connecting with authenticated user token (chat replies enabled)." );
+            }
+            else {
+                pass = "SCHMOOPIIE";
+                nick = std::string("justinfan" + std::to_string(10000 + (GetTickCount() % 50000)));
+                LogLine(L"TWITCH: IRC connecting anonymously (no user token) - chat replies will NOT work. Check OAuth token/scopes." );
+            }
+
+            bool ok = twitch.start(pass, nick, channelLogin, chat);
 
             if (ok) {
                 LogLine(L"TWITCH: started/restarted IRC client.");
