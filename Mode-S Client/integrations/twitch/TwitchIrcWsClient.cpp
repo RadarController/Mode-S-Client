@@ -53,9 +53,30 @@ static std::unordered_map<std::string, std::string> ParseTags(const std::string&
 TwitchIrcWsClient::TwitchIrcWsClient() {}
 TwitchIrcWsClient::~TwitchIrcWsClient() { stop(); }
 
+bool TwitchIrcWsClient::send_line_locked(const std::string& line) {
+    if (!m_ws) return false;
+    HINTERNET hWebSocket = (HINTERNET)m_ws;
+    std::string data = line + "\r\n";
+    return WinHttpWebSocketSend(hWebSocket, WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE,
+        (PVOID)data.data(), (DWORD)data.size()) == NO_ERROR;
+}
+
+bool TwitchIrcWsClient::send_privmsg(const std::string& message) {
+    if (!m_running.load()) return false;
+    if (message.empty()) return false;
+    if (m_channel.empty()) return false;
+
+    // Twitch IRC PRIVMSG: "PRIVMSG #channel :text"
+    std::lock_guard<std::mutex> lk(m_send_mtx);
+    return send_line_locked(std::string("PRIVMSG #") + m_channel + " :" + message);
+}
+
 void TwitchIrcWsClient::stop() {
     m_running.store(false);
     if (m_thread.joinable()) m_thread.join();
+
+    // Worker owns the websocket handle; we just clear our pointer after join.
+    m_ws = nullptr;
 }
 
 bool TwitchIrcWsClient::start(const std::string& oauth_token_with_oauth_prefix,
@@ -65,6 +86,7 @@ bool TwitchIrcWsClient::start(const std::string& oauth_token_with_oauth_prefix,
     if (m_running.load()) return false;
     if (oauth_token_with_oauth_prefix.empty() || nick.empty() || channel.empty()) return false;
     m_chat = nullptr;
+    m_channel = channel;
     m_running.store(true);
     m_thread = std::thread(&TwitchIrcWsClient::worker, this,
         oauth_token_with_oauth_prefix, nick, channel, std::move(cb));
@@ -131,11 +153,17 @@ void TwitchIrcWsClient::worker(std::string oauth, std::string nick, std::string 
         m_running.store(false); return;
     }
 
+    // Publish websocket handle for sender thread(s).
+    {
+        std::lock_guard<std::mutex> lk(m_send_mtx);
+        m_ws = (void*)hWebSocket;
+        m_channel = channel;
+    }
+
     auto sendLine = [&](const std::string& line) -> bool {
-        std::string data = line + "\r\n";
-        return WinHttpWebSocketSend(hWebSocket, WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE,
-            (PVOID)data.data(), (DWORD)data.size()) == NO_ERROR;
-        };
+        std::lock_guard<std::mutex> lk(m_send_mtx);
+        return send_line_locked(line);
+    };
 
     // Authenticate + request tags
     sendLine("CAP REQ :twitch.tv/tags twitch.tv/commands");
@@ -237,6 +265,12 @@ void TwitchIrcWsClient::worker(std::string oauth, std::string nick, std::string 
 
     WinHttpWebSocketClose(hWebSocket, WINHTTP_WEB_SOCKET_SUCCESS_CLOSE_STATUS, nullptr, 0);
     WinHttpCloseHandle(hWebSocket);
+
+    // Clear published handle.
+    {
+        std::lock_guard<std::mutex> lk(m_send_mtx);
+        m_ws = nullptr;
+    }
     WinHttpCloseHandle(hConnect);
     WinHttpCloseHandle(hSession);
 

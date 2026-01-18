@@ -1412,8 +1412,14 @@ switch (msg) {
 
                 // Origin-only reply router: register per-platform send handlers.
                 // These are stubs for now; they log what would be sent.
-                gBotReplyRouter.Register("twitch", [pState=&state](const BotReplyTarget&, const std::string& msg) -> bool {
-                    pState->push_log_utf8(std::string("BOT: [twitch] send not implemented yet. Would send: ") + msg);
+                gBotReplyRouter.Register("twitch", [pState=&state, pTwitch=&twitch](const BotReplyTarget&, const std::string& msg) -> bool {
+                    // Send to Twitch chat via IRC-over-WebSocket.
+                    // NOTE: requires TwitchIrcWsClient to be connected (start() called) and joined to the channel.
+                    if (!pTwitch) return false;
+                    if (pTwitch->send_privmsg(msg)) {
+                        return true;
+                    }
+                    pState->push_log_utf8(std::string("BOT: [twitch] send failed (not connected?). Would have sent: ") + msg);
                     return false;
                 });
                 gBotReplyRouter.Register("youtube", [pState=&state](const BotReplyTarget&, const std::string& msg) -> bool {
