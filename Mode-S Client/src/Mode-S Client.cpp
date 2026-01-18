@@ -40,7 +40,6 @@
 #include "obs/ObsWsClient.h"
 #include "floating/FloatingChat.h"
 #include "platform/PlatformControl.h"
-#include "bot/BotReplyRouter.h"
 
 // Web UI log capture: LogLine() will also push into AppState so /api/log can display it.
 static AppState* gStateForWebLog = nullptr;
@@ -77,7 +76,6 @@ static ComPtr<ICoreWebView2>           gMainWebView;
 // Flip this to false to revert to the legacy Win32 control UI.
 static bool gUseModernUi = true;
 static std::atomic<bool> gHttpReady{ false };
-static BotReplyRouter gBotReplyRouter;
 static const wchar_t* kModernUiUrl = L"http://127.0.0.1:17845/app";
 
 
@@ -1286,7 +1284,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     // Must live at function scope (not inside a switch/case) to avoid C++ case-jump
     // rules that trigger C2360/C2361.
     static bool botSubscribed = false;
-    static bool botRouterRegistered = false;
 
     // Restartable Helix poller (needed when Twitch channel/login changes).
     auto RestartTwitchHelixPoller = [&](const std::string& reason) {
@@ -1406,32 +1403,6 @@ switch (msg) {
         //   are treated as false here. The test endpoint can simulate roles.
         if (!botSubscribed) {
             botSubscribed = true;
-
-            if (!botRouterRegistered) {
-                botRouterRegistered = true;
-
-                // Origin-only reply router: register per-platform send handlers.
-                // These are stubs for now; they log what would be sent.
-                gBotReplyRouter.Register("twitch", [pState=&state, pTwitch=&twitch](const BotReplyTarget&, const std::string& msg) -> bool {
-                    // Send to Twitch chat via IRC-over-WebSocket.
-                    // NOTE: requires TwitchIrcWsClient to be connected (start() called) and joined to the channel.
-                    if (!pTwitch) return false;
-                    if (pTwitch->send_privmsg(msg)) {
-                        return true;
-                    }
-                    pState->push_log_utf8(std::string("BOT: [twitch] send failed (not connected?). Would have sent: ") + msg);
-                    return false;
-                });
-                gBotReplyRouter.Register("youtube", [pState=&state](const BotReplyTarget&, const std::string& msg) -> bool {
-                    pState->push_log_utf8(std::string("BOT: [youtube] send not implemented yet. Would send: ") + msg);
-                    return false;
-                });
-                gBotReplyRouter.Register("tiktok", [pState=&state](const BotReplyTarget&, const std::string& msg) -> bool {
-                    pState->push_log_utf8(std::string("BOT: [tiktok] send not implemented yet. Would send: ") + msg);
-                    return false;
-                });
-            }
-
             chat.Subscribe([pChat=&chat, pState=&state](const ChatMessage& m) {
                 // Avoid responding to ourselves.
                 if (m.user == "StreamingATC.Bot") return;
@@ -1528,23 +1499,12 @@ switch (msg) {
                     return;
                 }
 
-                // --- Origin-only reply routing ---
-                // Always attempt to send to the same platform the command came from.
-                BotReplyTarget target;
-                target.platform_lc = platform_lc;
-                // target.channel_id = ""; // unused for now
-
-                const bool sent = gBotReplyRouter.Send(target, reply);
-                if (!sent) {
-                    // Until platform sending is implemented, echo into the unified chat feed
-                    // so overlays can still display bot replies.
-                    ChatMessage bot{};
-                    bot.platform = m.platform;
-                    bot.user = "StreamingATC.Bot";
-                    bot.message = reply;
-                    bot.ts_ms = (uint64_t)(now_ms_ll + 1);
-                    pChat->Add(std::move(bot));
-                }
+                ChatMessage bot{};
+                bot.platform = m.platform;
+                bot.user = "StreamingATC.Bot";
+                bot.message = reply;
+                bot.ts_ms = (uint64_t)(now_ms_ll + 1);
+                pChat->Add(std::move(bot));
             });
         }
 
@@ -1797,6 +1757,8 @@ switch (msg) {
                     );
                     return ok;
                 }
+
+                return false;
             };
             opt.stop_twitch = [&]() -> bool {
                 PlatformControl::StopTwitch(twitch, state, hwnd, (UINT)(WM_APP + 41), [](const std::wstring& s) { LogLine(s); });
@@ -1823,6 +1785,35 @@ switch (msg) {
                 youtubeChat.stop();
                 return true;
             };
+
+            // Twitch OAuth endpoints (interactive) hosted on the existing HTTP server (17845)
+            // Ensure your Twitch Developer Console Redirect URL includes:
+            //   http://localhost:17845/auth/twitch/callback
+            //
+            // NOTE: HttpServer::Options callback signatures in your tree include redirect_uri,
+            // so we accept it here even though it is constant for your build.
+            opt.twitch_auth_build_authorize_url = [&](const std::string& redirect_uri, std::string* out_error) -> std::string {
+                std::string err;
+                std::string url = twitchAuth.BuildAuthorizeUrl(redirect_uri, &err);
+                if (url.empty()) {
+                    if (out_error) *out_error = err;
+                    LogLine(ToW(std::string("TWITCHAUTH: BuildAuthorizeUrl failed: ") + err));
+                }
+                return url;
+            };
+            opt.twitch_auth_handle_callback = [&](const std::string& code,
+                                                  const std::string& state,
+                                                  const std::string& redirect_uri,
+                                                  std::string* out_error) -> bool {
+                std::string err;
+                const bool ok = twitchAuth.HandleOAuthCallback(code, state, redirect_uri, &err);
+                if (!ok) {
+                    if (out_error) *out_error = err;
+                    LogLine(ToW(std::string("TWITCHAUTH: OAuth callback failed: ") + err));
+                }
+                return ok;
+            };
+
 
 
             gHttp = std::make_unique<HttpServer>(state, chat, euroscope, config, opt,
