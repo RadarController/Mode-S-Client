@@ -1403,7 +1403,7 @@ switch (msg) {
         //   are treated as false here. The test endpoint can simulate roles.
         if (!botSubscribed) {
             botSubscribed = true;
-            chat.Subscribe([pChat=&chat, pState=&state, pTwitch=&twitch](const ChatMessage& m) {
+            chat.Subscribe([pChat=&chat, pState=&state](const ChatMessage& m) {
                 // Avoid responding to ourselves.
                 if (m.user == "StreamingATC.Bot") return;
                 if (m.message.size() < 2 || m.message[0] != '!') return;
@@ -1488,12 +1488,6 @@ switch (msg) {
                 std::string reply = template_reply;
                 reply = replace_all(reply, "{user}", m.user);
                 reply = replace_all(reply, "{platform}", platform_lc);
-
-                // If this command came from Twitch, send the reply back to Twitch chat.
-                // We still inject into the unified chat feed below so overlays stay consistent.
-                if (platform_lc == "twitch") {
-                    (void)pTwitch->send_privmsg(reply);
-                }
 
                 // Clamp reply length for safety (platform limits vary; keep conservative).
                 const size_t kMaxReplyLen = bot_settings.max_reply_len;
@@ -1737,6 +1731,7 @@ switch (msg) {
                 const bool ok = PlatformControl::StartOrRestartTwitchIrc(
                     twitch, state, chat,
                     config.twitch_login,
+                    ReadTwitchUserAccessToken(),
                     [](const std::wstring& s) { LogLine(s); });
 
                 if (ok) {

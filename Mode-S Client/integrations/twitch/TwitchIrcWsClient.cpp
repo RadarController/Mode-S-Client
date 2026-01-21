@@ -60,56 +60,37 @@ TwitchIrcWsClient::~TwitchIrcWsClient() { stop(); }
 void TwitchIrcWsClient::stop() {
     m_running.store(false);
     if (m_thread.joinable()) m_thread.join();
-
-    // Ensure handle cleared even if worker exited early.
-    {
-        std::lock_guard<std::mutex> lk(m_ws_mu);
-        m_ws = nullptr;
-        m_channel.clear();
-        m_nick.clear();
-    }
 }
 
-bool TwitchIrcWsClient::send_raw_line_locked(const std::string& line) {
-    if (!m_ws) return false;
 
-    std::string data = line;
-    // Ensure IRC line terminator.
-    if (data.size() < 2 || data.substr(data.size() - 2) != "\r\n") {
-        data += "\r\n";
+bool TwitchIrcWsClient::StartAuthenticated(const std::string& login,
+                                          const std::string& access_token_raw,
+                                          const std::string& channel)
+{
+    std::string ch = channel;
+    if (login.empty() || access_token_raw.empty() || ch.empty()) {
+        OutputDebugStringA("TWITCH IRC: missing login/token/channel, refusing to start\n");
+        return false;
     }
 
-    return WinHttpWebSocketSend((HINTERNET)m_ws,
-        WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE,
-        (PVOID)data.data(),
-        (DWORD)data.size()) == NO_ERROR;
+    m_login = login;
+    m_access_token = access_token_raw;
+    m_channel = ch;
+    m_nick = login;
+
+    // Start using existing start() overload. It expects PASS value including "oauth:" prefix.
+    return start("oauth:" + access_token_raw, login, ch,
+                 [this](const std::string& user, const std::string& message) {
+                     if (!m_chat) return;
+                     ChatMessage m{};
+                     m.platform = "twitch";
+                     m.user = user;
+                     m.message = message;
+                     m.ts_ms = NowMs();
+                     m_chat->Add(std::move(m));
+                 });
 }
 
-bool TwitchIrcWsClient::send_privmsg(const std::string& message) {
-    if (!m_running.load()) return false;
-
-    // Sanitize: IRC expects single-line messages.
-    std::string msg = message;
-    msg.erase(std::remove(msg.begin(), msg.end(), '\r'), msg.end());
-    msg.erase(std::remove(msg.begin(), msg.end(), '\n'), msg.end());
-
-    // Conservative clamp (Twitch IRC limits are ~500 incl. tags/prefix; keep safe).
-    constexpr size_t kMaxMsg = 350;
-    if (msg.size() > kMaxMsg) msg.resize(kMaxMsg);
-
-    std::lock_guard<std::mutex> lk(m_ws_mu);
-    if (!m_ws || m_channel.empty()) return false;
-
-    const std::string line = "PRIVMSG #" + m_channel + " :" + msg;
-    const bool ok = send_raw_line_locked(line);
-    if (!ok) {
-        DWORD gle = GetLastError();
-        std::wstringstream ss;
-        ss << L"TWITCH: send_privmsg failed (GLE=" << gle << L")\n";
-        OutputDebugStringW(ss.str().c_str());
-    }
-    return ok;
-}
 
 bool TwitchIrcWsClient::start(const std::string& oauth_token_with_oauth_prefix,
     const std::string& nick,
@@ -184,18 +165,11 @@ void TwitchIrcWsClient::worker(std::string oauth, std::string nick, std::string 
         m_running.store(false); return;
     }
 
-    // Publish websocket handle + channel/nick so other threads can send messages.
-    {
-        std::lock_guard<std::mutex> lk(m_ws_mu);
-        m_ws = (WsHandle)hWebSocket;
-        m_channel = channel;
-        m_nick = nick;
-    }
-
     auto sendLine = [&](const std::string& line) -> bool {
-        std::lock_guard<std::mutex> lk(m_ws_mu);
-        return send_raw_line_locked(line);
-    };
+        std::string data = line + "\r\n";
+        return WinHttpWebSocketSend(hWebSocket, WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE,
+            (PVOID)data.data(), (DWORD)data.size()) == NO_ERROR;
+        };
 
     // Authenticate + request tags
     sendLine("CAP REQ :twitch.tv/tags twitch.tv/commands");
@@ -308,14 +282,6 @@ void TwitchIrcWsClient::worker(std::string oauth, std::string nick, std::string 
     }
 
     WinHttpWebSocketClose(hWebSocket, WINHTTP_WEB_SOCKET_SUCCESS_CLOSE_STATUS, nullptr, 0);
-
-    // Clear published handle before closing.
-    {
-        std::lock_guard<std::mutex> lk(m_ws_mu);
-        m_ws = nullptr;
-        m_channel.clear();
-        m_nick.clear();
-    }
     WinHttpCloseHandle(hWebSocket);
     WinHttpCloseHandle(hConnect);
     WinHttpCloseHandle(hSession);
