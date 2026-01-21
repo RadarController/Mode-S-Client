@@ -534,8 +534,19 @@ bool TwitchAuth::HandleOAuthCallback(const std::string& code,
         return false;
     }
 
-    DebugLog("oauth exchange OK; saved new refresh token " + MaskToken(snap.refresh_token));
-    return true;
+    // Notify listeners that tokens were replaced via interactive OAuth.
+if (on_tokens_updated) {
+    long vhttp = 0;
+    std::string vlogin;
+    std::string verr;
+    if (!TwitchValidateAccessToken(snap.access_token, &vhttp, &vlogin, &verr)) {
+        vlogin.clear();
+    }
+    on_tokens_updated(snap.access_token, snap.refresh_token, vlogin);
+}
+
+DebugLog("oauth exchange OK; saved new refresh token " + MaskToken(snap.refresh_token));
+return true;
 }
 
 bool TwitchAuth::LoadFromConfig(std::string* out_error) {
@@ -672,6 +683,7 @@ bool TwitchAuth::RefreshWithTwitch(std::string* out_error) {
     }
 
     TokenSnapshot snap;
+    std::string validated_login;
     try {
         auto jr = json::parse(resp);
 
@@ -706,6 +718,7 @@ bool TwitchAuth::RefreshWithTwitch(std::string* out_error) {
             std::string verr;
             if (TwitchValidateAccessToken(snap.access_token, &vhttp, &vlogin, &verr)) {
                 DebugLog(std::string("validate OK; login=") + (vlogin.empty() ? "(unknown)" : vlogin));
+                validated_login = vlogin;
             } else {
                 DebugLog(std::string("validate FAILED after refresh; ") + verr);
                 if (out_error) *out_error = std::string("Refreshed token is invalid: ") + verr;
@@ -734,6 +747,13 @@ bool TwitchAuth::RefreshWithTwitch(std::string* out_error) {
         return false;
     }
 
+
+// Notify listeners (e.g., IRC/EventSub) that a fresh token is available.
+if (on_tokens_updated) {
+    // If validate didn't return a login (rare), pass empty string.
+    on_tokens_updated(snap.access_token, snap.refresh_token, validated_login);
+}
+
     return true;
 }
 
@@ -760,11 +780,11 @@ bool TwitchAuth::Start() {
     // Always attempt refresh at startup (since sample config doesn't store expiry)
     {
         std::string refresh_err;
-        if (!RefreshWithTwitch(&refresh_err)) {
-            DebugLog("startup refresh FAILED: " + refresh_err);
-        } else {
-            DebugLog("startup refresh succeeded");
-        }
+            if (!RefreshWithTwitch(&refresh_err)) {
+                DebugLog("token refresh FAILED: " + refresh_err);
+            } else {
+                DebugLog("token refresh succeeded");
+            }
     }
 
     running_.store(true);
@@ -781,10 +801,10 @@ bool TwitchAuth::Start() {
 
             std::string refresh_err;
             if (!RefreshWithTwitch(&refresh_err)) {
-            DebugLog("startup refresh FAILED: " + refresh_err);
-        } else {
-            DebugLog("startup refresh succeeded");
-        }
+                DebugLog("token refresh FAILED: " + refresh_err);
+            } else {
+                DebugLog("token refresh succeeded");
+            }
         }
         });
 

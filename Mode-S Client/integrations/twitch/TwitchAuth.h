@@ -6,6 +6,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <functional>
 
 class TwitchAuth {
 public:
@@ -50,6 +51,11 @@ public:
         const std::string& state,
         const std::string& redirect_uri,
         std::string* out_error = nullptr);
+
+    // Called after a successful refresh + validation (tokens in memory are updated).
+    std::function<void(const std::string& access_token,
+        const std::string& refresh_token,
+        const std::string& login)> on_tokens_updated;
 
 private:
     bool ValidateAndLogToken(const std::string& access_token, std::string* out_scope_joined);

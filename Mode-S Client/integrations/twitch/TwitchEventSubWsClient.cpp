@@ -167,6 +167,21 @@ static bool ParseWssUrl(const std::wstring& url, std::wstring& hostOut, std::wst
 
 } // namespace
 
+
+static std::string NormalizeRawAccessToken(std::string tok)
+{
+    auto trim_ws = [](std::string s) -> std::string {
+        while (!s.empty() && (s.front()==' ' || s.front()=='\t' || s.front()=='\r' || s.front()=='\n')) s.erase(s.begin());
+        while (!s.empty() && (s.back()==' ' || s.back()=='\t' || s.back()=='\r' || s.back()=='\n')) s.pop_back();
+        return s;
+    };
+
+    tok = trim_ws(tok);
+    if (tok.rfind("oauth:", 0) == 0) tok = tok.substr(6);
+    if (tok.rfind("Bearer ", 0) == 0) tok = trim_ws(tok.substr(7));
+    return tok;
+}
+
 TwitchEventSubWsClient::TwitchEventSubWsClient() = default;
 
 TwitchEventSubWsClient::~TwitchEventSubWsClient()
@@ -185,27 +200,12 @@ void TwitchEventSubWsClient::Start(
     Stop();
 
     client_id_ = clientId;
-    access_token_ = userAccessToken;
-
-    // Normalize token if user pasted IRC-style "oauth:..." or included "Bearer ".
-    auto trim_ws = [](std::string s) {
-        while (!s.empty() && (s.front()==' ' || s.front()=='\t' || s.front()=='\r' || s.front()=='\n')) s.erase(s.begin());
-        while (!s.empty() && (s.back()==' ' || s.back()=='\t' || s.back()=='\r' || s.back()=='\n')) s.pop_back();
-        return s;
-    };
-    access_token_ = trim_ws(access_token_);
-    if (access_token_.rfind("oauth:", 0) == 0) {
-        access_token_ = access_token_.substr(6);
-    }
-    if (access_token_.rfind("Bearer ", 0) == 0) {
-        access_token_ = access_token_.substr(7);
-        access_token_ = trim_ws(access_token_);
-    }
+    access_token_ = NormalizeRawAccessToken(userAccessToken);
 
     broadcaster_id_ = broadcasterId;
     broadcaster_user_id_.clear();
-
     token_user_id_.clear();
+
     on_chat_event_ = std::move(onChatEvent);
     on_event_ = std::move(onEvent);
     on_status_ = std::move(onStatus);
@@ -265,6 +265,29 @@ void TwitchEventSubWsClient::Stop()
     }
     EmitStatus();
 }
+
+
+void TwitchEventSubWsClient::UpdateAccessToken(const std::string& userAccessToken)
+{
+    const std::string normalized = NormalizeRawAccessToken(userAccessToken);
+
+    {
+        std::lock_guard<std::mutex> lk(status_mu_);
+        // Don't spam status if nothing changed
+        if (normalized == access_token_) return;
+        access_token_ = normalized;
+        last_error_.clear();
+    }
+
+    // Clear cached ids derived from the previous token, and re-subscribe by reconnecting.
+    broadcaster_user_id_.clear();
+    token_user_id_.clear();
+
+    // Force a reconnect so we get a fresh session and re-create subscriptions with the new token.
+    RequestReconnect(L"wss://eventsub.wss.twitch.tv/ws");
+    EmitStatus();
+}
+
 
 // ---- status helpers ----
 void TwitchEventSubWsClient::SetWsState(const std::string& s)
@@ -694,7 +717,6 @@ std::string TwitchEventSubWsClient::ResolveBroadcasterUserId()
 }
 
 
-
 std::string TwitchEventSubWsClient::ResolveTokenUserId()
 {
     if (!token_user_id_.empty())
@@ -706,7 +728,7 @@ std::string TwitchEventSubWsClient::ResolveTokenUserId()
         return "";
     }
 
-    // GET /helix/users (no query) returns the user for the bearer token.
+    // GET /helix/users  (no params) returns the authenticated user for this token
     std::wstring headers;
     headers += L"Client-Id: " + Utf8ToWide(client_id_) + L"\r\n";
     headers += L"Authorization: Bearer " + Utf8ToWide(access_token_) + L"\r\n";
@@ -716,10 +738,10 @@ std::string TwitchEventSubWsClient::ResolveTokenUserId()
         OutputDebug(L"ResolveTokenUserId failed HTTP " + std::to_wstring(r.status) + L" body=" + Utf8ToWide(r.body));
         {
             std::lock_guard<std::mutex> lk(status_mu_);
-            last_error_ = std::string("helix/users(self) HTTP ") + std::to_string(r.status);
+            last_error_ = std::string("helix/users(me) HTTP ") + std::to_string(r.status);
             if (!subscriptions_.is_array()) subscriptions_ = json::array();
             json attempt;
-            attempt["type"] = "helix.users.self";
+            attempt["type"] = "helix.users.me";
             attempt["version"] = "1";
             attempt["status"] = r.status;
             attempt["ok"] = false;
@@ -738,7 +760,7 @@ std::string TwitchEventSubWsClient::ResolveTokenUserId()
     } catch (...) {
         {
             std::lock_guard<std::mutex> lk(status_mu_);
-            last_error_ = "helix/users(self) parse_error";
+            last_error_ = "helix/users(me) parse_error";
         }
         EmitStatus();
         return "";
@@ -746,6 +768,8 @@ std::string TwitchEventSubWsClient::ResolveTokenUserId()
 
     return token_user_id_;
 }
+
+
 
 bool TwitchEventSubWsClient::CreateSubscription(const std::string& type,
                                                const std::string& version,
@@ -822,22 +846,21 @@ bool TwitchEventSubWsClient::SubscribeAll(const std::string& sessionId)
         return false;
     }
 
-    // Follow (v2) requires broadcaster_user_id and moderator_user_id, and scope moderator:read:followers.
-    // Twitch requires the *token user* to match the moderator_user_id (or be a moderator).
-    // If you're using a bot/moderator token (not the broadcaster), using the broadcaster id here will 403.
-    // We therefore resolve the token's user id and use that for moderator_user_id.
-    // https://dev.twitch.tv/docs/eventsub/eventsub-subscription-types/#channelfollow
-    std::string tokenUid = ResolveTokenUserId();
-    if (tokenUid.empty()) tokenUid = broadcasterUid;
+// Follow (v2) requires broadcaster_user_id and moderator_user_id, and scope moderator:read:followers.
+// For v2, Twitch expects moderator_user_id to match the user represented by the token (or a moderator),
+// otherwise subscription creation can fail.
+// https://dev.twitch.tv/docs/eventsub/eventsub-subscription-types/#channelfollow
+const std::string tokenUid = ResolveTokenUserId();
+const std::string moderatorUid = !tokenUid.empty() ? tokenUid : broadcasterUid;
 
-    bool okAny = false;
-    okAny |= CreateSubscription(
-        "channel.follow",
-        "2",
-        json({ {"broadcaster_user_id", broadcasterUid}, {"moderator_user_id", tokenUid} }).dump(),
-        sessionId);
+bool okAny = false;
+okAny |= CreateSubscription(
+    "channel.follow",
+    "2",
+    json({ {"broadcaster_user_id", broadcasterUid}, {"moderator_user_id", moderatorUid} }).dump(),
+    sessionId);
 
-    // Subscriptions (v1) require broadcaster_user_id and scope channel:read:subscriptions.
+// Subscriptions (v1) require broadcaster_user_id and scope channel:read:subscriptions.
     // https://dev.twitch.tv/docs/eventsub/eventsub-subscription-types/#channelsubscribe
     okAny |= CreateSubscription(
         "channel.subscribe",
