@@ -1398,12 +1398,12 @@ switch (msg) {
         // a command and inject a single bot reply back into the same feed.
         //
         // NOTE:
-        // - This does NOT send messages to Twitch/YouTube/TikTok yet.
+        // - Replies are injected into the overlay feed AND (when possible) sent back to the origin platform.
         // - Role data (mod/broadcaster) is not available at this stage, so both
         //   are treated as false here. The test endpoint can simulate roles.
         if (!botSubscribed) {
             botSubscribed = true;
-            chat.Subscribe([pChat=&chat, pState=&state](const ChatMessage& m) {
+            chat.Subscribe([pChat=&chat, pState=&state, pTwitch=&twitch](const ChatMessage& m) {
                 // Avoid responding to ourselves.
                 if (m.user == "StreamingATC.Bot") return;
                 if (m.message.size() < 2 || m.message[0] != '!') return;
@@ -1505,6 +1505,18 @@ switch (msg) {
                 bot.message = reply;
                 bot.ts_ms = (uint64_t)(now_ms_ll + 1);
                 pChat->Add(std::move(bot));
+
+                // Also send back to the origin platform (currently Twitch chat).
+                // Other platforms can be wired similarly via BotReplyRouter later.
+                if (platform_lc == "twitch") {
+                    const bool sent = pTwitch->SendPrivMsg(reply);
+                    if (!sent) {
+                        // Best-effort; keep overlay reply even if platform send fails.
+                        std::wstring w = L"[BOT] Twitch send failed\n";
+                        OutputDebugStringW(w.c_str());
+                    }
+                }
+
             });
         }
 

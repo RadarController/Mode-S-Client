@@ -3,6 +3,7 @@
 #include <functional>
 #include <string>
 #include <thread>
+#include <mutex>
 
 class ChatAggregator; // forward declaration
 
@@ -43,14 +44,26 @@ public:
         ChatAggregator& chat);
 
     void stop();
-    void Stop() { stop(); }
+    
+    // Send a chat message to the currently-joined channel (PRIVMSG).
+    // Returns false if not connected or if the send fails.
+    bool SendPrivMsg(const std::string& message);
+
+    // Send a chat message to a specific channel (without or with leading '#').
+    bool SendPrivMsgTo(const std::string& channel, const std::string& message);
+
+void Stop() { stop(); }
 
     bool running() const { return m_running.load(); }
 
 private:
     void worker(std::string oauth, std::string nick, std::string channel, OnPrivMsg cb);
 
-    ChatAggregator* m_chat = nullptr; // optional sink for chat aggregation
+        // WebSocket handle used for sends (owned by worker thread; protected by m_send_mu)
+    void* m_ws = nullptr;
+    std::mutex m_send_mu;
+
+ChatAggregator* m_chat = nullptr; // optional sink for chat aggregation
     std::string m_login;
     std::string m_access_token;
     std::string m_channel;

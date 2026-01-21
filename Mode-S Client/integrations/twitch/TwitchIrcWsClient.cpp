@@ -63,6 +63,48 @@ void TwitchIrcWsClient::stop() {
 }
 
 
+
+bool TwitchIrcWsClient::SendPrivMsg(const std::string& message) {
+    return SendPrivMsgTo(m_channel, message);
+}
+
+static std::string NormalizeChannelName(std::string ch) {
+    // Accept "#radarcontroller" or "radarcontroller"
+    while (!ch.empty() && (ch.front()==' ' || ch.front()=='\t' || ch.front()=='\r' || ch.front()=='\n')) ch.erase(ch.begin());
+    while (!ch.empty() && (ch.back()==' ' || ch.back()=='\t' || ch.back()=='\r' || ch.back()=='\n')) ch.pop_back();
+    if (!ch.empty() && ch.front()=='#') ch.erase(ch.begin());
+    return ch;
+}
+
+static std::string SanitizeIrcText(std::string s) {
+    // Prevent CRLF injection
+    s.erase(std::remove(s.begin(), s.end(), '\r'), s.end());
+    s.erase(std::remove(s.begin(), s.end(), '\n'), s.end());
+    return s;
+}
+
+bool TwitchIrcWsClient::SendPrivMsgTo(const std::string& channel, const std::string& message) {
+    if (!m_running.load()) return false;
+
+    std::string ch = NormalizeChannelName(channel);
+    if (ch.empty()) return false;
+
+    std::string msg = SanitizeIrcText(message);
+    if (msg.empty()) return false;
+
+    // Twitch chat max is larger, but keep conservative to avoid hard failures
+    if (msg.size() > 450) msg.resize(450);
+
+    std::lock_guard<std::mutex> lock(m_send_mu);
+    if (!m_ws) return false;
+
+    HINTERNET ws = (HINTERNET)m_ws;
+    std::string line = "PRIVMSG #" + ch + " :" + msg + "\r\n";
+    DWORD r = WinHttpWebSocketSend(ws, WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE,
+                                  (PVOID)line.data(), (DWORD)line.size());
+    return r == NO_ERROR;
+}
+
 static std::string NormalizeRawAccessToken(std::string tok) {
     auto trim_ws = [](std::string s) -> std::string {
         while (!s.empty() && (s.front()==' ' || s.front()=='\t' || s.front()=='\n' || s.front()=='\r')) s.erase(s.begin());
@@ -195,6 +237,11 @@ void TwitchIrcWsClient::worker(std::string oauth, std::string nick, std::string 
         WinHttpCloseHandle(hConnect); WinHttpCloseHandle(hSession);
         m_running.store(false); return;
     }
+    {
+        std::lock_guard<std::mutex> lock(m_send_mu);
+        m_ws = hWebSocket;
+    }
+
 
     auto sendLine = [&](const std::string& line) -> bool {
         std::string data = line + "\r\n";
@@ -312,7 +359,11 @@ void TwitchIrcWsClient::worker(std::string oauth, std::string nick, std::string 
         if (pos > 0) recvBuf.erase(0, pos);
     }
 
-    WinHttpWebSocketClose(hWebSocket, WINHTTP_WEB_SOCKET_SUCCESS_CLOSE_STATUS, nullptr, 0);
+        {
+        std::lock_guard<std::mutex> lock(m_send_mu);
+        m_ws = nullptr;
+    }
+WinHttpWebSocketClose(hWebSocket, WINHTTP_WEB_SOCKET_SUCCESS_CLOSE_STATUS, nullptr, 0);
     WinHttpCloseHandle(hWebSocket);
     WinHttpCloseHandle(hConnect);
     WinHttpCloseHandle(hSession);

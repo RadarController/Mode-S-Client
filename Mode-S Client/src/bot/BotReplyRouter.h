@@ -3,6 +3,7 @@
 #include <string>
 #include <unordered_map>
 #include <algorithm>
+#include <cctype>
 
 struct BotReplyTarget {
     // Lowercase platform key: "twitch", "youtube", "tiktok"
@@ -25,12 +26,19 @@ public:
     // Send a reply to the origin platform only.
     // Returns false if platform not registered or send failed.
     bool Send(const BotReplyTarget& target, const std::string& text) const {
-        auto it = senders_.find(target.platform_lc);
+        // Normalize the target platform key (fixes mismatches like "Twitch" vs "twitch")
+        std::string key = ToLower(target.platform_lc);
+
+        // Trim whitespace (common source of mismatches)
+        while (!key.empty() && std::isspace((unsigned char)key.back())) key.pop_back();
+        while (!key.empty() && std::isspace((unsigned char)key.front())) key.erase(key.begin());
+
+        auto it = senders_.find(key);
         if (it == senders_.end()) return false;
         return it->second(target, text);
     }
 
-    static std::string ToLower(std::string s) {
+    static std::string ToLower(std::string s) {(std::string s) {
         std::transform(s.begin(), s.end(), s.begin(),
             [](unsigned char c) { return (char)std::tolower(c); });
         return s;
