@@ -1727,39 +1727,38 @@ switch (msg) {
                 return true;
             };
 
-            
-opt.start_twitch = [&]() -> bool {
-    // Prefer in-memory fresh token from TwitchAuth; fall back to config.json.
-    std::string tok;
-    if (auto t = twitchAuth.GetAccessToken(); t.has_value()) tok = *t;
-    if (tok.empty()) tok = ReadTwitchUserAccessToken();
+            opt.start_twitch = [&]() -> bool {
+                const bool ok = PlatformControl::StartOrRestartTwitchIrc(
+                    twitch, state, chat,
+                    config.twitch_login,
+                    ReadTwitchUserAccessToken(),
+                    [](const std::wstring& s) { LogLine(s); });
 
-    const bool ok = PlatformControl::StartOrRestartTwitchIrc(
-        twitch, state, chat,
-        config.twitch_login,
-        tok,
-        [](const std::wstring& s) { LogLine(s); });
+                if (ok) {
+                    // Start EventSub (follows/subs/gifts) using OAuth token in config.json
+                    twitchEventSub.Start(
+                        config.twitch_client_id,
+                        ReadTwitchUserAccessToken(),
+                        config.twitch_login,
 
-    if (!ok) return false;
+                        // Do NOT use chat callback for EventSub
+                        nullptr,
 
-    // Start (or restart) EventSub (follows/subs/gifts) using the same token.
-    twitchEventSub.Stop();
-    twitchEventSub.Start(
-        config.twitch_client_id,
-        tok,
-        config.twitch_login,
-        /*onChatEvent*/ nullptr,
-        /*onEvent*/ [&](const nlohmann::json& ev) {
-            state.add_twitch_eventsub_event(ev);
-        },
-        /*onStatus*/ [&](const nlohmann::json& st) {
-            state.set_twitch_eventsub_status(st);
-        }
-    );
+                        // EventSub events
+                        [&](const nlohmann::json& ev)
+                        {
+                            state.add_twitch_eventsub_event(ev);
+                        },
 
-    return true;
-};
-
+                        // Optional: status updates
+                        [&](const nlohmann::json& st)
+                        {
+                            state.set_twitch_eventsub_status(st);
+                        }
+                    );
+                    return ok;
+                }
+            };
             opt.stop_twitch = [&]() -> bool {
                 PlatformControl::StopTwitch(twitch, state, hwnd, (UINT)(WM_APP + 41), [](const std::wstring& s) { LogLine(s); });
                 return true;
@@ -1855,41 +1854,7 @@ LogLine(L"TIKTOK: starting followers poller thread");
             }
         );
         tiktokFollowersThread.detach();
-        
-// When TwitchAuth refreshes tokens, restart IRC/EventSub so they use the fresh access token.
-twitchAuth.on_tokens_updated = [&](const std::string& access_token,
-                                  const std::string& /*refresh_token*/,
-                                  const std::string& login)
-{
-    if (access_token.empty()) return;
-
-    // Use the login validated by Twitch if available; otherwise fall back to configured channel login.
-    const std::string effective_login = login.empty() ? config.twitch_login : login;
-
-    // Restart IRC if configured.
-    if (!effective_login.empty()) {
-        PlatformControl::StartOrRestartTwitchIrc(
-            twitch, state, chat,
-            effective_login,
-            access_token,
-            [](const std::wstring& s) { LogLine(s); });
-    }
-
-    // Restart EventSub if configured.
-    if (!config.twitch_client_id.empty() && !config.twitch_login.empty()) {
-        twitchEventSub.Stop();
-        twitchEventSub.Start(
-            config.twitch_client_id,
-            access_token,
-            config.twitch_login,
-            /*onChatEvent*/ nullptr,
-            /*onEvent*/ [&](const nlohmann::json& ev) { state.add_twitch_eventsub_event(ev); },
-            /*onStatus*/ [&](const nlohmann::json& st) { state.set_twitch_eventsub_status(st); }
-        );
-    }
-};
-
-// Twitch OAuth token refresh (silent) - runs during boot while splash is visible
+        // Twitch OAuth token refresh (silent) - runs during boot while splash is visible
         {
             LogLine(L"TWITCH: refreshing OAuth token...");
             std::string auth_err;
@@ -1966,54 +1931,51 @@ case WM_COMMAND:
             return 0;
         }
 
-        
-if (id == IDC_START_TWITCH) {
-    // Ensure existing Twitch clients are stopped before starting (allow restart/channel change)
-    twitch.stop();
-    twitchEventSub.Stop();
+        if (id == IDC_START_TWITCH) {
+            // Ensure existing Twitch client is stopped before starting to allow restart or channel change
+            twitch.stop();
+            twitchEventSub.Stop();
 
-    // Apply current UI channel login into config so Helix poller + web UI use the same channel.
-    {
-        std::string newLogin = SanitizeTwitchLogin(ToUtf8(GetWindowTextWString(hTwitch)));
-        if (newLogin != config.twitch_login) {
-            config.twitch_login = newLogin;
-            RestartTwitchHelixPoller("channel change");
-        }
-    }
 
-    // Prefer in-memory fresh token from TwitchAuth; fall back to config.json.
-    std::string tok;
-    if (auto t = twitchAuth.GetAccessToken(); t.has_value()) tok = *t;
-    if (tok.empty()) tok = ReadTwitchUserAccessToken();
 
-    const bool ok = PlatformControl::StartOrRestartTwitchIrc(
-        twitch, state, chat,
-        config.twitch_login,
-        tok,
-        [](const std::wstring& s) { LogLine(s); });
-
-    if (ok) {
-        LogLine(L"TWITCH: started/restarted IRC client.");
-
-        twitchEventSub.Start(
-            config.twitch_client_id,
-            tok,
-            config.twitch_login,
-            /*onChatEvent*/ nullptr,
-            /*onEvent*/ [&](const nlohmann::json& ev) {
-                state.add_twitch_eventsub_event(ev);
-            },
-            /*onStatus*/ [&](const nlohmann::json& st) {
-                state.set_twitch_eventsub_status(st);
+            // Apply current UI channel login into config so Helix poller + web UI use the same channel.
+            {
+                std::string newLogin = SanitizeTwitchLogin(ToUtf8(GetWindowTextWString(hTwitch)));
+                if (newLogin != config.twitch_login) {
+                    config.twitch_login = newLogin;
+                    RestartTwitchHelixPoller("channel change");
+                }
             }
-        );
-    } else {
-        LogLine(L"TWITCH: failed to start IRC client (already running or invalid parameters). Consider checking the channel name and token.");
-    }
-    return 0;
-}
+            // Start authenticated IRC and sink messages directly into ChatAggregator
+            const std::string token = ReadTwitchUserAccessToken();
 
-if (id == IDC_START_YOUTUBE) {
+            bool ok = twitch.StartAuthenticated(
+                SanitizeTwitchLogin(ToUtf8(GetWindowTextWString(hTwitch))),   // login / nick
+                token,                                                       // raw token from config (will be normalized)
+                SanitizeTwitchLogin(ToUtf8(GetWindowTextWString(hTwitch))),   // channel
+                chat
+            );
+
+            if (ok) {
+                LogLine(L"TWITCH: started/restarted IRC client.");
+                // Start EventSub (follows/subs/gifts) using existing OAuth token in config.json
+                twitchEventSub.Start(
+                    config.twitch_client_id,
+                    token,
+                    config.twitch_login,
+                    [&](const ChatMessage& msg)
+                    {
+                        chat.Add(msg);
+                    });
+            }
+            else {
+                LogLine(L"TWITCH: failed to start IRC client (already running or invalid parameters). Consider checking the channel name.");
+            }
+            return 0;
+        }
+
+        
+        if (id == IDC_START_YOUTUBE) {
             std::string raw = ToUtf8(GetWindowTextWString(hYouTube));
             std::string cleaned = SanitizeYouTubeHandle(raw);
             SetWindowTextW(hYouTube, ToW(cleaned).c_str());

@@ -18,13 +18,15 @@ public:
     void SetChatAggregator(ChatAggregator* chat) { m_chat = chat; }
     void SetChatAggregator(ChatAggregator& chat) { m_chat = &chat; }
 
-    
-
     // Start Twitch IRC with authenticated user credentials (required for sending messages)
+    // Starts an authenticated IRC session and forwards PRIVMSG into the provided ChatAggregator.
+    // access_token may be raw, "oauth:..." or "Bearer ..."; it will be normalized.
     bool StartAuthenticated(const std::string& login,
-                            const std::string& access_token_raw,
-                            const std::string& channel);
-bool start(const std::string& oauth_token_with_oauth_prefix,
+                            const std::string& access_token,
+                            const std::string& channel,
+                            ChatAggregator& chat);
+
+    bool start(const std::string& oauth_token_with_oauth_prefix,
         const std::string& nick,
         const std::string& channel, // without '#'
         OnPrivMsg cb);
@@ -35,9 +37,10 @@ bool start(const std::string& oauth_token_with_oauth_prefix,
         const std::string& channel, // without '#'
         ChatAggregator& chat);
 
-        void stop();
+    void stop();
     void Stop() { stop(); }
-bool running() const { return m_running.load(); }
+
+    bool running() const { return m_running.load(); }
 
 private:
     void worker(std::string oauth, std::string nick, std::string channel, OnPrivMsg cb);

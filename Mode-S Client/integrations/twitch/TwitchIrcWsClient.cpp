@@ -63,44 +63,36 @@ void TwitchIrcWsClient::stop() {
 }
 
 
+static std::string NormalizeRawAccessToken(std::string tok) {
+    auto trim_ws = [](std::string s) -> std::string {
+        while (!s.empty() && (s.front()==' ' || s.front()=='\t' || s.front()=='\n' || s.front()=='\r')) s.erase(s.begin());
+        while (!s.empty() && (s.back()==' ' || s.back()=='\t' || s.back()=='\n' || s.back()=='\r')) s.pop_back();
+        return s;
+    };
+    tok = trim_ws(tok);
+    if (tok.rfind("oauth:", 0) == 0) tok = tok.substr(6);
+    if (tok.rfind("Bearer ", 0) == 0) tok = trim_ws(tok.substr(7));
+    return tok;
+}
+
 bool TwitchIrcWsClient::StartAuthenticated(const std::string& login,
-                                          const std::string& access_token_raw,
-                                          const std::string& channel)
+                                          const std::string& access_token,
+                                          const std::string& channel,
+                                          ChatAggregator& chat)
 {
     std::string ch = channel;
-    if (login.empty() || access_token_raw.empty() || ch.empty()) {
+    if (login.empty() || access_token.empty() || ch.empty()) {
         OutputDebugStringA("TWITCH IRC: missing login/token/channel, refusing to start\n");
         return false;
     }
 
-    auto trim_ws = [](std::string s) -> std::string {
-        while (!s.empty() && (s.front() == ' ' || s.front() == '\t' || s.front() == '\n' || s.front() == '\r'))
-            s.erase(s.begin());
-        while (!s.empty() && (s.back() == ' ' || s.back() == '\t' || s.back() == '\n' || s.back() == '\r'))
-            s.pop_back();
-        return s;
-    };
-
-    std::string tok = trim_ws(access_token_raw);
-    if (tok.rfind("oauth:", 0) == 0) tok = tok.substr(6);
-    if (tok.rfind("Bearer ", 0) == 0) tok = trim_ws(tok.substr(7));
-
     m_login = login;
-    m_access_token = tok;
+    m_access_token = access_token;
     m_channel = ch;
     m_nick = login;
 
-    // Start using existing start() overload. It expects PASS value including "oauth:" prefix.
-    return start(std::string("oauth:") + tok, login, ch,
-                 [this](const std::string& user, const std::string& message) {
-                     if (!m_chat) return;
-                     ChatMessage m{};
-                     m.platform = "twitch";
-                     m.user = user;
-                     m.message = message;
-                     m.ts_ms = NowMs();
-                     m_chat->Add(std::move(m));
-                 });
+    const std::string raw = NormalizeRawAccessToken(access_token);
+    return start(std::string("oauth:") + raw, login, ch, chat);
 }
 
 
