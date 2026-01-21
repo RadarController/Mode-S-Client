@@ -41,6 +41,7 @@ private:
 
     // Helix helpers
     std::string ResolveBroadcasterUserId();
+    std::string ResolveTokenUserId();
     bool SubscribeAll(const std::string& sessionId);
     bool CreateSubscription(const std::string& type,
                             const std::string& version,
@@ -61,6 +62,7 @@ private:
     std::string broadcaster_id_;      // login or numeric id (we resolve to user id)
     std::string broadcaster_user_id_; // numeric id
 
+    std::string token_user_id_;       // numeric id of the user the access_token belongs to
     ChatCallback on_chat_event_;
     JsonCallback on_event_;
     JsonCallback on_status_;

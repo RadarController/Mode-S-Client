@@ -14,6 +14,10 @@ public:
     TwitchIrcWsClient();
     ~TwitchIrcWsClient();
 
+    // Optional: provide ChatAggregator sink for incoming PRIVMSG messages
+    void SetChatAggregator(ChatAggregator* chat) { m_chat = chat; }
+    void SetChatAggregator(ChatAggregator& chat) { m_chat = &chat; }
+
     
 
     // Start Twitch IRC with authenticated user credentials (required for sending messages)
@@ -39,12 +43,10 @@ private:
     void worker(std::string oauth, std::string nick, std::string channel, OnPrivMsg cb);
 
     ChatAggregator* m_chat = nullptr; // optional sink for chat aggregation
-    std::atomic<bool> m_running{ false };
-    std::thread m_thread;
-
-    // Stored for authenticated IRC
     std::string m_login;
     std::string m_access_token;
     std::string m_channel;
     std::string m_nick;
+    std::atomic<bool> m_running{ false };
+    std::thread m_thread;
 };

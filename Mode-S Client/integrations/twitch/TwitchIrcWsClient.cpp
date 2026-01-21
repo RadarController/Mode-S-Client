@@ -64,12 +64,13 @@ void TwitchIrcWsClient::stop() {
 
 
 bool TwitchIrcWsClient::StartAuthenticated(const std::string& login,
-                                          const std::string& access_token_raw,
-                                          const std::string& channel)
+    const std::string& access_token_raw,
+    const std::string& channel)
 {
     std::string ch = channel;
+
     if (login.empty() || access_token_raw.empty() || ch.empty()) {
-        OutputDebugStringA("TWITCH IRC: missing login/token/channel, refusing to start\n");
+        OutputDebugStringA("TWITCH IRC: missing login/token/channel, refusing to start");
         return false;
     }
 
@@ -78,19 +79,34 @@ bool TwitchIrcWsClient::StartAuthenticated(const std::string& login,
     m_channel = ch;
     m_nick = login;
 
-    // Start using existing start() overload. It expects PASS value including "oauth:" prefix.
-    return start("oauth:" + access_token_raw, login, ch,
-                 [this](const std::string& user, const std::string& message) {
-                     if (!m_chat) return;
-                     ChatMessage m{};
-                     m.platform = "twitch";
-                     m.user = user;
-                     m.message = message;
-                     m.ts_ms = NowMs();
-                     m_chat->Add(std::move(m));
-                 });
-}
+    // Normalize user-provided token (may already include oauth: or "Bearer ").
+    auto trim_ws = [](std::string s) -> std::string {
+        while (!s.empty() && (s.front() == ' ' || s.front() == '\t' || s.front() == '\n' || s.front() == '\r'))
+            s.erase(s.begin());
+        while (!s.empty() && (s.back() == ' ' || s.back() == '\t' || s.back() == '\n' || s.back() == '\r'))
+            s.pop_back();
+        return s;
+        };
 
+    std::string tok = trim_ws(access_token_raw);
+    if (tok.rfind("oauth:", 0) == 0) tok = tok.substr(6);
+    if (tok.rfind("Bearer ", 0) == 0) tok = trim_ws(tok.substr(7));
+
+    return start(
+        std::string("oauth:") + tok,
+        login,
+        ch,
+        [this](const std::string& user, const std::string& message) {
+            if (!m_chat) return;
+            ChatMessage m{};
+            m.platform = "twitch";
+            m.user = user;
+            m.message = message;
+            m.ts_ms = NowMs();
+            m_chat->Add(std::move(m));
+        }
+    );
+}
 
 bool TwitchIrcWsClient::start(const std::string& oauth_token_with_oauth_prefix,
     const std::string& nick,
