@@ -21,6 +21,11 @@ public:
     // Start Twitch IRC with authenticated user credentials (required for sending messages)
     // Starts an authenticated IRC session and forwards PRIVMSG into the provided ChatAggregator.
     // access_token may be raw, "oauth:..." or "Bearer ..."; it will be normalized.
+    // If you already called SetChatAggregator(), you may use the 3-arg overload.
+    bool StartAuthenticated(const std::string& login,
+                            const std::string& access_token,
+                            const std::string& channel);
+
     bool StartAuthenticated(const std::string& login,
                             const std::string& access_token,
                             const std::string& channel,

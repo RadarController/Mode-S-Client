@@ -77,6 +77,34 @@ static std::string NormalizeRawAccessToken(std::string tok) {
 
 bool TwitchIrcWsClient::StartAuthenticated(const std::string& login,
                                           const std::string& access_token,
+                                          const std::string& channel)
+{
+    // Use previously configured aggregator (SetChatAggregator) if present.
+    if (m_chat) {
+        return StartAuthenticated(login, access_token, channel, *m_chat);
+    }
+
+    // Fall back to starting without aggregation.
+    std::string ch = channel;
+    if (login.empty() || access_token.empty() || ch.empty()) {
+        OutputDebugStringA("TWITCH IRC: missing login/token/channel, refusing to start\n");
+        return false;
+    }
+
+    m_login = login;
+    m_access_token = access_token;
+    m_channel = ch;
+    m_nick = login;
+
+    const std::string raw = NormalizeRawAccessToken(access_token);
+    return start(std::string("oauth:") + raw, login, ch,
+                 [](const std::string&, const std::string&) {
+                     // No sink configured.
+                 });
+}
+
+bool TwitchIrcWsClient::StartAuthenticated(const std::string& login,
+                                          const std::string& access_token,
                                           const std::string& channel,
                                           ChatAggregator& chat)
 {
@@ -102,7 +130,6 @@ bool TwitchIrcWsClient::start(const std::string& oauth_token_with_oauth_prefix,
     OnPrivMsg cb) {
     if (m_running.load()) return false;
     if (oauth_token_with_oauth_prefix.empty() || nick.empty() || channel.empty()) return false;
-    m_chat = nullptr;
     m_running.store(true);
     m_thread = std::thread(&TwitchIrcWsClient::worker, this,
         oauth_token_with_oauth_prefix, nick, channel, std::move(cb));
