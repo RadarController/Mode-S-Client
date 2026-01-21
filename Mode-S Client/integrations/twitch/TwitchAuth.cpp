@@ -213,20 +213,21 @@ static bool TwitchValidateAccessToken(const std::string& access_token_raw,
 }
 
 namespace {
-    // ---- config path (best-effort search; align with your project if you already have a shared helper) ----
+    // ---- config path: CWD first, then exe dir ----
     std::filesystem::path FindConfigPath() {
         std::vector<std::filesystem::path> candidates;
 
-        // Prefer current working directory, then fall back to the folder the executable is in.
+        // current working dir
         try { candidates.push_back(std::filesystem::current_path() / "config.json"); }
         catch (...) {}
 
 #ifdef _WIN32
+        // alongside executable (best effort)
         wchar_t buf[MAX_PATH];
         DWORD len = GetModuleFileNameW(nullptr, buf, MAX_PATH);
         if (len > 0) {
-            std::filesystem::path exeDir = std::filesystem::path(buf).parent_path();
-            candidates.push_back(exeDir / "config.json");
+            std::filesystem::path exe = std::filesystem::path(buf).parent_path();
+            candidates.push_back(exe / "config.json");
         }
 #endif
 

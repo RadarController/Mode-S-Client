@@ -9,6 +9,11 @@
 
 class TwitchAuth {
 public:
+    using UiLogFn = void(*)(const std::wstring&);
+
+    // Optional UI logger callback (keeps existing Visual Studio/OutputDebugString logging too).
+    static void SetUiLogger(UiLogFn fn);
+
     struct TokenSnapshot {
         std::string access_token;
         std::string refresh_token;

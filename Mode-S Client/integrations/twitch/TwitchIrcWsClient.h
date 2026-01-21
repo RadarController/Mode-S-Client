@@ -10,6 +10,18 @@ class ChatAggregator; // forward declaration
 // Minimal Twitch IRC-over-WebSocket client for receiving chat messages.
 class TwitchIrcWsClient {
 public:
+    bool StartAuthenticated(
+        const std::string& login,
+        const std::string& access_token,
+        const std::string& channel
+    );
+
+private:
+    std::string m_login;
+    std::string m_access_token;
+};
+
+public:
     using OnPrivMsg = std::function<void(const std::string& user, const std::string& message)>; // already sanitized
 
     TwitchIrcWsClient();

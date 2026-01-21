@@ -178,33 +178,27 @@ static std::wstring GetExeDir()
 
 // Read Twitch user access token from config.json.
 // Stored at: { "twitch": { "user_access_token": "..." } }
-static std::pair<std::string, std::wstring> ReadTwitchUserAccessTokenWithSource()
+static std::string ReadTwitchUserAccessToken()
 {
-    auto try_path = [](const std::filesystem::path& p) -> std::pair<std::string, std::wstring> {
+    auto try_path = [](const std::filesystem::path& p) -> std::string {
         try {
             std::ifstream f(p);
-            if (!f.is_open()) return { {}, L"" };
+            if (!f.is_open()) return {};
             nlohmann::json j;
             f >> j;
-            std::string tok = j.value("twitch", nlohmann::json::object()).value("user_access_token", "");
-            if (tok.empty()) return { {}, L"" };
-            return { tok, p.wstring() };
+            return j.value("twitch", nlohmann::json::object()).value("user_access_token", "");
         } catch (...) {
-            return { {}, L"" };
+            return {};
         }
     };
 
-    // Prefer current working directory, then fall back to config.json next to the exe.
-    auto r0 = try_path(std::filesystem::path("config.json"));
-    if (!r0.first.empty()) return r0;
-
+    // Prefer config.json next to the exe
     std::filesystem::path p1 = std::filesystem::path(GetExeDir()) / "config.json";
-    return try_path(p1);
-}
+    std::string tok = try_path(p1);
+    if (!tok.empty()) return tok;
 
-static std::string ReadTwitchUserAccessToken()
-{
-    return ReadTwitchUserAccessTokenWithSource().first;
+    // Fallback: current working directory
+    return try_path(std::filesystem::path("config.json"));
 }
 
 static void AppendLogOnUiThread(const std::wstring& s)
@@ -1957,38 +1951,11 @@ case WM_COMMAND:
                     RestartTwitchHelixPoller("channel change");
                 }
             }
-            // Use overload that sinks directly into ChatAggregator.
-            // IMPORTANT: If we connect with a fake PASS/NICK ("SCHMOOPIIE" / "justinfan..."), Twitch
-            // treats us as anonymous (read-only) and we cannot send PRIVMSG replies.
-            // For bot replies, we must use a real USER access token (chat:edit) and a real nick.
-
-            const std::string channelLogin = SanitizeTwitchLogin(ToUtf8(GetWindowTextWString(hTwitch)));
-            auto tokSrc = ReadTwitchUserAccessTokenWithSource(); // may be empty if OAuth not completed yet
-            std::string ircUserToken = tokSrc.first;
-            if (!tokSrc.second.empty()) {
-                LogLine(L"TWITCH: IRC token loaded from: " + tokSrc.second + L" (len=" + std::to_wstring(ircUserToken.size()) + L")");
-            } else {
-                wchar_t cwd[MAX_PATH];
-                cwd[0] = 0;
-                GetCurrentDirectoryW(MAX_PATH, cwd);
-                LogLine(L"TWITCH: IRC token NOT found. Looked for config.json in CWD='" + std::wstring(cwd) + L"' and EXE dir='" + GetExeDir() + L"'.");
-            }
-
-            std::string pass;
-            std::string nick;
-
-            if (!ircUserToken.empty() && !config.twitch_login.empty()) {
-                pass = ircUserToken;           // normalized to oauth:... inside TwitchIrcWsClient
-                nick = config.twitch_login;    // the authenticated account username
-                LogLine(L"TWITCH: IRC connecting with authenticated user token (chat replies enabled)." );
-            }
-            else {
-                pass = "SCHMOOPIIE";
-                nick = std::string("justinfan" + std::to_string(10000 + (GetTickCount() % 50000)));
-                LogLine(L"TWITCH: IRC connecting anonymously (no user token) - chat replies will NOT work. Check OAuth token/scopes." );
-            }
-
-            bool ok = twitch.start(pass, nick, channelLogin, chat);
+            // Use overload that sinks directly into ChatAggregator
+            bool ok = twitch.start("SCHMOOPIIE",
+                std::string("justinfan" + std::to_string(10000 + (GetTickCount() % 50000))),
+                SanitizeTwitchLogin(ToUtf8(GetWindowTextWString(hTwitch))),
+                chat);
 
             if (ok) {
                 LogLine(L"TWITCH: started/restarted IRC client.");

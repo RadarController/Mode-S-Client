@@ -30,10 +30,45 @@ struct AppConfig
         return (pos == std::wstring::npos) ? L"." : p.substr(0, pos);
     }
 
-    static std::wstring ConfigPath()
-    {
-        return GetExeDir() + L"\\config.json";
-    }
+    // Resolve config.json location:
+//  1) current working directory (./config.json)
+//  2) folder containing the running .exe (<exe-dir>/config.json)
+//
+// For Save(): prefer writing back to whichever location we loaded from; otherwise use CWD.
+inline static std::wstring s_last_loaded_path;
+
+static std::wstring ResolveConfigPathForRead()
+{
+    try {
+        auto cwd = std::filesystem::current_path() / "config.json";
+        if (std::filesystem::exists(cwd)) return cwd.wstring();
+    } catch (...) {}
+
+    auto exe = std::filesystem::path(GetExeDir()) / "config.json";
+    return exe.wstring();
+}
+
+static std::wstring ResolveConfigPathForWrite()
+{
+    if (!s_last_loaded_path.empty()) return s_last_loaded_path;
+
+    // If CWD has a config.json, update that; else create in CWD.
+    try {
+        auto cwd = std::filesystem::current_path() / "config.json";
+        return cwd.wstring();
+    } catch (...) {}
+
+    // Last resort: exe directory.
+    return (std::filesystem::path(GetExeDir()) / "config.json").wstring();
+}
+
+// Backward-compatible helper used across the codebase.
+// Prefer the path we will write to (which is the loaded path when available,
+// otherwise the CWD path). This is primarily for diagnostics (logging/UI).
+static std::wstring ConfigPath()
+{
+    return ResolveConfigPathForWrite();
+}
 
     static void DebugLogConfigLookup(const wchar_t* action, const std::wstring& path)
     {
@@ -47,10 +82,11 @@ struct AppConfig
 
     bool Load()
     {
-        const auto path = ConfigPath();
+        const auto path = ResolveConfigPathForRead();
         DebugLogConfigLookup(L"Looking for", path);
         FILE* f = nullptr;
         _wfopen_s(&f, path.c_str(), L"rb");
+        if (f) { s_last_loaded_path = path; }
         if (!f) {
             // Helpful: log last error so we know whether it's simply missing vs permissions, etc.
             const DWORD err = GetLastError();
@@ -93,7 +129,7 @@ struct AppConfig
 
     bool Save() const
     {
-        const auto path = ConfigPath();
+        const auto path = ResolveConfigPathForWrite();
         DebugLogConfigLookup(L"Saving to", path);
 
         // 1) Start with existing JSON (so we preserve keys we don't explicitly manage)
