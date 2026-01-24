@@ -156,8 +156,8 @@
   <div class="left">
     <span class="badge"></span>
     <div class="titles">
-      <div class="title">VATSIM UK</div>
-      <div class="sub">MANCHESTER | EGCC</div>
+        <div class="title" id="hdrTitle">{{HEADER_TITLE}}</div>
+        <div class="sub" id="hdrSubtitle">{{HEADER_SUBTITLE}}</div>
     </div>
   </div>
 
@@ -288,6 +288,48 @@
     }
   }
   poll();
+
+  // ------------------------------------------------------------
+  // Overlay header live-update (no OBS refresh needed)
+  // ------------------------------------------------------------
+  const __HEADER_URL = "/api/overlay/header";
+  const __hdrTitleEl = document.getElementById("hdrTitle");
+  const __hdrSubEl   = document.getElementById("hdrSubtitle");
+  let __lastHdrTitle = (__hdrTitleEl && __hdrTitleEl.textContent) ? __hdrTitleEl.textContent : "";
+  let __lastHdrSub   = (__hdrSubEl && __hdrSubEl.textContent) ? __hdrSubEl.textContent : "";
+
+  async function pollHeaderOnce(){
+    try{
+      const r = await fetch(__HEADER_URL, { cache: "no-store" });
+      if(!r.ok) return;
+      const j = await r.json();
+      const t = (j && typeof j.title === "string") ? j.title : "";
+      const s = (j && typeof j.subtitle === "string") ? j.subtitle : "";
+      if (__hdrTitleEl && t !== __lastHdrTitle){
+        __hdrTitleEl.textContent = t;
+        __lastHdrTitle = t;
+        __hdrTitleEl.classList.remove("bump");
+        void __hdrTitleEl.offsetWidth;
+        __hdrTitleEl.classList.add("bump");
+      }
+      if (__hdrSubEl && s !== __lastHdrSub){
+        __hdrSubEl.textContent = s;
+        __lastHdrSub = s;
+        __hdrSubEl.classList.remove("bump");
+        void __hdrSubEl.offsetWidth;
+        __hdrSubEl.classList.add("bump");
+      }
+    }catch(_){}
+  }
+
+  function startHeaderPolling(){
+    // Prefer existing POLL_MS if defined in this overlay, else default 1000ms
+    const ms = (typeof POLL_MS === "number" && POLL_MS > 100) ? POLL_MS : 1000;
+    pollHeaderOnce();
+    setInterval(pollHeaderOnce, ms);
+  }
+
+  startHeaderPolling();
 </script>
 </body>
 </html>

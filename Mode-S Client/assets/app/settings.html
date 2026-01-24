@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Settings — RadarController</title>
+  <link rel="stylesheet" href="/app/app.css" />
+</head>
+<body>
+  <div class="app" id="settingsPage">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand__mark"><img src="/assets/icons/RClogo.svg" alt="RadarController" style="width:100%;height:100%;display:block;opacity:0.8;border-radius:inherit;" /></div>
+        <div class="brand__text">
+          <div class="brand__title">RadarController</div>
+          <div class="brand__subtitle">Mode‑S Client</div>
+        </div>
+      </div>
+
+      <div class="topbar__actions">
+        <button class="btn btn--ghost" id="btnBackHome">Back</button>
+      </div>
+    </header>
+
+    <main class="grid">
+      <section class="card settings-card">
+        <div class="card__head">
+          <h2>Settings</h2>
+          <p class="muted settings-card__subtitle">Choose a section.</p>
+        </div>
+
+        <div class="settings-card__body">
+<div class="settings-grid">
+  <a class="settings-card-link" href="/app/bot.html">
+    <div class="settings-card-link__title">Bot Commands</div>
+    <div class="settings-card-link__desc">
+      Manage chat commands, responses, throttles and testing.
+    </div>
+  </a>
+
+  <a class="settings-card-link" href="/app/overlay_title.html">
+    <div class="settings-card-link__title">Overlay Title</div>
+    <div class="settings-card-link__desc">
+      Edit the stream overlay header text shown in OBS.
+    </div>
+  </a>
+</div>
+</div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/app/app.js"></script>
+</body>
+</html>

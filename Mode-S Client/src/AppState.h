@@ -162,6 +162,24 @@ public:
     nlohmann::json bot_settings_json() const;
     BotSettings bot_settings_snapshot() const;
 
+
+// --- Overlay settings (e.g. header title/subtitle) ---
+struct OverlayHeaderSettings {
+    std::string title = "StreamingATC.Live";
+    std::string subtitle = "";
+};
+
+// Storage path should be set once at startup (utf-8 path). If empty, settings are in-memory only.
+void set_overlay_header_storage_path(const std::string& path_utf8);
+// Returns true if settings were loaded.
+bool load_overlay_header_from_disk();
+
+// Replace settings (and persist best-effort).
+// Accepts JSON object: {"title":"...","subtitle":"..."}
+bool set_overlay_header(const nlohmann::json& obj, std::string* err = nullptr);
+nlohmann::json overlay_header_json() const;
+OverlayHeaderSettings overlay_header_snapshot() const;
+
 private:
     static std::int64_t now_ms();
 
@@ -186,6 +204,11 @@ private:
     // --- Bot safety settings ---
     BotSettings bot_settings_{};
     std::string bot_settings_path_utf8_;
+
+
+// --- Overlay header settings ---
+OverlayHeaderSettings overlay_header_{};
+std::string overlay_header_path_utf8_;
 
     // EventSub status + events kept small for UI/debugging.
     nlohmann::json twitch_eventsub_status_ = nlohmann::json{

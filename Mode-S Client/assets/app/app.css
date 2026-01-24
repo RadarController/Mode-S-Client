@@ -256,3 +256,51 @@ body{
   .topbar{flex-wrap:wrap}
   .topbar__actions{margin-left:auto}
 }
+
+
+/* Overlay Title page */
+.overlay-title__status{ margin-top:8px; font-size:12px; opacity:0.85; }
+
+/* --- Settings hub tweaks --- */
+.settings-card__body{
+  padding:14px;
+}
+.settings-card__subtitle{
+  margin-top:6px;
+}
+.settings-card__actions{
+  gap:12px;
+}
+
+/* --- Settings hub card layout --- */
+.settings-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
+  gap:16px;
+}
+
+.settings-card-link{
+  display:block;
+  padding:16px;
+  border-radius:12px;
+  background:rgba(255,255,255,0.04);
+  text-decoration:none;
+  color:inherit;
+  transition:background .15s ease, transform .15s ease;
+}
+
+.settings-card-link:hover{
+  background:rgba(255,255,255,0.07);
+  transform:translateY(-1px);
+}
+
+.settings-card-link__title{
+  font-size:16px;
+  font-weight:600;
+  margin-bottom:6px;
+}
+
+.settings-card-link__desc{
+  font-size:13px;
+  opacity:.8;
+}

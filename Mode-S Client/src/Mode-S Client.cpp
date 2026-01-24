@@ -1387,6 +1387,25 @@ switch (msg) {
             LogLine(L"BOT: failed to set/load bot settings storage path");
         }
 
+
+// -----------------------------------------------------------------
+// Overlay header settings persistence
+// Store overlay_header.json next to the exe, and load it at startup.
+// -----------------------------------------------------------------
+try {
+    std::filesystem::path hdrPath = std::filesystem::path(GetExeDir()) / "overlay_header.json";
+    state.set_overlay_header_storage_path(ToUtf8(hdrPath.wstring()));
+    if (state.load_overlay_header_from_disk()) {
+        LogLine(L"OVERLAY: loaded header settings from overlay_header.json");
+    }
+    else {
+        LogLine(L"OVERLAY: no overlay_header.json found (or empty/invalid) - using defaults");
+    }
+}
+catch (...) {
+    LogLine(L"OVERLAY: failed to set/load overlay header settings path");
+}
+
         // Allow LogLine() to feed the Web UI (/api/log)
         gStateForWebLog = &state;
 

@@ -265,17 +265,87 @@ async function pollLog(){
   }
 }
 
+
+// -----------------------------------------------------------------------------
+// Overlay Title (Header) page helpers
+// -----------------------------------------------------------------------------
+async function loadOverlayTitle(){
+  try {
+    const res = await fetch("/api/overlay/header");
+    if(!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    const t = document.getElementById("overlayTitle");
+    const s = document.getElementById("overlaySubtitle");
+    if (t) t.value = data.title || "";
+    if (s) s.value = data.subtitle || "";
+  } catch (e) {
+    console.warn("Failed to load overlay title", e);
+    const status = document.getElementById("overlayTitleStatus");
+    if (status) status.textContent = "Failed to load";
+  }
+}
+
+async function saveOverlayTitle(){
+  const status = document.getElementById("overlayTitleStatus");
+  if (status) status.textContent = "Saving...";
+  try {
+    const body = {
+      title: document.getElementById("overlayTitle")?.value || "",
+      subtitle: document.getElementById("overlaySubtitle")?.value || ""
+    };
+    const res = await fetch("/api/overlay/header", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    if(!res.ok) throw new Error("HTTP " + res.status);
+    if (status) status.textContent = "Saved";
+  } catch (e) {
+    console.error(e);
+    if (status) status.textContent = "Error saving";
+  }
+}
+
+function wireOverlayTitlePage(){
+  // Only activate on overlay_title.html (elements present)
+  if (!document.getElementById("overlayTitle")) return;
+
+  document.getElementById("btnSaveOverlayTitle")?.addEventListener("click", saveOverlayTitle);
+  document.getElementById("btnBackHome")?.addEventListener("click", () => {
+    window.location.href = "/app/";
+  });
+
+  loadOverlayTitle();
+}
+
+function wireSettingsPage(){
+  // Only run on /app/settings.html
+  if (!document.getElementById("settingsPage")) return;
+
+  $("#btnBackHome")?.addEventListener("click", () => {
+    window.location.href = "/app/";
+  });
+
+  $("#btnGoBot")?.addEventListener("click", () => {
+    window.location.href = "/app/bot.html";
+  });
+
+  $("#btnGoOverlayTitle")?.addEventListener("click", () => {
+    window.location.href = "/app/overlay_title.html";
+  });
+}
+
 function wireActions(){
   $("#btnOpenChat")?.addEventListener("click", () => {
     window.open("/app/chat.html", "_blank", "noopener");
   });
-
-  $("#btnOpenBot")?.addEventListener("click", () => {
-    // Navigate within the same WebView/app window.
-    window.location.href = "/app/bot.html";
+  
+  $("#btnOpenSettings")?.addEventListener("click", () => {
+    // Settings hub
+    window.location.href = "/app/settings.html";
   });
 
-  $("#btnStartAll")?.addEventListener("click", async () => {
+$("#btnStartAll")?.addEventListener("click", async () => {
     logLine("start-all", "starting all platforms");
     const platforms = ["tiktok", "twitch", "youtube"];
     for (const p of platforms) {
@@ -288,12 +358,6 @@ function wireActions(){
     }
     logLine("start-all", "done");
   });
-
-
-  $("#btnSave")?.addEventListener("click", async () => {
-    await saveSettingsFromInputs();
-  });
-
   $$(".platform").forEach(card => {
     const platform = card.dataset.platform;
     card.addEventListener("click", async (ev) => {
@@ -338,3 +402,33 @@ document.addEventListener("DOMContentLoaded", async () => {
   await pollLog();
   setInterval(pollLog, 1000);
 });
+
+document.addEventListener("DOMContentLoaded", wireOverlayTitlePage);
+
+
+document.addEventListener("DOMContentLoaded", wireSettingsPage);
+
+
+// ------------------------------------------------------------
+// Smart Back routing: if user came from Settings hub, go back there.
+// Otherwise fall back to main UI.
+// ------------------------------------------------------------
+(function wireSmartBackButtons(){
+  function target() {
+    try {
+      const ref = document.referrer || "";
+      if (ref.includes("/app/settings.html")) return "/app/settings.html";
+    } catch(_) {}
+    return "/app/index.html";
+  }
+
+  const btnBack = document.getElementById("btnBack"); // bot.html
+  if (btnBack) {
+    btnBack.addEventListener("click", () => { window.location.href = target(); });
+  }
+
+  const btnBackHome = document.getElementById("btnBackHome"); // overlay_title.html + settings.html
+  if (btnBackHome) {
+    btnBackHome.addEventListener("click", () => { window.location.href = target(); });
+  }
+})();
