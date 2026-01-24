@@ -77,9 +77,48 @@
             padding: 4px 6px;
         }
 
-            .line.event .text, .line.event .text span, .line.event .user {
+        .line.event .text, .line.event .text span, .line.event .user {
                 color: #fff !important;
-            }
+         }
+
+        /* Base line styling */
+        .line {
+            border-left: 4px solid transparent;
+            padding-left: 10px;
+        }
+
+        /* Twitch */
+        .platform-twitch .user {
+            color: #9146FF;
+        }
+
+        .platform-twitch.line {
+            border-left-color: #9146FF;
+        }
+
+        /* TikTok */
+        .platform-tiktok .user {
+            color: #25F4EE;
+        }
+
+        .platform-tiktok.line {
+            border-left-color: #25F4EE;
+        }
+
+        /* YouTube */
+        .platform-youtube .user {
+            color: #FF0000;
+        }
+
+        .platform-youtube.line {
+            border-left-color: #FF0000;
+        }
+
+        /* Optional: EventSub/system events slightly styled */
+        .line.event {
+            opacity: 0.95;
+            font-style: italic;
+        }
 
         .yt-emoji {
             width: 20px;
@@ -342,6 +381,10 @@
             // Build the line DOM (icon + text are appended together)
             const line = document.createElement('div');
             line.className = 'line';
+
+            const plat = (n.platform || '').toLowerCase();
+            if (plat) line.classList.add(`platform-${plat}`);
+
             if (n.is_event) line.classList.add('event');
 
             const icon = iconFor(n.platform);
