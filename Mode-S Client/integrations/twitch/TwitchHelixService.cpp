@@ -20,6 +20,11 @@ using nlohmann::json;
 
 namespace {
 
+
+static void DebugLog(const std::wstring& msg)
+{
+    ::OutputDebugStringW((L"[ModeS] " + msg + L"\n").c_str());
+}
     struct HttpResult {
         DWORD status = 0;
         DWORD winerr = 0;
@@ -165,6 +170,40 @@ namespace {
         }
     }
 
+
+    static bool TryReadTwitchClientAndAccessTokenFromConfigJson(std::string& cid, std::string& access_token)
+    {
+        try {
+            const auto path = std::filesystem::absolute("config.json");
+            std::ifstream in(path, std::ios::binary);
+            if (!in) return false;
+            std::string s((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+            if (s.empty()) return false;
+            auto j = json::parse(s);
+
+            // Prefer nested object if present.
+            if (j.contains("twitch") && j["twitch"].is_object()) {
+                const auto& t = j["twitch"];
+                if (cid.empty())         cid         = t.value("client_id", "");
+                if (access_token.empty()) access_token = t.value("user_access_token", "");
+                if (access_token.empty()) access_token = t.value("access_token", "");
+            }
+
+            // Back-compat with flat keys.
+            if (cid.empty())          cid          = j.value("twitch_client_id", "");
+            if (access_token.empty()) access_token = j.value("twitch_access_token", "");
+
+            // Additional common aliases (defensive).
+            if (access_token.empty()) access_token = j.value("twitch_oauth_access_token", "");
+            if (access_token.empty()) access_token = j.value("twitch_helix_access_token", "");
+
+            return !(cid.empty() || access_token.empty());
+        }
+        catch (...) {
+            return false;
+        }
+    }
+
 } // namespace
 
 std::thread StartTwitchHelixPoller(
@@ -238,6 +277,7 @@ std::thread StartTwitchHelixPoller(
 
                 HttpResult r = WinHttpRequest(L"POST", L"id.twitch.tv", 443, ToW(path), L"", "", true);
                 if (r.status != 200) {
+        DebugLog(L"TWITCH: SearchCategories HTTP status=" + std::to_wstring((int)r.status));
                     set_status(L"Helix: token error (see log)");
                     log_http("token", r);
 
@@ -412,3 +452,74 @@ std::thread StartTwitchHelixPoller(
         SafeCall(cb.log, L"TWITCH: helix poller thread exiting");
         });
 }
+
+
+bool TwitchHelixSearchCategories(
+    AppConfig& /*config*/,
+    const std::string& query,
+    std::vector<TwitchCategory>& out,
+    std::string* out_error)
+{
+    out.clear();
+
+
+DebugLog(L"TWITCH: SearchCategories query='" + ToW(query) + L"'");
+    std::string cid, tok;
+    if (!TryReadTwitchClientAndAccessTokenFromConfigJson(cid, tok)) {
+        DebugLog(L"TWITCH: SearchCategories failed: missing credentials in config.json");
+        if (out_error) *out_error = "Missing twitch client_id/access_token in config.json";
+        return false;
+    }
+
+    // Build query string (basic URL encoding for spaces and symbols)
+    std::ostringstream enc;
+    for (unsigned char c : query) {
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
+            c == '-' || c == '_' || c == '.' || c == '~') {
+            enc << c;
+        } else {
+            enc << '%' << std::uppercase << std::hex << (int)c << std::nouppercase << std::dec;
+        }
+    }
+
+    std::wstring path = L"/helix/search/categories?first=20&query=" + ToW(enc.str());
+
+    std::wstringstream hdr;
+    hdr << L"Client-ID: " << ToW(cid) << L"\r\n";
+    hdr << L"Authorization: Bearer " << ToW(tok) << L"\r\n";
+    hdr << L"Accept: application/json\r\n";
+
+    auto r = WinHttpRequest(L"GET", L"api.twitch.tv", INTERNET_DEFAULT_HTTPS_PORT, path,
+                            hdr.str(), "", true);
+
+    if (r.winerr != 0) {
+        DebugLog(L"TWITCH: SearchCategories WinHTTP error=" + std::to_wstring((int)r.winerr));
+        if (out_error) *out_error = "WinHTTP error " + std::to_string((int)r.winerr);
+        return false;
+    }
+    if (r.status != 200) {
+        if (out_error) *out_error = "Twitch Helix HTTP " + std::to_string((int)r.status);
+        return false;
+    }
+
+    try {
+        auto j = json::parse(r.body);
+        if (!j.contains("data") || !j["data"].is_array()) DebugLog(L"TWITCH: SearchCategories OK results=" + std::to_wstring((int)out.size()));
+        return true;
+
+        for (const auto& it : j["data"]) {
+            TwitchCategory c;
+            c.id = it.value("id", "");
+            c.name = it.value("name", "");
+            if (!c.id.empty() && !c.name.empty())
+                out.push_back(std::move(c));
+        }
+        return true;
+    }
+    catch (...) {
+        DebugLog(L"TWITCH: SearchCategories failed: JSON parse");
+        if (out_error) *out_error = "Failed to parse Twitch Helix JSON response";
+        return false;
+    }
+}
+

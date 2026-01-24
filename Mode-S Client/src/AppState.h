@@ -163,22 +163,22 @@ public:
     BotSettings bot_settings_snapshot() const;
 
 
-// --- Overlay settings (e.g. header title/subtitle) ---
-struct OverlayHeaderSettings {
-    std::string title = "StreamingATC.Live";
-    std::string subtitle = "";
+// --- Overlay header (stream title/subtitle shown in overlays) ---
+struct OverlayHeader {
+    std::string title;
+    std::string subtitle;
 };
 
-// Storage path should be set once at startup (utf-8 path). If empty, settings are in-memory only.
+// Storage path should be set once at startup (utf-8 path). If empty, header is in-memory only.
 void set_overlay_header_storage_path(const std::string& path_utf8);
-// Returns true if settings were loaded.
+// Returns true if header was loaded.
 bool load_overlay_header_from_disk();
 
-// Replace settings (and persist best-effort).
+// Replace header (and persist best-effort).
 // Accepts JSON object: {"title":"...","subtitle":"..."}
-bool set_overlay_header(const nlohmann::json& obj, std::string* err = nullptr);
+bool set_overlay_header(const nlohmann::json& header_obj, std::string* err = nullptr);
 nlohmann::json overlay_header_json() const;
-OverlayHeaderSettings overlay_header_snapshot() const;
+OverlayHeader overlay_header_snapshot() const;
 
 private:
     static std::int64_t now_ms();
@@ -206,8 +206,8 @@ private:
     std::string bot_settings_path_utf8_;
 
 
-// --- Overlay header settings ---
-OverlayHeaderSettings overlay_header_{};
+// --- Overlay header ---
+OverlayHeader overlay_header_{};
 std::string overlay_header_path_utf8_;
 
     // EventSub status + events kept small for UI/debugging.

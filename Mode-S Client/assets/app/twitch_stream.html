@@ -39,9 +39,23 @@
                 </div>
 
                 <div class="field">
-                    <label>Category (game name)</label>
-                    <input class="input" type="text" id="twitchCategory" placeholder="e.g. Microsoft Flight Simulator">
-                    <div class="hint">This is looked up on Twitch to find the correct <code>game_id</code>.</div>
+                    <label for="twitchCategory">Category (Twitch lookup)</label>
+
+                    <!-- User types here -->
+                    <input type="text"
+                           id="twitchCategory"
+                           placeholder="Start typing… e.g. Microsoft Flight Simulator"
+                           autocomplete="off" />
+
+                    <!-- Stores the selected Twitch game/category id -->
+                    <input type="hidden" id="twitchGameId" value="" />
+
+                    <div class="hint">
+                        Select a category from the suggestions (uses Twitch’s official categories).
+                    </div>
+
+                    <!-- Results dropdown -->
+                    <div id="twitchCategoryResults" class="typeahead" style="display:none;"></div>
                 </div>
 
                 <div class="field">

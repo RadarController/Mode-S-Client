@@ -1,7 +1,5 @@
 #include "HttpServer.h"
 #include <Windows.h>
-#include <winhttp.h>
-#pragma comment(lib, "winhttp.lib")
 
 #include <fstream>
 #include <sstream>
@@ -9,12 +7,12 @@
 #include <cctype>
 #include <chrono>
 #include <thread>
-#include <mutex>
 
 #include "json.hpp"
 #include "../AppState.h"
 #include "../chat/ChatAggregator.h"
 #include "../../integrations/euroscope/EuroScopeIngestService.h"
+#include "../../integrations/twitch/TwitchHelixService.h"
 #include "../AppConfig.h"
 
 namespace {
@@ -30,325 +28,6 @@ namespace {
 }
 
 
-namespace {
-
-    static std::wstring ToW(const std::string& s) {
-        if (s.empty()) return L"";
-        int len = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
-        std::wstring w(len, L'\0');
-        MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), &w[0], len);
-        return w;
-    }
-
-    static std::string ToU8(const std::wstring& w) {
-        if (w.empty()) return "";
-        int len = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-        std::string s(len, '\0');
-        WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), &s[0], len, nullptr, nullptr);
-        return s;
-    }
-
-    static std::string UrlEncode(const std::string& s) {
-        static const char* hex = "0123456789ABCDEF";
-        std::string out;
-        out.reserve(s.size() + 8);
-        for (unsigned char c : s) {
-            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
-                c == '-' || c == '_' || c == '.' || c == '~') {
-                out.push_back((char)c);
-            }
-            else if (c == ' ') {
-                out.push_back('%'); out.push_back('2'); out.push_back('0');
-            }
-            else {
-                out.push_back('%');
-                out.push_back(hex[(c >> 4) & 0xF]);
-                out.push_back(hex[c & 0xF]);
-            }
-        }
-        return out;
-    }
-
-    struct HttpResult {
-        DWORD status = 0;
-        DWORD winerr = 0;
-        std::string body;
-        std::wstring headers;
-    };
-
-    static HttpResult WinHttpRequest(
-        const wchar_t* method,
-        const wchar_t* host,
-        INTERNET_PORT port,
-        const std::wstring& path,
-        const std::wstring& headers,
-        const std::string& body,
-        bool secure)
-    {
-        HttpResult out;
-
-        HINTERNET hSession = WinHttpOpen(L"ModeSClient/1.0",
-            WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
-            WINHTTP_NO_PROXY_NAME,
-            WINHTTP_NO_PROXY_BYPASS, 0);
-
-        if (!hSession) { out.winerr = GetLastError(); return out; }
-
-        HINTERNET hConnect = WinHttpConnect(hSession, host, port, 0);
-        if (!hConnect) {
-            out.winerr = GetLastError();
-            WinHttpCloseHandle(hSession);
-            return out;
-        }
-
-        DWORD flags = secure ? WINHTTP_FLAG_SECURE : 0;
-        HINTERNET hRequest = WinHttpOpenRequest(hConnect, method, path.c_str(),
-            NULL, WINHTTP_NO_REFERER,
-            WINHTTP_DEFAULT_ACCEPT_TYPES,
-            flags);
-
-        if (!hRequest) {
-            out.winerr = GetLastError();
-            WinHttpCloseHandle(hConnect);
-            WinHttpCloseHandle(hSession);
-            return out;
-        }
-
-        BOOL ok = WinHttpSendRequest(hRequest,
-            headers.empty() ? WINHTTP_NO_ADDITIONAL_HEADERS : headers.c_str(),
-            headers.empty() ? 0 : (DWORD)-1L,
-            body.empty() ? WINHTTP_NO_REQUEST_DATA : (LPVOID)body.data(),
-            (DWORD)body.size(),
-            (DWORD)body.size(),
-            0);
-
-        if (!ok) {
-            out.winerr = GetLastError();
-            WinHttpCloseHandle(hRequest);
-            WinHttpCloseHandle(hConnect);
-            WinHttpCloseHandle(hSession);
-            return out;
-        }
-
-        ok = WinHttpReceiveResponse(hRequest, NULL);
-        if (!ok) {
-            out.winerr = GetLastError();
-            WinHttpCloseHandle(hRequest);
-            WinHttpCloseHandle(hConnect);
-            WinHttpCloseHandle(hSession);
-            return out;
-        }
-
-        DWORD status = 0; DWORD statusSize = sizeof(status);
-        WinHttpQueryHeaders(hRequest,
-            WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
-            WINHTTP_HEADER_NAME_BY_INDEX,
-            &status, &statusSize, WINHTTP_NO_HEADER_INDEX);
-
-        out.status = status;
-
-        // Read response body
-        std::string resp;
-        for (;;) {
-            DWORD avail = 0;
-            if (!WinHttpQueryDataAvailable(hRequest, &avail)) break;
-            if (avail == 0) break;
-            size_t off = resp.size();
-            resp.resize(off + avail);
-            DWORD read = 0;
-            if (!WinHttpReadData(hRequest, &resp[off], avail, &read)) break;
-            resp.resize(off + read);
-            if (read == 0) break;
-        }
-        out.body = std::move(resp);
-
-        // Read raw headers (optional)
-        DWORD hdrSize = 0;
-        WinHttpQueryHeaders(hRequest, WINHTTP_QUERY_RAW_HEADERS_CRLF, WINHTTP_HEADER_NAME_BY_INDEX, nullptr, &hdrSize, WINHTTP_NO_HEADER_INDEX);
-        if (GetLastError() == ERROR_INSUFFICIENT_BUFFER && hdrSize > 0) {
-            std::wstring hdrs;
-            hdrs.resize(hdrSize / sizeof(wchar_t));
-            if (WinHttpQueryHeaders(hRequest, WINHTTP_QUERY_RAW_HEADERS_CRLF, WINHTTP_HEADER_NAME_BY_INDEX, &hdrs[0], &hdrSize, WINHTTP_NO_HEADER_INDEX)) {
-                // hdrSize is bytes
-                hdrs.resize(hdrSize / sizeof(wchar_t));
-                out.headers = std::move(hdrs);
-            }
-        }
-
-        WinHttpCloseHandle(hRequest);
-        WinHttpCloseHandle(hConnect);
-        WinHttpCloseHandle(hSession);
-        return out;
-    }
-
-    struct TwitchStreamInfo {
-        std::string title;
-        std::string description;
-        std::string category; // category/game name for Twitch
-    };
-
-    static std::mutex g_tsi_mu;
-    static bool g_tsi_loaded = false;
-    static TwitchStreamInfo g_tsi;
-
-    static std::filesystem::path TwitchStreamInfoPath() {
-        return std::filesystem::absolute("twitch_streaminfo.json");
-    }
-
-    static void LoadTwitchStreamInfoIfNeeded() {
-        std::lock_guard<std::mutex> lk(g_tsi_mu);
-        if (g_tsi_loaded) return;
-        g_tsi_loaded = true;
-
-        try {
-            std::ifstream in(TwitchStreamInfoPath(), std::ios::binary);
-            if (!in) return;
-            std::string s((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-            if (s.empty()) return;
-            auto j = nlohmann::json::parse(s);
-            g_tsi.title = j.value("title", "");
-            g_tsi.description = j.value("description", "");
-            g_tsi.category = j.value("category", "");
-        }
-        catch (...) {
-            // ignore
-        }
-    }
-
-    static bool SaveTwitchStreamInfo(const TwitchStreamInfo& tsi, std::string* out_err) {
-        try {
-            nlohmann::json j{
-                {"title", tsi.title},
-                {"description", tsi.description},
-                {"category", tsi.category}
-            };
-            std::ofstream out(TwitchStreamInfoPath(), std::ios::binary | std::ios::trunc);
-            if (!out) { if (out_err) *out_err = "write_failed"; return false; }
-            const auto s = j.dump(2);
-            out.write(s.data(), (std::streamsize)s.size());
-            return true;
-        }
-        catch (...) {
-            if (out_err) *out_err = "exception";
-            return false;
-        }
-    }
-
-    static nlohmann::json TwitchStreamInfoJsonSnapshot() {
-        LoadTwitchStreamInfoIfNeeded();
-        std::lock_guard<std::mutex> lk(g_tsi_mu);
-        return nlohmann::json{
-            {"title", g_tsi.title},
-            {"description", g_tsi.description},
-            {"category", g_tsi.category}
-        };
-    }
-
-    static bool ReadTwitchAuthFromConfigJson(std::string& login, std::string& client_id, std::string& user_access_token) {
-        try {
-            const auto path = std::filesystem::absolute("config.json");
-            std::ifstream in(path, std::ios::binary);
-            if (!in) return false;
-            std::string s((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-            if (s.empty()) return false;
-            auto j = nlohmann::json::parse(s);
-
-            if (j.contains("twitch") && j["twitch"].is_object()) {
-                const auto& t = j["twitch"];
-                if (login.empty()) login = t.value("login", "");
-                if (client_id.empty()) client_id = t.value("client_id", "");
-                // tokens may be stored under various keys
-                if (user_access_token.empty()) {
-                    user_access_token = t.value("access_token", "");
-                    if (user_access_token.empty()) user_access_token = t.value("user_access_token", "");
-                }
-            }
-
-            if (login.empty()) login = j.value("twitch_login", "");
-            if (client_id.empty()) client_id = j.value("twitch_client_id", "");
-
-            if (user_access_token.empty()) {
-                user_access_token = j.value("twitch_access_token", "");
-                if (user_access_token.empty()) user_access_token = j.value("twitch_user_access_token", "");
-            }
-
-            return !(login.empty() || client_id.empty() || user_access_token.empty());
-        }
-        catch (...) {
-            return false;
-        }
-    }
-
-    static bool TwitchResolveBroadcasterId(const std::string& login, const std::string& client_id, const std::string& bearer, std::string& out_broadcaster_id, std::string* out_err) {
-        std::wstring hdr = L"Client-Id: " + ToW(client_id) + L"\r\nAuthorization: Bearer " + ToW(bearer) + L"\r\n";
-        std::string path = "/helix/users?login=" + UrlEncode(login);
-        HttpResult r = WinHttpRequest(L"GET", L"api.twitch.tv", 443, ToW(path), hdr, "", true);
-        if (r.status != 200) {
-            if (out_err) *out_err = "helix_users_http_" + std::to_string((unsigned)r.status);
-            return false;
-        }
-        try {
-            auto j = nlohmann::json::parse(r.body);
-            if (j.contains("data") && j["data"].is_array() && !j["data"].empty()) {
-                out_broadcaster_id = j["data"][0].value("id", "");
-            }
-        }
-        catch (...) {}
-        if (out_broadcaster_id.empty()) {
-            if (out_err) *out_err = "broadcaster_id_not_found";
-            return false;
-        }
-        return true;
-    }
-
-    static bool TwitchResolveGameId(const std::string& categoryName, const std::string& client_id, const std::string& bearer, std::string& out_game_id, std::string* out_err) {
-        std::wstring hdr = L"Client-Id: " + ToW(client_id) + L"\r\nAuthorization: Bearer " + ToW(bearer) + L"\r\n";
-        std::string path = "/helix/games?name=" + UrlEncode(categoryName);
-        HttpResult r = WinHttpRequest(L"GET", L"api.twitch.tv", 443, ToW(path), hdr, "", true);
-        if (r.status != 200) {
-            if (out_err) *out_err = "helix_games_http_" + std::to_string((unsigned)r.status);
-            return false;
-        }
-        try {
-            auto j = nlohmann::json::parse(r.body);
-            if (j.contains("data") && j["data"].is_array() && !j["data"].empty()) {
-                out_game_id = j["data"][0].value("id", "");
-            }
-        }
-        catch (...) {}
-        if (out_game_id.empty()) {
-            if (out_err) *out_err = "game_not_found";
-            return false;
-        }
-        return true;
-    }
-
-    static bool TwitchUpdateChannel(const std::string& broadcaster_id,
-                                   const std::string& client_id,
-                                   const std::string& bearer,
-                                   const std::string& title,
-                                   const std::string& game_id,
-                                   std::string* out_err)
-    {
-        nlohmann::json body;
-        body["title"] = title;
-        if (!game_id.empty()) body["game_id"] = game_id;
-
-        std::string bodyStr = body.dump();
-        std::wstring hdr = L"Client-Id: " + ToW(client_id) + L"\r\nAuthorization: Bearer " + ToW(bearer) + L"\r\nContent-Type: application/json\r\n";
-        std::string path = "/helix/channels?broadcaster_id=" + UrlEncode(broadcaster_id);
-
-        HttpResult r = WinHttpRequest(L"PATCH", L"api.twitch.tv", 443, ToW(path), hdr, bodyStr, true);
-        if (r.status != 204 && r.status != 200) {
-            if (out_err) *out_err = "helix_channels_http_" + std::to_string((unsigned)r.status);
-            return false;
-        }
-        return true;
-    }
-
-} // namespace
-
-
 using json = nlohmann::json;
 
 static std::string Trim(const std::string& s) {
@@ -359,23 +38,6 @@ static std::string Trim(const std::string& s) {
     return s.substr(a, b - a);
 }
 
-
-
-static std::string HtmlEscape(const std::string& in) {
-    std::string out;
-    out.reserve(in.size() + 16);
-    for (char ch : in) {
-        switch (ch) {
-        case '&': out += "&amp;"; break;
-        case '<': out += "&lt;"; break;
-        case '>': out += "&gt;"; break;
-        case '"': out += "&quot;"; break;
-        case '\'': out += "&#39;"; break;
-        default: out.push_back(ch); break;
-        }
-    }
-    return out;
-}
 static bool ReplaceAll(std::string& s, const std::string& from, const std::string& to) {
     if (from.empty()) return false;
     bool changed = false;
@@ -539,21 +201,6 @@ void HttpServer::ApplyOverlayTokens(std::string& html)
     changed |= ReplaceAll(html, "{{TEXT_SHADOW_STYLE}}", shadow);
     changed |= ReplaceAll(html, "{TEXT_SHADOW_STYLE}", shadow);
 
-
-// Header overlay tokens (configured via /api/overlay/header)
-{
-    const auto h = state_.overlay_header_snapshot();
-    const std::string title = HtmlEscape(h.title);
-    const std::string sub   = HtmlEscape(h.subtitle);
-
-    changed |= ReplaceAll(html, "{{HEADER_TITLE}}", title);
-    changed |= ReplaceAll(html, "{HEADER_TITLE}", title);
-    changed |= ReplaceAll(html, "{{HEADER_SUBTITLE}}", sub);
-    changed |= ReplaceAll(html, "{HEADER_SUBTITLE}", sub);
-    changed |= ReplaceAll(html, "{{HEADER_SUB}}", sub);
-    changed |= ReplaceAll(html, "{HEADER_SUB}", sub);
-}
-
     // If you also have placeholders like --font-stack in CSS, you can do:
     // changed |= ReplaceAll(html, "%%FONT_STACK%%", fontStack);
 
@@ -596,7 +243,42 @@ void HttpServer::RegisterRoutes() {
         });
 
     // --- API: Twitch EventSub diagnostics ---
-    svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Response& res) {
+    
+    // --- API: Twitch category lookup (for typeahead in UI) ---
+    // GET /api/twitch/categories?q=<text>
+    svr.Get("/api/twitch/categories", [&](const httplib::Request& req, httplib::Response& res) {
+        std::string q;
+        if (req.has_param("q")) q = req.get_param_value("q");
+        else if (req.has_param("query")) q = req.get_param_value("query");
+
+        // Trim
+        q.erase(q.begin(), std::find_if(q.begin(), q.end(), [](unsigned char ch) { return !std::isspace(ch); }));
+        q.erase(std::find_if(q.rbegin(), q.rend(), [](unsigned char ch) { return !std::isspace(ch); }).base(), q.end());
+
+        if (q.size() < 2) {
+            res.set_content("[]", "application/json");
+            res.status = 200;
+            return;
+        }
+
+        std::vector<TwitchCategory> cats;
+        std::string err;
+        if (!TwitchHelixSearchCategories(config_, q, cats, &err)) {
+            json jerr = { {"ok", false}, {"error", err} };
+            res.set_content(jerr.dump(), "application/json");
+            res.status = 500;
+            return;
+        }
+
+        json out = json::array();
+        for (const auto& c : cats) {
+            out.push_back({ {"id", c.id}, {"name", c.name} });
+        }
+        res.set_content(out.dump(), "application/json");
+        res.status = 200;
+    });
+
+svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Response& res) {
         auto j = state_.twitch_eventsub_status_json();
         res.set_content(j.dump(2), "application/json; charset=utf-8");
         });
@@ -1218,140 +900,6 @@ void HttpServer::RegisterRoutes() {
         res.set_header("Pragma", "no-cache");
         res.set_content(out.dump(2), "application/json; charset=utf-8");
         });
-
-
-// --- API: overlay header settings ---
-// GET  /api/overlay/header -> {"title":"...","subtitle":"..."}
-// POST /api/overlay/header with JSON body {"title":"...","subtitle":"..."} -> same response
-svr.Get("/api/overlay/header", [&](const httplib::Request&, httplib::Response& res) {
-    const auto j = state_.overlay_header_json();
-    res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
-    res.set_header("Pragma", "no-cache");
-    res.set_content(j.dump(2), "application/json; charset=utf-8");
-});
-
-svr.Post("/api/overlay/header", [&](const httplib::Request& req, httplib::Response& res) {
-    json body;
-    try {
-        body = json::parse(req.body);
-    }
-    catch (...) {
-        res.status = 400;
-        res.set_content(R"({"ok":false,"error":"invalid_json"})", "application/json");
-        return;
-    }
-
-    std::string err;
-    if (!state_.set_overlay_header(body, &err)) {
-        res.status = 400;
-        json out = { {"ok", false}, {"error", err} };
-        res.set_content(out.dump(2), "application/json; charset=utf-8");
-        return;
-    }
-
-    json out = state_.overlay_header_json();
-    out["ok"] = true;
-    res.set_content(out.dump(2), "application/json; charset=utf-8");
-});
-
-
-
-// --- API: Twitch stream info (draft + apply) ---
-// GET  /api/twitch/streaminfo -> {"title":"...","description":"...","category":"..."}
-// POST /api/twitch/streaminfo with JSON body -> persists draft and returns {"ok":true,...}
-// POST /api/twitch/streaminfo/apply -> applies current draft to Twitch channel (title + category)
-svr.Get("/api/twitch/streaminfo", [&](const httplib::Request&, httplib::Response& res) {
-    auto j = TwitchStreamInfoJsonSnapshot();
-    res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
-    res.set_header("Pragma", "no-cache");
-    res.set_content(j.dump(2), "application/json; charset=utf-8");
-});
-
-svr.Post("/api/twitch/streaminfo", [&](const httplib::Request& req, httplib::Response& res) {
-    json body;
-    try { body = json::parse(req.body); }
-    catch (...) {
-        res.status = 400;
-        res.set_content(R"({"ok":false,"error":"invalid_json"})", "application/json");
-        return;
-    }
-
-    TwitchStreamInfo tsi;
-    tsi.title = body.value("title", "");
-    tsi.description = body.value("description", "");
-    tsi.category = body.value("category", "");
-
-    {
-        LoadTwitchStreamInfoIfNeeded();
-        std::lock_guard<std::mutex> lk(g_tsi_mu);
-        g_tsi = tsi;
-    }
-
-    std::string err;
-    if (!SaveTwitchStreamInfo(tsi, &err)) {
-        res.status = 500;
-        json out = { {"ok", false}, {"error", err} };
-        res.set_content(out.dump(2), "application/json; charset=utf-8");
-        return;
-    }
-
-    json out = TwitchStreamInfoJsonSnapshot();
-    out["ok"] = true;
-    res.set_content(out.dump(2), "application/json; charset=utf-8");
-});
-
-svr.Post("/api/twitch/streaminfo/apply", [&](const httplib::Request&, httplib::Response& res) {
-    // Load current draft
-    TwitchStreamInfo tsi;
-    {
-        LoadTwitchStreamInfoIfNeeded();
-        std::lock_guard<std::mutex> lk(g_tsi_mu);
-        tsi = g_tsi;
-    }
-
-    // Read Twitch auth from config.json (prefer user access token for channel updates)
-    std::string login = config_.twitch_login;
-    std::string client_id = config_.twitch_client_id;
-    std::string bearer;
-    if (!ReadTwitchAuthFromConfigJson(login, client_id, bearer)) {
-        res.status = 400;
-        res.set_content(R"({"ok":false,"error":"twitch_auth_missing"})", "application/json; charset=utf-8");
-        return;
-    }
-
-    std::string broadcaster_id;
-    std::string err;
-    if (!TwitchResolveBroadcasterId(login, client_id, bearer, broadcaster_id, &err)) {
-        res.status = 502;
-        json out = { {"ok", false}, {"error", err} };
-        res.set_content(out.dump(2), "application/json; charset=utf-8");
-        return;
-    }
-
-    std::string game_id;
-    const std::string cat = Trim(tsi.category);
-    if (!cat.empty()) {
-        if (!TwitchResolveGameId(cat, client_id, bearer, game_id, &err)) {
-            res.status = 400;
-            json out = { {"ok", false}, {"error", err} };
-            res.set_content(out.dump(2), "application/json; charset=utf-8");
-            return;
-        }
-    }
-
-    // NOTE: Twitch channel updates do not support description via Helix.
-    // We'll update title + category only.
-    if (!TwitchUpdateChannel(broadcaster_id, client_id, bearer, tsi.title, game_id, &err)) {
-        res.status = 502;
-        json out = { {"ok", false}, {"error", err} };
-        res.set_content(out.dump(2), "application/json; charset=utf-8");
-        return;
-    }
-
-    json out = { {"ok", true}, {"broadcaster_id", broadcaster_id}, {"game_id", game_id} };
-    res.set_content(out.dump(2), "application/json; charset=utf-8");
-});
-
 
     // --- Overlay: special chat.html injection ---
     svr.Get("/overlay/chat.html", [&](const httplib::Request&, httplib::Response& res) {

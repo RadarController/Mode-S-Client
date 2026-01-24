@@ -336,9 +336,19 @@ AppState::BotSettings AppState::bot_settings_snapshot() const {
 }
 
 
+// --- Overlay header ---
 void AppState::set_overlay_header_storage_path(const std::string& path_utf8) {
     std::lock_guard<std::mutex> lk(mtx_);
     overlay_header_path_utf8_ = path_utf8;
+}
+
+static AppState::OverlayHeader ClampOverlayHeader(AppState::OverlayHeader h) {
+    // Basic sanity limits to avoid huge strings in overlays.
+    const std::size_t kMaxTitle = 200;
+    const std::size_t kMaxSubtitle = 200;
+    if (h.title.size() > kMaxTitle) h.title.resize(kMaxTitle);
+    if (h.subtitle.size() > kMaxSubtitle) h.subtitle.resize(kMaxSubtitle);
+    return h;
 }
 
 bool AppState::load_overlay_header_from_disk() {
@@ -349,83 +359,76 @@ bool AppState::load_overlay_header_from_disk() {
     }
     if (path.empty()) return false;
 
+    std::ifstream in(path, std::ios::binary);
+    if (!in.is_open()) return false;
+
+    std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    in.close();
+
     try {
-        std::ifstream f(std::filesystem::u8path(path));
-        if (!f.is_open()) return false;
-
-        nlohmann::json j;
-        f >> j;
-
-        OverlayHeaderSettings loaded{};
-        if (j.is_object()) {
-            if (j.contains("title") && j["title"].is_string()) loaded.title = j["title"].get<std::string>();
-            if (j.contains("subtitle") && j["subtitle"].is_string()) loaded.subtitle = j["subtitle"].get<std::string>();
-        }
+        auto j = nlohmann::json::parse(content);
+        OverlayHeader h;
+        h.title = j.value("title", "");
+        h.subtitle = j.value("subtitle", "");
+        h = ClampOverlayHeader(h);
 
         {
             std::lock_guard<std::mutex> lk(mtx_);
-            overlay_header_ = std::move(loaded);
+            overlay_header_ = h;
         }
         return true;
-    }
-    catch (...) {
+    } catch (...) {
         return false;
     }
 }
 
-bool AppState::set_overlay_header(const nlohmann::json& obj, std::string* err) {
-    if (!obj.is_object()) {
-        if (err) *err = "expected JSON object";
+bool AppState::set_overlay_header(const nlohmann::json& header_obj, std::string* err) {
+    OverlayHeader h;
+    try {
+        if (!header_obj.is_object()) {
+            if (err) *err = "expected JSON object";
+            return false;
+        }
+        h.title = header_obj.value("title", "");
+        h.subtitle = header_obj.value("subtitle", "");
+    } catch (...) {
+        if (err) *err = "invalid JSON";
         return false;
     }
 
-    OverlayHeaderSettings s;
+    h = ClampOverlayHeader(h);
+
     std::string path;
     {
         std::lock_guard<std::mutex> lk(mtx_);
-        s = overlay_header_;
+        overlay_header_ = h;
         path = overlay_header_path_utf8_;
     }
 
-    if (obj.contains("title")) {
-        if (!obj["title"].is_string()) { if (err) *err = "title must be string"; return false; }
-        s.title = obj["title"].get<std::string>();
-    }
-    if (obj.contains("subtitle")) {
-        if (!obj["subtitle"].is_string()) { if (err) *err = "subtitle must be string"; return false; }
-        s.subtitle = obj["subtitle"].get<std::string>();
-    }
-
-    // Clamp lengths to keep overlays sane.
-    if (s.title.size() > 120) s.title.resize(120);
-    if (s.subtitle.size() > 160) s.subtitle.resize(160);
-
-    {
-        std::lock_guard<std::mutex> lk(mtx_);
-        overlay_header_ = s;
-        path = overlay_header_path_utf8_;
-    }
-
-    // Persist best-effort
+    // Persist best-effort if configured.
     if (!path.empty()) {
-        try {
-            (void)AtomicWriteUtf8File(path, overlay_header_json().dump(2));
+        nlohmann::json out = {
+            {"title", h.title},
+            {"subtitle", h.subtitle}
+        };
+        if (!AtomicWriteUtf8File(path, out.dump(2))) {
+            // Keep in-memory update even if disk write fails.
+            if (err) *err = "failed to write file";
+            // still return true to avoid blocking UX
         }
-        catch (...) {}
     }
-
     return true;
 }
 
 nlohmann::json AppState::overlay_header_json() const {
     std::lock_guard<std::mutex> lk(mtx_);
-    nlohmann::json j = nlohmann::json::object();
-    j["title"] = overlay_header_.title;
-    j["subtitle"] = overlay_header_.subtitle;
-    return j;
+    return nlohmann::json{
+        {"title", overlay_header_.title},
+        {"subtitle", overlay_header_.subtitle}
+    };
 }
 
-AppState::OverlayHeaderSettings AppState::overlay_header_snapshot() const {
+AppState::OverlayHeader AppState::overlay_header_snapshot() const {
     std::lock_guard<std::mutex> lk(mtx_);
     return overlay_header_;
 }
