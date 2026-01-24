@@ -230,12 +230,12 @@
     }
   }
 
-  document.getElementById('btnReload').addEventListener('click', load);
-  document.getElementById('btnAdd').addEventListener('click', () => tbody.appendChild(rowTemplate()));
-  document.getElementById('btnSave').addEventListener('click', save);
-  document.getElementById('btnBack').addEventListener('click', () => {
-    window.location.href = '/app/index.html';
-  });
+    document.getElementById('btnReload').addEventListener('click', load);
+    document.getElementById('btnAdd').addEventListener('click', () => tbody.appendChild(rowTemplate()));
+    document.getElementById('btnSave').addEventListener('click', save);
+    document.getElementById('btnBackHome')?.addEventListener('click', () => {
+        window.location.href = '/app/settings.html';
+    });
 
   load();
 </script>

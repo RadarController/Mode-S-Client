@@ -42,7 +42,7 @@
                     <label for="twitchCategory">Category (Twitch lookup)</label>
 
                     <!-- User types here -->
-                    <input type="text"
+                    <input class="input" type="text"
                            id="twitchCategory"
                            placeholder="Start typing… e.g. Microsoft Flight Simulator"
                            autocomplete="off" />
@@ -55,7 +55,9 @@
                     </div>
 
                     <!-- Results dropdown -->
-                    <div id="twitchCategoryResults" class="typeahead" style="display:none;"></div>
+                    <div class="field field--typeahead">
+                        <div id="twitchCategoryResults" class="typeahead" style="display:none;"></div>
+                    </div>
                 </div>
 
                 <div class="field">

@@ -95,6 +95,35 @@ body{
 .card__title{font-weight:800}
 .card__hint{color:var(--muted); font-size:12px; margin-top:4px}
 
+/* ------------------------------
+   Form spacing improvements
+--------------------------------- */
+.card__body .field {
+    margin-bottom: 18px;
+}
+
+    .card__body .field:last-child {
+        margin-bottom: 0;
+    }
+
+.card__body .hint {
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--muted);
+}
+
+.card__body .field__row {
+    margin-top: 10px;
+}
+
+.card__body label {
+    display: block;
+    font-size: 12px;
+    color: var(--muted2);
+    margin-bottom: 6px;
+    font-weight: 700;
+}
+
 .platforms{
   display:grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -273,4 +302,112 @@ body{
   height:100%;
   object-fit:contain;
   display:block;
+}
+
+/* ------------------------------
+   Settings page (4-card grid)
+--------------------------------- */
+.settings-card__subtitle {
+    margin: 0;
+}
+
+.settings-card__body {
+    padding: 12px 14px 14px;
+}
+
+.settings-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+    align-items: stretch;
+}
+
+/* Force these links to look like cards (override global anchor styling) */
+a.settings-card-link,
+a.settings-card-link:visited {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    text-decoration: none;
+    color: inherit;
+    padding: 14px 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,.08);
+    background: rgba(17,26,54,.45);
+    min-height: 72px;
+    transition: transform .06s ease, background .12s ease, border-color .12s ease;
+}
+
+    a.settings-card-link:hover {
+        background: rgba(17,26,54,.65);
+        border-color: rgba(59,130,246,.35);
+    }
+
+    a.settings-card-link:active {
+        transform: translateY(1px);
+    }
+
+.settings-card-link__title {
+    font-weight: 900;
+    letter-spacing: .2px;
+}
+
+.settings-card-link__desc {
+    margin-top: 6px;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.35;
+}
+
+@media (max-width: 1100px) {
+    .settings-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 700px) {
+    .settings-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* ------------------------------
+   Twitch category typeahead
+--------------------------------- */
+.typeahead {
+    margin-top: 6px;
+    border: 1px solid rgba(255,255,255,.10);
+    border-radius: 12px;
+    background: rgba(15,23,48,.98);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+}
+
+.typeahead > div {
+    padding: 10px 12px;
+    cursor: pointer;
+    font-size: 13px;
+    border-bottom: 1px solid rgba(255,255,255,.06);
+}
+
+.typeahead > div:last-child {
+borde   r-bottom: none;
+}
+
+.typeahead > div:hover {
+backgr  ound: rgba(59,130,246,.18);
+}
+
+/* Twitch category field needs a positioning context */
+#twitchCategoryResults {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(100% + 6px);
+    z-index: 50;
+}
+
+/* Wrap the category area so the dropdown anchors to it */
+.field--typeahead {
+    position: relative;
 }
