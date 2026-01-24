@@ -43,6 +43,8 @@ private:
     void HandleMessage(const std::string& payload);
     void HandleNotification(const void* payload);
 
+    std::string BuildHumanReadableMessage(const std::string& subType, const nlohmann::json& ev) const;
+
     // Helix helpers
     std::string ResolveBroadcasterUserId();
     std::string ResolveTokenUserId();
