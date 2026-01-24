@@ -1,4 +1,5 @@
-**RadarController Mode-S Client** is a Windows desktop application built to power modern, data-driven ATC livestreams.  
+**RadarController Mode-S Client** is a Windows desktop application built to power modern, data-driven ATC livestreams.
+
 It acts as a **real-time aggregation, automation, and overlay engine** for aviation-themed streaming — combining chat, metrics, events, and external data sources into a single, extensible client.
 
 This project underpins the **RadarController** streaming ecosystem and the wider **StreamingATC.Live** platform.
