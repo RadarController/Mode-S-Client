@@ -1,11 +1,16 @@
 #!/usr/bin/env python
 # TikTok sidecar for Mode-S Client
-# FINAL SIMPLIFIED VERSION
+# FINAL SIMPLIFIED VERSION + Step 2 outbound attempt (send chat)
 #
 # Viewers logic:
 #   - viewers == room_info.user_count ONLY
 #   - No totals, no popularity, no heuristics
 #   - Matches TikTok website "watching now"
+#
+# Step 2:
+#   - C++ can send {"op":"send_chat","text":"..."} over stdin
+#   - We try to post it into TikTok LIVE chat (if supported by installed TikTokLive build)
+#   - We emit tiktok.send_result {ok:true/false} so C++ can log/debug
 
 import asyncio
 import json
@@ -15,6 +20,7 @@ import traceback
 import inspect
 from pathlib import Path
 from typing import Any, Dict, Optional, Callable, Tuple
+
 
 # ---------------- stdout pipe safety (Windows) ----------------
 def emit(obj: Dict[str, Any]) -> None:
@@ -29,12 +35,12 @@ def now_ts() -> float:
     return time.time()
 
 
-
 # ---------------- TikTok event aggregation ----------------
 # Aggregates rapid gift streaks into a single event to reduce spam.
 GIFT_AGG_WINDOW_S = 2.0  # finalize a streak after this much inactivity
 
 _gift_pending = {}  # key=(uniqueId,gift_id) -> dict(count,last_ts,name,user)
+
 
 def emit_event(event_type: str, user: str, message: str, ts_ms: int) -> None:
     emit({
@@ -46,6 +52,7 @@ def emit_event(event_type: str, user: str, message: str, ts_ms: int) -> None:
         "ts": ts_ms / 1000.0,
     })
 
+
 def _finalize_gift(key):
     g = _gift_pending.pop(key, None)
     if not g:
@@ -55,6 +62,7 @@ def _finalize_gift(key):
     count = int(g.get("count") or 1)
     ts_ms = int(g.get("last_ts_ms") or int(now_ts() * 1000))
     emit_event("gift", user, f"sent {name} x{count}", ts_ms)
+
 
 async def gift_aggregator_loop():
     while True:
@@ -67,6 +75,7 @@ async def gift_aggregator_loop():
                 to_close.append(key)
         for key in to_close:
             _finalize_gift(key)
+
 
 def emit_stats(
     live: bool,
@@ -108,7 +117,10 @@ def load_config() -> Dict[str, Any]:
 
 # ---------------- TikTokLive ----------------
 from TikTokLive import TikTokLiveClient
-from TikTokLive.events import ConnectEvent, DisconnectEvent, CommentEvent, FollowEvent, GiftEvent, LikeEvent, ShareEvent, SubscribeEvent
+from TikTokLive.events import (
+    ConnectEvent, DisconnectEvent, CommentEvent, FollowEvent,
+    GiftEvent, LikeEvent, ShareEvent, SubscribeEvent
+)
 
 try:
     from TikTokLive.client.errors import SignAPIError  # type: ignore
@@ -213,8 +225,6 @@ async def fetch_fresh_room_info(client: Any, room_id: Optional[int]) -> Tuple[Op
                 sig = None
 
             if sig is not None:
-                # If it looks like it expects at least 1 positional arg (beyond self),
-                # try with room_id first when available.
                 params = list(sig.parameters.values())
                 wants_arg = any(
                     p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD) and p.default is p.empty
@@ -237,10 +247,8 @@ async def fetch_fresh_room_info(client: Any, room_id: Optional[int]) -> Tuple[Op
             if info is not None:
                 return info, label
         except TypeError:
-            # Wrong arity; keep trying other candidates
             continue
         except Exception:
-            # Fetch failed; try next candidate
             continue
 
     return None, "none"
@@ -258,14 +266,29 @@ async def main_async() -> int:
         return 1
 
     client = TikTokLiveClient(unique_id=unique_id)
-    asyncio.create_task(gift_aggregator_loop())
     log("tiktok.info", "TikTokLiveClient created")
+
+    # ---- Step 2: set session cookies (if supported) ----
+    # You already have these keys in config.json, so we use them directly.
+    sessionid = (cfg.get("tiktok_sessionid") or "").strip()
+    sessionid_ss = (cfg.get("tiktok_sessionid_ss") or "").strip()
+
+    try:
+        # Many TikTokLive builds expose client.web.set_session_id(...)
+        if sessionid and hasattr(client, "web") and hasattr(client.web, "set_session_id"):
+            client.web.set_session_id(sessionid)
+            emit({"type": "tiktok.info", "ts": now_ts(), "message": "sessionid set"})
+        if sessionid_ss and hasattr(client, "web") and hasattr(client.web, "set_session_id_ss"):
+            client.web.set_session_id_ss(sessionid_ss)
+            emit({"type": "tiktok.info", "ts": now_ts(), "message": "sessionid_ss set"})
+    except Exception as e:
+        emit({"type": "tiktok.warn", "ts": now_ts(), "message": f"failed to set session cookies: {e}"})
+
+    asyncio.create_task(gift_aggregator_loop())
 
     last_room_id: Optional[int] = None
     last_viewers: int = 0
     dumped_missing_user_count = False
-
-    _room_poll_task: Optional[asyncio.Task] = None
 
     # ---------------- room info polling (SOURCE OF TRUTH) ----------------
     async def poll_room_info():
@@ -275,19 +298,17 @@ async def main_async() -> int:
             if last_room_id is None:
                 await asyncio.sleep(1)
                 continue
+
             await asyncio.sleep(5)
 
-            # Always try to fetch *fresh* room info each poll
             info, used = await fetch_fresh_room_info(client, last_room_id)
 
             if info is None:
-                # Do NOT fall back to cached attributes (they can be stale).
                 emit({
                     "type": "tiktok.warn",
                     "ts": now_ts(),
                     "message": "room_info_poll: no fresh room info method available",
                 })
-                # Still emit stats so downstream sees ongoing polls (viewers stays as last known).
                 emit_stats(True, last_viewers, note="room_info_poll_no_fresh_info", room_id=last_room_id)
                 continue
 
@@ -306,17 +327,69 @@ async def main_async() -> int:
                         })
                     except Exception:
                         pass
-                # Still emit stats each poll (keep last_viewers) so field is rewritten.
                 emit_stats(True, last_viewers, note=f"room_info_poll_missing_user_count:{used}", room_id=last_room_id)
                 continue
 
             last_viewers = int(viewers)
-
-            # IMPORTANT: emit every poll, not only when it changes
             emit_stats(True, last_viewers, note=f"room_info_poll:{used}", room_id=last_room_id)
-        # Start the poller once; it will wait until last_room_id is known.
-        if _room_poll_task is None or _room_poll_task.done():
-            _room_poll_task = asyncio.create_task(poll_room_info())
+
+    asyncio.create_task(poll_room_info())
+
+    # ---------------- Step 2: outbound chat via stdin ----------------
+    async def _call_maybe_await(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> bool:
+        try:
+            r = fn(*args, **kwargs)
+            if inspect.isawaitable(r):
+                await r
+            return True
+        except Exception as e:
+            emit({"type": "tiktok.warn", "ts": now_ts(), "message": f"send_chat error: {e}"})
+            return False
+
+    async def _try_send_chat(text: str) -> bool:
+        """
+        Attempt to send a message into TikTok LIVE chat.
+
+        This will only work if your installed TikTokLive build provides a send method
+        AND the session cookies are valid.
+        """
+        # Common historical method name:
+        if hasattr(client, "send_message"):
+            return await _call_maybe_await(getattr(client, "send_message"), text)
+
+        # Sometimes exposed on the web client:
+        if hasattr(client, "web"):
+            web = getattr(client, "web")
+            for name in ("send_message", "send_chat", "sendMessage", "sendChat"):
+                if hasattr(web, name):
+                    return await _call_maybe_await(getattr(web, name), text)
+
+        emit({"type": "tiktok.warn", "ts": now_ts(), "message": "sending chat not supported by this TikTokLive build"})
+        return False
+
+    async def stdin_loop():
+        while True:
+            line = await asyncio.to_thread(sys.stdin.readline)
+            if not line:
+                await asyncio.sleep(0.05)
+                continue
+            line = line.strip()
+            if not line:
+                continue
+
+            try:
+                cmd = json.loads(line)
+            except Exception:
+                continue
+
+            if cmd.get("op") == "send_chat":
+                text = str(cmd.get("text") or "").strip()
+                if not text:
+                    continue
+                ok = await _try_send_chat(text)
+                emit({"type": "tiktok.send_result", "ts": now_ts(), "ok": bool(ok), "text": text})
+
+    asyncio.create_task(stdin_loop())
 
     # ---------------- events ----------------
     @client.on(ConnectEvent)
@@ -324,7 +397,6 @@ async def main_async() -> int:
         nonlocal last_room_id
         last_room_id = getattr(event, "room_id", None)
         emit({"type": "tiktok.connected", "ts": now_ts()})
-        # Emit immediately (may be 0 until first poll refreshes)
         emit_stats(True, last_viewers, note="connected", room_id=last_room_id)
 
     @client.on(DisconnectEvent)
@@ -367,10 +439,10 @@ async def main_async() -> int:
         try:
             user_obj = getattr(event, "user", None)
             user = getattr(user_obj, "nickname", None) or getattr(user_obj, "unique_id", None) or "unknown"
-            unique_id = getattr(user_obj, "unique_id", None) or user
+            u_id = getattr(user_obj, "unique_id", None) or user
         except Exception:
             user = "unknown"
-            unique_id = "unknown"
+            u_id = "unknown"
 
         gift = getattr(event, "gift", None)
         gift_id = getattr(gift, "id", None) or getattr(event, "gift_id", None) or "unknown"
@@ -380,7 +452,7 @@ async def main_async() -> int:
         ts = now_ts()
         ts_ms = int(ts * 1000)
 
-        key = (str(unique_id), str(gift_id))
+        key = (str(u_id), str(gift_id))
         g = _gift_pending.get(key)
         if not g:
             g = {"count": 0, "last_ts": ts, "last_ts_ms": ts_ms, "gift_name": str(gift_name), "user": str(user)}
@@ -394,6 +466,7 @@ async def main_async() -> int:
 
         if bool(getattr(event, "repeat_end", False) or getattr(event, "repeatEnd", False)):
             _finalize_gift(key)
+
     # ---------------- connect with retry on signer failures ----------------
     attempt = 0
     while True:
@@ -428,73 +501,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-    # --- stream events (normalized into chat feed) ---
-    # Emit these as tiktok.chat so the existing C++ ingestion path can display them
-    # without requiring a new event API yet.
-    #
-    # Gifts are emitted only once when finalized (repeat_end) to avoid spam.
-
-    @client.on(FollowEvent)
-    async def on_follow(event: FollowEvent):
-        user_obj = getattr(event, "user", None)
-        user = getattr(user_obj, "nickname", None) or getattr(user_obj, "unique_id", None) or "Someone"
-        emit({
-            "type": "tiktok.chat",
-            "platform": "tiktok",
-            "user": user,
-            "message": "followed",
-            "ts_ms": now_ms(),
-            "id": f"tt_follow|{now_ms()}|{user}"
-        })
-
-    # gift aggregation: (user, gift_id) -> {name, count}
-    gift_state = {}
-
-    @client.on(GiftEvent)
-    async def on_gift(event: GiftEvent):
-        try:
-            user_obj = getattr(event, "user", None)
-            user = getattr(user_obj, "nickname", None) or getattr(user_obj, "unique_id", None) or "Someone"
-
-            gift = getattr(event, "gift", None)
-            gift_id = int(getattr(gift, "id", 0) or getattr(gift, "gift_id", 0) or 0)
-            gift_name = getattr(gift, "name", None) or "gift"
-
-            repeat_count = int(getattr(event, "repeat_count", 1) or 1)
-            repeat_end = bool(getattr(event, "repeat_end", True))
-            streaking = bool(getattr(gift, "streaking", False))
-
-            key = (user, gift_id)
-            st = gift_state.get(key, {"name": gift_name, "count": 0})
-            st["name"] = gift_name
-            st["count"] += repeat_count
-            gift_state[key] = st
-
-            if repeat_end or (not streaking):
-                total = st["count"]
-                gift_state.pop(key, None)
-
-                emit({
-                    "type": "tiktok.chat",
-                    "platform": "tiktok",
-                    "user": user,
-                    "message": f"sent {gift_name} x{total}",
-                    "ts_ms": now_ms(),
-                    "id": f"tt_gift|{now_ms()}|{user}|{gift_id}"
-                })
-        except Exception as e:
-            emit({"type": "tiktok.warn", "ts": now_ts(), "message": f"gift handler error: {e}"})
-
-    @client.on(SubscribeEvent)
-    async def on_subscribe(event: SubscribeEvent):
-        user_obj = getattr(event, "user", None)
-        user = getattr(user_obj, "nickname", None) or getattr(user_obj, "unique_id", None) or "Someone"
-        emit({
-            "type": "tiktok.chat",
-            "platform": "tiktok",
-            "user": user,
-            "message": "subscribed",
-            "ts_ms": now_ms(),
-            "id": f"tt_sub|{now_ms()}|{user}"
-        })

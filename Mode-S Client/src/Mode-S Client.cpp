@@ -1403,7 +1403,7 @@ switch (msg) {
         //   are treated as false here. The test endpoint can simulate roles.
         if (!botSubscribed) {
             botSubscribed = true;
-            chat.Subscribe([pChat=&chat, pState=&state, pTwitch=&twitch](const ChatMessage& m) {
+            chat.Subscribe([pChat=&chat, pState=&state, pTwitch=&twitch, pTikTok = &tiktok](const ChatMessage& m) {
                 // Avoid responding to ourselves.
                 if (m.user == "StreamingATC.Bot") return;
                 if (m.message.size() < 2 || m.message[0] != '!') return;
@@ -1511,6 +1511,12 @@ switch (msg) {
                 if (platform_lc == "twitch" && pTwitch) {
                     if (!pTwitch->SendPrivMsg(reply)) {
                         OutputDebugStringA("[BOT] Twitch send failed\n");
+                    }
+                }
+                // Send back to the origin platform (Tiktok).
+                if (platform_lc == "tiktok" && pTikTok) {
+                    if (!pTikTok->send_chat(reply)) {
+                        OutputDebugStringA("[BOT] TikTok send failed (sidecar)\n");
                     }
                 }
 
