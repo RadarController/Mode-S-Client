@@ -1,13 +1,13 @@
 #pragma once
 #include <atomic>
 #include <functional>
+#include <mutex>
 #include <string>
 #include <thread>
-#include <mutex>
 
 class ChatAggregator; // forward declaration
 
-// Minimal Twitch IRC-over-WebSocket client for receiving chat messages.
+// Minimal Twitch IRC-over-WebSocket client for receiving and sending chat messages.
 class TwitchIrcWsClient {
 public:
     using OnPrivMsg = std::function<void(const std::string& user, const std::string& message)>; // already sanitized
@@ -37,37 +37,42 @@ public:
         const std::string& channel, // without '#'
         OnPrivMsg cb);
 
-    // NEW: convenience overload to push received messages straight into ChatAggregator
+    // Convenience overload to push received messages straight into ChatAggregator
     bool start(const std::string& oauth_token_with_oauth_prefix,
         const std::string& nick,
         const std::string& channel, // without '#'
         ChatAggregator& chat);
 
     void stop();
-    
-    // Send a chat message to the currently-joined channel (PRIVMSG).
-    // Returns false if not connected or if the send fails.
-    bool SendPrivMsg(const std::string& message);
-
-    // Send a chat message to a specific channel (without or with leading '#').
-    bool SendPrivMsgTo(const std::string& channel, const std::string& message);
-
-void Stop() { stop(); }
+    void Stop() { stop(); }
 
     bool running() const { return m_running.load(); }
+
+    // ---------------------------------------------------------------------
+    // Sending (PRIVMSG)
+    // ---------------------------------------------------------------------
+    // Send a message to the channel this client joined (m_channel).
+    // Returns false if not connected/running or if WinHTTP send fails.
+    bool SendPrivMsg(const std::string& message_utf8);
+
+    // Send a message to a specific channel (without '#').
+    bool SendPrivMsgTo(const std::string& channel, const std::string& message_utf8);
 
 private:
     void worker(std::string oauth, std::string nick, std::string channel, OnPrivMsg cb);
 
-        // WebSocket handle used for sends (owned by worker thread; protected by m_send_mu)
-    void* m_ws = nullptr;
-    std::mutex m_send_mu;
+    // Internal raw send (expects a full IRC line WITHOUT trailing CRLF).
+    bool SendRawLine(const std::string& line_no_crlf);
 
-ChatAggregator* m_chat = nullptr; // optional sink for chat aggregation
+    ChatAggregator* m_chat = nullptr; // optional sink for chat aggregation
     std::string m_login;
     std::string m_access_token;
-    std::string m_channel;
+    std::string m_channel; // joined channel, without '#'
     std::string m_nick;
     std::atomic<bool> m_running{ false };
     std::thread m_thread;
+
+    // WebSocket handle (WinHTTP HINTERNET) stored as void* to avoid WinHTTP headers in this header.
+    mutable std::mutex m_ws_mu;
+    void* m_ws = nullptr;
 };

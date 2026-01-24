@@ -62,48 +62,47 @@ void TwitchIrcWsClient::stop() {
     if (m_thread.joinable()) m_thread.join();
 }
 
-
-
-bool TwitchIrcWsClient::SendPrivMsg(const std::string& message) {
-    return SendPrivMsgTo(m_channel, message);
-}
-
-static std::string NormalizeChannelName(std::string ch) {
-    // Accept "#radarcontroller" or "radarcontroller"
-    while (!ch.empty() && (ch.front()==' ' || ch.front()=='\t' || ch.front()=='\r' || ch.front()=='\n')) ch.erase(ch.begin());
-    while (!ch.empty() && (ch.back()==' ' || ch.back()=='\t' || ch.back()=='\r' || ch.back()=='\n')) ch.pop_back();
-    if (!ch.empty() && ch.front()=='#') ch.erase(ch.begin());
-    return ch;
-}
+// -----------------------------------------------------------------------------
+// Sending helpers
+// -----------------------------------------------------------------------------
 
 static std::string SanitizeIrcText(std::string s) {
-    // Prevent CRLF injection
+    // Prevent CRLF injection and keep messages on one IRC line.
     s.erase(std::remove(s.begin(), s.end(), '\r'), s.end());
     s.erase(std::remove(s.begin(), s.end(), '\n'), s.end());
+    // Twitch chat messages have limits; keep conservative.
+    const size_t kMax = 450;
+    if (s.size() > kMax) s.resize(kMax);
     return s;
 }
 
-bool TwitchIrcWsClient::SendPrivMsgTo(const std::string& channel, const std::string& message) {
-    if (!m_running.load()) return false;
-
-    std::string ch = NormalizeChannelName(channel);
-    if (ch.empty()) return false;
-
-    std::string msg = SanitizeIrcText(message);
-    if (msg.empty()) return false;
-
-    // Twitch chat max is larger, but keep conservative to avoid hard failures
-    if (msg.size() > 450) msg.resize(450);
-
-    std::lock_guard<std::mutex> lock(m_send_mu);
-    if (!m_ws) return false;
+bool TwitchIrcWsClient::SendRawLine(const std::string& line_no_crlf) {
+    std::lock_guard<std::mutex> lk(m_ws_mu);
+    if (!m_running.load() || !m_ws) return false;
 
     HINTERNET ws = (HINTERNET)m_ws;
-    std::string line = "PRIVMSG #" + ch + " :" + msg + "\r\n";
-    DWORD r = WinHttpWebSocketSend(ws, WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE,
-                                  (PVOID)line.data(), (DWORD)line.size());
-    return r == NO_ERROR;
+    std::string data = line_no_crlf;
+    data += "\r\n";
+
+    const DWORD rc = WinHttpWebSocketSend(ws, WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE,
+                                         (PVOID)data.data(), (DWORD)data.size());
+    return rc == NO_ERROR;
 }
+
+bool TwitchIrcWsClient::SendPrivMsg(const std::string& message_utf8) {
+    if (m_channel.empty()) return false;
+    return SendPrivMsgTo(m_channel, message_utf8);
+}
+
+bool TwitchIrcWsClient::SendPrivMsgTo(const std::string& channel, const std::string& message_utf8) {
+    if (channel.empty()) return false;
+    const std::string msg = SanitizeIrcText(message_utf8);
+    if (msg.empty()) return false;
+    return SendRawLine("PRIVMSG #" + channel + " :" + msg);
+}
+
+
+
 
 static std::string NormalizeRawAccessToken(std::string tok) {
     auto trim_ws = [](std::string s) -> std::string {
@@ -237,11 +236,11 @@ void TwitchIrcWsClient::worker(std::string oauth, std::string nick, std::string 
         WinHttpCloseHandle(hConnect); WinHttpCloseHandle(hSession);
         m_running.store(false); return;
     }
-    {
-        std::lock_guard<std::mutex> lock(m_send_mu);
-        m_ws = hWebSocket;
-    }
 
+    {
+        std::lock_guard<std::mutex> lk(m_ws_mu);
+        m_ws = (void*)hWebSocket;
+    }
 
     auto sendLine = [&](const std::string& line) -> bool {
         std::string data = line + "\r\n";
@@ -359,10 +358,12 @@ void TwitchIrcWsClient::worker(std::string oauth, std::string nick, std::string 
         if (pos > 0) recvBuf.erase(0, pos);
     }
 
-        {
-        std::lock_guard<std::mutex> lock(m_send_mu);
-        m_ws = nullptr;
+    
+    {
+        std::lock_guard<std::mutex> lk(m_ws_mu);
+        if (m_ws == (void*)hWebSocket) m_ws = nullptr;
     }
+
 WinHttpWebSocketClose(hWebSocket, WINHTTP_WEB_SOCKET_SUCCESS_CLOSE_STATUS, nullptr, 0);
     WinHttpCloseHandle(hWebSocket);
     WinHttpCloseHandle(hConnect);

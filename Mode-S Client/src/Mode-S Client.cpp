@@ -120,7 +120,7 @@ static constexpr UINT WM_APP_SPLASH_READY = WM_APP + 201;
 static constexpr UINT_PTR SPLASH_CLOSE_TIMER_ID = 1001;
 static constexpr UINT SPLASH_CLOSE_DELAY_MS = 1 * 1000; // test: keep splash for 1s after ready
 static const wchar_t* kAppDisplayName = L"StreamingATC.Live Mode-S Client";
-static const wchar_t* kAppVersion = L"v0.4.0"; // TODO: wire to resource/file version
+static const wchar_t* kAppVersion = L"v0.4.1"; // TODO: wire to resource/file version
 
 static HWND hGroupTikTok = nullptr, hGroupTwitch = nullptr, hGroupYouTube = nullptr;
 static HWND hLblTikTok = nullptr, hLblTwitch = nullptr, hLblYouTube = nullptr;
@@ -1398,7 +1398,7 @@ switch (msg) {
         // a command and inject a single bot reply back into the same feed.
         //
         // NOTE:
-        // - Replies are injected into the overlay feed AND (when possible) sent back to the origin platform.
+        // - This does NOT send messages to Twitch/YouTube/TikTok yet.
         // - Role data (mod/broadcaster) is not available at this stage, so both
         //   are treated as false here. The test endpoint can simulate roles.
         if (!botSubscribed) {
@@ -1506,14 +1506,11 @@ switch (msg) {
                 bot.ts_ms = (uint64_t)(now_ms_ll + 1);
                 pChat->Add(std::move(bot));
 
-                // Also send back to the origin platform (currently Twitch chat).
-                // Other platforms can be wired similarly via BotReplyRouter later.
-                if (platform_lc == "twitch") {
-                    const bool sent = pTwitch->SendPrivMsg(reply);
-                    if (!sent) {
-                        // Best-effort; keep overlay reply even if platform send fails.
-                        std::wstring w = L"[BOT] Twitch send failed\n";
-                        OutputDebugStringW(w.c_str());
+                // Also send back to the origin platform (Twitch first).
+                // This keeps overlay injection but makes the bot respond on-platform too.
+                if (platform_lc == "twitch" && pTwitch) {
+                    if (!pTwitch->SendPrivMsg(reply)) {
+                        OutputDebugStringA("[BOT] Twitch send failed\n");
                     }
                 }
 
