@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Overlay Title — RadarController</title>
+  <link rel="stylesheet" href="/app/app.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand__mark"><img src="/assets/icons/RClogo.svg" alt="RadarController" style="width:100%;height:100%;display:block;opacity:0.8;border-radius:inherit;" /></div>
+        <div class="brand__text">
+          <div class="brand__title">RadarController</div>
+          <div class="brand__subtitle">Mode‑S Client</div>
+        </div>
+      </div>
+
+      <div class="topbar__actions">
+        <button class="btn btn--ghost" id="btnBackHome">Back</button>
+      </div>
+    </header>
+
+    <main class="grid grid--single">
+      <section class="card card--wide">
+        <div class="card__head">
+          <div class="card__title">Overlay Title</div>
+          <div class="card__hint">Updates the header text used by your overlay (served via <span class="mono">/overlay</span>).</div>
+        </div>
+
+        <label class="field">
+          <span class="field__k">Title</span>
+          <div class="field__row">
+            <input class="input" type="text" id="overlayTitle" placeholder="e.g. VATSIM Event Night" />
+          </div>
+        </label>
+
+        <label class="field">
+          <span class="field__k">Subtitle</span>
+          <div class="field__row">
+            <input class="input" type="text" id="overlaySubtitle" placeholder="e.g. EGCC | Manchester" />
+          </div>
+        </label>
+
+        <div class="platform__actions" style="margin-top:12px;">
+          <button class="btn btn--primary" id="btnSaveOverlayTitle">Save</button>
+          <div id="overlayTitleStatus" class="overlay-title__status"></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="footer__left">Local UI at <span class="mono">/app</span> (served by the built‑in HTTP server).</div>
+      <div class="footer__right"><span class="mono" id="buildInfo">—</span></div>
+    </footer>
+  </div>
+
+  <script src="/app/app.js"></script>
+</body>
+</html>

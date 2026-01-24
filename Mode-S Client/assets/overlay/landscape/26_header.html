@@ -158,8 +158,8 @@
 <div class="bar">
   <div class="left">
     <span class="badge"></span>
-    <div class="title">{{HEADER_TITLE}}</div>
-    <div class="sub">{{HEADER_SUBTITLE}}</div>
+    <div class="title" id="hdrTitle">{{HEADER_TITLE}}</div>
+    <div class="sub" id="hdrSubtitle">{{HEADER_SUBTITLE}}</div>
   </div>
 
   <div class="right">
@@ -188,6 +188,42 @@
   const elViewers   = document.getElementById("viewers");
   const elFollowers = document.getElementById("followers");
   const elAircraft  = document.getElementById("aircraft");
+  // Overlay header live-update (same idea as metrics polling)
+  const HEADER_URL = "/api/overlay/header";
+  const elHdrTitle = document.getElementById("hdrTitle");
+  const elHdrSub   = document.getElementById("hdrSubtitle");
+  let lastHdrTitle = (elHdrTitle && elHdrTitle.textContent) ? elHdrTitle.textContent : "";
+  let lastHdrSub   = (elHdrSub && elHdrSub.textContent) ? elHdrSub.textContent : "";
+
+  async function pollHeader(){
+    while(true){
+      try{
+        const r = await fetch(HEADER_URL, { cache: "no-store" });
+        if(!r.ok) throw 0;
+        const j = await r.json();
+        const t = (j && typeof j.title === "string") ? j.title : "";
+        const s = (j && typeof j.subtitle === "string") ? j.subtitle : "";
+
+        if (elHdrTitle && t !== lastHdrTitle){
+          elHdrTitle.textContent = t;
+          lastHdrTitle = t;
+          // subtle bump to show change
+          elHdrTitle.classList.remove("bump");
+          void elHdrTitle.offsetWidth;
+          elHdrTitle.classList.add("bump");
+        }
+        if (elHdrSub && s !== lastHdrSub){
+          elHdrSub.textContent = s;
+          lastHdrSub = s;
+          elHdrSub.classList.remove("bump");
+          void elHdrSub.offsetWidth;
+          elHdrSub.classList.add("bump");
+        }
+      }catch{}
+      await sleep(POLL_MS);
+    }
+  }
+
 
   const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -289,6 +325,7 @@
     }
   }
   poll();
+  pollHeader();
 </script>
 </body>
 </html>
