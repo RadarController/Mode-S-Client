@@ -33,6 +33,10 @@ public:
 
     void Stop();
 
+    // Update the OAuth token at runtime (e.g., after TwitchAuth refresh).
+    // Expects either raw token, or strings prefixed with "oauth:" or "Bearer ".
+    void UpdateAccessToken(const std::string& userAccessToken);
+
 private:
     void Run();
     void ReceiveLoop(void* hWebSocket);
@@ -41,6 +45,7 @@ private:
 
     // Helix helpers
     std::string ResolveBroadcasterUserId();
+    std::string ResolveTokenUserId();
     bool SubscribeAll(const std::string& sessionId);
     bool CreateSubscription(const std::string& type,
                             const std::string& version,
@@ -60,6 +65,7 @@ private:
     std::string access_token_;
     std::string broadcaster_id_;      // login or numeric id (we resolve to user id)
     std::string broadcaster_user_id_; // numeric id
+    std::string token_user_id_;       // numeric id of the user represented by access_token_
 
     ChatCallback on_chat_event_;
     JsonCallback on_event_;

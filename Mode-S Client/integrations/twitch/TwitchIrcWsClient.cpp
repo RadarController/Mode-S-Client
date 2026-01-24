@@ -1,5 +1,6 @@
 #include "TwitchIrcWsClient.h"
 #include <windows.h>
+#include <cstdint>
 #include <string>
 #include <sstream>
 #include <unordered_map>
@@ -8,6 +9,9 @@
 #include <chrono>
 
 #include "chat/ChatAggregator.h"
+// ChatMessage is defined in AppState.h (shared between platform adapters).
+// Depending on include order/build layout, ChatAggregator.h may not bring it in.
+#include "AppState.h"
 
 #pragma comment(lib, "ws2_32.lib")
 
@@ -58,13 +62,115 @@ void TwitchIrcWsClient::stop() {
     if (m_thread.joinable()) m_thread.join();
 }
 
+// -----------------------------------------------------------------------------
+// Sending helpers
+// -----------------------------------------------------------------------------
+
+static std::string SanitizeIrcText(std::string s) {
+    // Prevent CRLF injection and keep messages on one IRC line.
+    s.erase(std::remove(s.begin(), s.end(), '\r'), s.end());
+    s.erase(std::remove(s.begin(), s.end(), '\n'), s.end());
+    // Twitch chat messages have limits; keep conservative.
+    const size_t kMax = 450;
+    if (s.size() > kMax) s.resize(kMax);
+    return s;
+}
+
+bool TwitchIrcWsClient::SendRawLine(const std::string& line_no_crlf) {
+    std::lock_guard<std::mutex> lk(m_ws_mu);
+    if (!m_running.load() || !m_ws) return false;
+
+    HINTERNET ws = (HINTERNET)m_ws;
+    std::string data = line_no_crlf;
+    data += "\r\n";
+
+    const DWORD rc = WinHttpWebSocketSend(ws, WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE,
+                                         (PVOID)data.data(), (DWORD)data.size());
+    return rc == NO_ERROR;
+}
+
+bool TwitchIrcWsClient::SendPrivMsg(const std::string& message_utf8) {
+    if (m_channel.empty()) return false;
+    return SendPrivMsgTo(m_channel, message_utf8);
+}
+
+bool TwitchIrcWsClient::SendPrivMsgTo(const std::string& channel, const std::string& message_utf8) {
+    if (channel.empty()) return false;
+    const std::string msg = SanitizeIrcText(message_utf8);
+    if (msg.empty()) return false;
+    return SendRawLine("PRIVMSG #" + channel + " :" + msg);
+}
+
+
+
+
+static std::string NormalizeRawAccessToken(std::string tok) {
+    auto trim_ws = [](std::string s) -> std::string {
+        while (!s.empty() && (s.front()==' ' || s.front()=='\t' || s.front()=='\n' || s.front()=='\r')) s.erase(s.begin());
+        while (!s.empty() && (s.back()==' ' || s.back()=='\t' || s.back()=='\n' || s.back()=='\r')) s.pop_back();
+        return s;
+    };
+    tok = trim_ws(tok);
+    if (tok.rfind("oauth:", 0) == 0) tok = tok.substr(6);
+    if (tok.rfind("Bearer ", 0) == 0) tok = trim_ws(tok.substr(7));
+    return tok;
+}
+
+bool TwitchIrcWsClient::StartAuthenticated(const std::string& login,
+                                          const std::string& access_token,
+                                          const std::string& channel)
+{
+    // Use previously configured aggregator (SetChatAggregator) if present.
+    if (m_chat) {
+        return StartAuthenticated(login, access_token, channel, *m_chat);
+    }
+
+    // Fall back to starting without aggregation.
+    std::string ch = channel;
+    if (login.empty() || access_token.empty() || ch.empty()) {
+        OutputDebugStringA("TWITCH IRC: missing login/token/channel, refusing to start\n");
+        return false;
+    }
+
+    m_login = login;
+    m_access_token = access_token;
+    m_channel = ch;
+    m_nick = login;
+
+    const std::string raw = NormalizeRawAccessToken(access_token);
+    return start(std::string("oauth:") + raw, login, ch,
+                 [](const std::string&, const std::string&) {
+                     // No sink configured.
+                 });
+}
+
+bool TwitchIrcWsClient::StartAuthenticated(const std::string& login,
+                                          const std::string& access_token,
+                                          const std::string& channel,
+                                          ChatAggregator& chat)
+{
+    std::string ch = channel;
+    if (login.empty() || access_token.empty() || ch.empty()) {
+        OutputDebugStringA("TWITCH IRC: missing login/token/channel, refusing to start\n");
+        return false;
+    }
+
+    m_login = login;
+    m_access_token = access_token;
+    m_channel = ch;
+    m_nick = login;
+
+    const std::string raw = NormalizeRawAccessToken(access_token);
+    return start(std::string("oauth:") + raw, login, ch, chat);
+}
+
+
 bool TwitchIrcWsClient::start(const std::string& oauth_token_with_oauth_prefix,
     const std::string& nick,
     const std::string& channel,
     OnPrivMsg cb) {
     if (m_running.load()) return false;
     if (oauth_token_with_oauth_prefix.empty() || nick.empty() || channel.empty()) return false;
-    m_chat = nullptr;
     m_running.store(true);
     m_thread = std::thread(&TwitchIrcWsClient::worker, this,
         oauth_token_with_oauth_prefix, nick, channel, std::move(cb));
@@ -131,6 +237,11 @@ void TwitchIrcWsClient::worker(std::string oauth, std::string nick, std::string 
         m_running.store(false); return;
     }
 
+    {
+        std::lock_guard<std::mutex> lk(m_ws_mu);
+        m_ws = (void*)hWebSocket;
+    }
+
     auto sendLine = [&](const std::string& line) -> bool {
         std::string data = line + "\r\n";
         return WinHttpWebSocketSend(hWebSocket, WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE,
@@ -139,6 +250,18 @@ void TwitchIrcWsClient::worker(std::string oauth, std::string nick, std::string 
 
     // Authenticate + request tags
     sendLine("CAP REQ :twitch.tv/tags twitch.tv/commands");
+    // Normalize oauth token for IRC: Twitch requires "oauth:<token>"
+    if (oauth.rfind("Bearer ", 0) == 0) {
+        oauth = oauth.substr(7);
+    }
+    while (!oauth.empty() && (oauth.back() == '\r' || oauth.back() == '\n' || oauth.back() == ' ' || oauth.back() == '\t')) oauth.pop_back();
+    size_t front = 0;
+    while (front < oauth.size() && (oauth[front] == ' ' || oauth[front] == '\t')) front++;
+    if (front) oauth = oauth.substr(front);
+    if (!oauth.empty() && oauth.rfind("oauth:", 0) != 0) {
+        oauth = "oauth:" + oauth;
+    }
+
     sendLine("PASS " + oauth);
     sendLine("NICK " + nick);
     sendLine("JOIN #" + channel);
@@ -235,7 +358,13 @@ void TwitchIrcWsClient::worker(std::string oauth, std::string nick, std::string 
         if (pos > 0) recvBuf.erase(0, pos);
     }
 
-    WinHttpWebSocketClose(hWebSocket, WINHTTP_WEB_SOCKET_SUCCESS_CLOSE_STATUS, nullptr, 0);
+    
+    {
+        std::lock_guard<std::mutex> lk(m_ws_mu);
+        if (m_ws == (void*)hWebSocket) m_ws = nullptr;
+    }
+
+WinHttpWebSocketClose(hWebSocket, WINHTTP_WEB_SOCKET_SUCCESS_CLOSE_STATUS, nullptr, 0);
     WinHttpCloseHandle(hWebSocket);
     WinHttpCloseHandle(hConnect);
     WinHttpCloseHandle(hSession);

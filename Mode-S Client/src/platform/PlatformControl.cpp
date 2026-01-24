@@ -229,6 +229,7 @@ bool StartOrRestartTwitchIrc(
     AppState& /*state*/,
     ChatAggregator& chat,
     const std::string& twitchLogin,
+    const std::string& accessTokenRaw,
     LogFn log)
 {
     std::string cleaned = SanitizeTwitchLogin(twitchLogin);
@@ -237,24 +238,27 @@ bool StartOrRestartTwitchIrc(
         return false;
     }
 
+    if (accessTokenRaw.empty()) {
+        if (log) log(L"TWITCH: no OAuth user token available; refusing to start IRC (replies require auth).");
+        twitch.stop();
+        return false;
+    }
+
     twitch.stop();
+    twitch.SetChatAggregator(&chat);
 
-    // Anonymous "justinfan" nick: avoids auth for reading public chat.
-    std::string nick = "justinfan" + std::to_string(10000 + (GetTickCount() % 50000));
-
-    bool ok = twitch.start(
-        "SCHMOOPIIE",
-        nick,
+    const bool ok = twitch.StartAuthenticated(
         cleaned,
-        chat);
+        accessTokenRaw,
+        cleaned
+    );
 
     if (log) {
-        log(ok ? L"TWITCH: started/restarted IRC client." :
-                 L"TWITCH: failed to start IRC client (already running or invalid parameters).");
+        log(ok ? L"TWITCH: started/restarted IRC client (authenticated)." :
+                 L"TWITCH: failed to start IRC client (authenticated).");
     }
     return ok;
 }
-
 void StopTikTok(TikTokSidecar& tiktok, AppState& state, HWND hwndMain, UINT uiMsg, LogFn log) {
     tiktok.stop();
     state.set_tiktok_live(false);

@@ -43,6 +43,7 @@ bool StartOrRestartTwitchIrc(
     AppState& state,
     ChatAggregator& chat,
     const std::string& twitchLogin,
+    const std::string& accessTokenRaw,
     LogFn log);
 
 // Stops helpers (also clears AppState live flags + viewers to avoid stale UI).

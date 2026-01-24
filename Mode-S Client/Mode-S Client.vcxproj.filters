@@ -105,6 +105,9 @@
     <ClInclude Include="integrations\twitch\TwitchAuth.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="src\bot\BotReplyRouter.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="integrations\obs\ObsWsClient.cpp">

@@ -120,7 +120,7 @@ static constexpr UINT WM_APP_SPLASH_READY = WM_APP + 201;
 static constexpr UINT_PTR SPLASH_CLOSE_TIMER_ID = 1001;
 static constexpr UINT SPLASH_CLOSE_DELAY_MS = 1 * 1000; // test: keep splash for 1s after ready
 static const wchar_t* kAppDisplayName = L"StreamingATC.Live Mode-S Client";
-static const wchar_t* kAppVersion = L"v0.3.6"; // TODO: wire to resource/file version
+static const wchar_t* kAppVersion = L"v0.4.1"; // TODO: wire to resource/file version
 
 static HWND hGroupTikTok = nullptr, hGroupTwitch = nullptr, hGroupYouTube = nullptr;
 static HWND hLblTikTok = nullptr, hLblTwitch = nullptr, hLblYouTube = nullptr;
@@ -1403,7 +1403,7 @@ switch (msg) {
         //   are treated as false here. The test endpoint can simulate roles.
         if (!botSubscribed) {
             botSubscribed = true;
-            chat.Subscribe([pChat=&chat, pState=&state](const ChatMessage& m) {
+            chat.Subscribe([pChat=&chat, pState=&state, pTwitch=&twitch](const ChatMessage& m) {
                 // Avoid responding to ourselves.
                 if (m.user == "StreamingATC.Bot") return;
                 if (m.message.size() < 2 || m.message[0] != '!') return;
@@ -1505,6 +1505,15 @@ switch (msg) {
                 bot.message = reply;
                 bot.ts_ms = (uint64_t)(now_ms_ll + 1);
                 pChat->Add(std::move(bot));
+
+                // Also send back to the origin platform (Twitch first).
+                // This keeps overlay injection but makes the bot respond on-platform too.
+                if (platform_lc == "twitch" && pTwitch) {
+                    if (!pTwitch->SendPrivMsg(reply)) {
+                        OutputDebugStringA("[BOT] Twitch send failed\n");
+                    }
+                }
+
             });
         }
 
@@ -1728,16 +1737,18 @@ switch (msg) {
             };
 
             opt.start_twitch = [&]() -> bool {
+                const std::string token = twitchAuth.GetAccessToken().value_or(token);
                 const bool ok = PlatformControl::StartOrRestartTwitchIrc(
                     twitch, state, chat,
                     config.twitch_login,
+                    token,
                     [](const std::wstring& s) { LogLine(s); });
 
                 if (ok) {
                     // Start EventSub (follows/subs/gifts) using OAuth token in config.json
                     twitchEventSub.Start(
                         config.twitch_client_id,
-                        ReadTwitchUserAccessToken(),
+                        token,
                         config.twitch_login,
 
                         // Do NOT use chat callback for EventSub
@@ -1782,6 +1793,31 @@ switch (msg) {
                 PlatformControl::StopYouTube(youtube, state, hwnd, (UINT)(WM_APP + 41), [](const std::wstring& s) { LogLine(s); });
                 youtubeChat.stop();
                 return true;
+            };
+
+            // Twitch OAuth (interactive) endpoints
+            // Provides /auth/twitch/start and /auth/twitch/callback so you can (re)authorize with chat:read/chat:edit.
+            opt.twitch_auth_build_authorize_url = [&](const std::string& redirect_uri, std::string* out_error) -> std::string {
+                std::string err;
+                const std::string url = twitchAuth.BuildAuthorizeUrl(redirect_uri, &err);
+                if (url.empty()) {
+                    if (out_error) *out_error = err;
+                    LogLine(ToW(std::string("TWITCHAUTH: BuildAuthorizeUrl failed: ") + err));
+                }
+                return url;
+            };
+
+            opt.twitch_auth_handle_callback = [&](const std::string& code,
+                                                  const std::string& state,
+                                                  const std::string& redirect_uri,
+                                                  std::string* out_error) -> bool {
+                 std::string err;
+                 const bool ok = twitchAuth.HandleOAuthCallback(code, state, redirect_uri, &err);
+                if (!ok) {
+                    if (out_error) *out_error = err;
+                    LogLine(ToW(std::string("TWITCHAUTH: OAuth callback failed: ") + err));
+                }
+                return ok;
             };
 
 
@@ -1832,6 +1868,27 @@ LogLine(L"TIKTOK: starting followers poller thread");
         {
             LogLine(L"TWITCH: refreshing OAuth token...");
             std::string auth_err;
+            // When TwitchAuth refreshes tokens, push the new access token into IRC + EventSub.
+            twitchAuth.on_tokens_updated = [&](const std::string& access, const std::string& /*refresh*/, const std::string& login) {
+                // EventSub uses Helix Bearer token (raw).
+                twitchEventSub.UpdateAccessToken(access);
+                twitchEventSub.Stop();
+                twitchEventSub.Start(
+                    config.twitch_client_id,
+                    access,
+                    config.twitch_login,
+                    [&](const ChatMessage& msg) { chat.Add(msg); }
+                );
+
+                // IRC needs oauth: prefix; TwitchIrcWsClient::StartAuthenticated normalizes.
+                PlatformControl::StartOrRestartTwitchIrc(
+                    twitch, state, chat,
+                    login,
+                    access,
+                    [](const std::wstring& s) { LogLine(s); }
+                );
+            };
+
             if (!twitchAuth.Start()) {
                 LogLine(L"TWITCH: OAuth token refresh/start failed (check config: twitch_client_id / twitch_client_secret / twitch.user_refresh_token)");
             } else {
@@ -1920,18 +1977,22 @@ case WM_COMMAND:
                     RestartTwitchHelixPoller("channel change");
                 }
             }
-            // Use overload that sinks directly into ChatAggregator
-            bool ok = twitch.start("SCHMOOPIIE",
-                std::string("justinfan" + std::to_string(10000 + (GetTickCount() % 50000))),
-                SanitizeTwitchLogin(ToUtf8(GetWindowTextWString(hTwitch))),
-                chat);
+            // Start authenticated IRC and sink messages directly into ChatAggregator
+            const std::string token = ReadTwitchUserAccessToken();
+
+            bool ok = twitch.StartAuthenticated(
+                SanitizeTwitchLogin(ToUtf8(GetWindowTextWString(hTwitch))),   // login / nick
+                token,                                                       // raw token from config (will be normalized)
+                SanitizeTwitchLogin(ToUtf8(GetWindowTextWString(hTwitch))),   // channel
+                chat
+            );
 
             if (ok) {
                 LogLine(L"TWITCH: started/restarted IRC client.");
                 // Start EventSub (follows/subs/gifts) using existing OAuth token in config.json
                 twitchEventSub.Start(
                     config.twitch_client_id,
-                    ReadTwitchUserAccessToken(),
+                    token,
                     config.twitch_login,
                     [&](const ChatMessage& msg)
                     {

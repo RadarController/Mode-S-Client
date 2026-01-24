@@ -257,6 +257,68 @@ void HttpServer::RegisterRoutes() {
         res.set_content(j.dump(2), "application/json; charset=utf-8");
         });
 
+    // --- Twitch OAuth (interactive) ---
+    // Enables one-time auth to obtain a refresh token with additional scopes (e.g. chat:read/chat:edit).
+    // Requires the main app to wire opt_.twitch_auth_build_authorize_url and opt_.twitch_auth_handle_callback.
+    //
+    // Start here:
+    //   http://localhost:17845/auth/twitch/start
+    // Callback (handled automatically by browser):
+    //   http://localhost:17845/auth/twitch/callback
+    svr.Get("/auth/twitch/start", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!opt_.twitch_auth_build_authorize_url) {
+            SafeOutputLog(log_, L"HTTP: Twitch OAuth routes NOT enabled (callbacks not wired)");
+            res.status = 404;
+            res.set_content("not wired", "text/plain; charset=utf-8");
+            return;
+        }
+
+        // Build redirect URI based on the Host header (so localhost vs 127.0.0.1 both work).
+        std::string host = req.get_header_value("Host");
+        if (host.empty()) host = "localhost:" + std::to_string(opt_.port);
+        const std::string redirect_uri = std::string("http://") + host + "/auth/twitch/callback";
+
+        std::string err;
+        const std::string url = opt_.twitch_auth_build_authorize_url(redirect_uri, &err);
+        if (url.empty()) {
+            SafeOutputLog(log_, L"HTTP: /auth/twitch/start failed to build authorize URL");
+            res.status = 500;
+            res.set_content(std::string("BuildAuthorizeUrl failed: ") + err, "text/plain; charset=utf-8");
+            return;
+        }
+
+        // Redirect the browser to Twitch.
+        res.status = 302;
+        res.set_header("Location", url);
+    });
+
+    svr.Get("/auth/twitch/callback", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!opt_.twitch_auth_handle_callback) {
+            SafeOutputLog(log_, L"HTTP: Twitch OAuth routes NOT enabled (callbacks not wired)");
+            res.status = 404;
+            res.set_content("not wired", "text/plain; charset=utf-8");
+            return;
+        }
+
+        const std::string code = req.get_param_value("code");
+        const std::string state = req.get_param_value("state");
+
+        std::string host = req.get_header_value("Host");
+        if (host.empty()) host = "localhost:" + std::to_string(opt_.port);
+        const std::string redirect_uri = std::string("http://") + host + "/auth/twitch/callback";
+
+        std::string err;
+        const bool ok = opt_.twitch_auth_handle_callback(code, state, redirect_uri, &err);
+        if (!ok) {
+            SafeOutputLog(log_, L"HTTP: /auth/twitch/callback token exchange failed");
+            res.status = 500;
+            res.set_content(std::string("OAuth callback failed: ") + err, "text/plain; charset=utf-8");
+            return;
+        }
+
+        res.set_content("OK - Twitch auth completed. You can close this tab.", "text/plain; charset=utf-8");
+    });
+
     // --- API: settings save (used by /app UI) ---
     // Accept both legacy and newer paths.
     auto handle_settings_save = [&](const httplib::Request& req, httplib::Response& res) {

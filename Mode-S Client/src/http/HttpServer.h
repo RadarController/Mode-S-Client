@@ -28,6 +28,15 @@ public:
         std::function<bool()> stop_twitch;
         std::function<bool()> start_youtube;
         std::function<bool()> stop_youtube;
+
+        // Twitch OAuth (interactive) endpoints (optional)
+        // /auth/twitch/start will call twitch_auth_build_authorize_url(redirect_uri)
+        // /auth/twitch/callback will call twitch_auth_handle_callback(code, state, redirect_uri)
+        std::function<std::string(const std::string& redirect_uri, std::string* out_error)> twitch_auth_build_authorize_url;
+        std::function<bool(const std::string& code,
+                           const std::string& state,
+                           const std::string& redirect_uri,
+                           std::string* out_error)> twitch_auth_handle_callback;
     };
 
     using LogFn = std::function<void(const std::wstring&)>;
