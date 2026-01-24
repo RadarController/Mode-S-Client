@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Twitch Stream Info — RadarController</title>
+  <link rel="stylesheet" href="/app/app.css" />
+</head>
+<body>
+  <div class="app" id="twitchStreamPage">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand__mark"><img src="/assets/icons/RClogo.png" alt=""></div>
+        <div class="brand__text">
+          <div class="brand__name">RadarController</div>
+          <div class="brand__tag">Mode‑S Client</div>
+        </div>
+      </div>
+
+      <div class="topbar__actions">
+        <button class="btn" id="btnBackHome">Back</button>
+      </div>
+    </header>
+
+    <main class="grid grid--double">
+        <section class="card">
+            <div class="card__head">
+                <h2>Twitch Stream Info</h2>
+                <p class="muted">
+                    Update Twitch channel title and category.
+                    (Twitch does not support a stream description via Helix; we store it for YouTube phase.)
+                </p>
+            </div>
+
+            <div class="card__body">
+                <div class="field">
+                    <label>Title</label>
+                    <input class="input" type="text" id="twitchTitle" placeholder="e.g. EGCC Director | VATSIM">
+                </div>
+
+                <div class="field">
+                    <label>Category (game name)</label>
+                    <input class="input" type="text" id="twitchCategory" placeholder="e.g. Microsoft Flight Simulator">
+                    <div class="hint">This is looked up on Twitch to find the correct <code>game_id</code>.</div>
+                </div>
+
+                <div class="field">
+                    <label>Description (saved for later)</label>
+                    <textarea class="input" id="twitchDescription" rows="4" placeholder="Used for YouTube in Phase 2."></textarea>
+                </div>
+
+                <div class="field__row">
+                    <button class="btn" id="btnSaveTwitchDraft">Save Draft</button>
+                    <button class="btn btn--primary" id="btnApplyTwitch">Update Twitch Now</button>
+                </div>
+            </div>
+        </section>
+        <section class="card card--muted">
+            <div class="card__head">
+                <h2>YouTube Stream Info</h2>
+                <p class="muted">Coming in Phase 2.</p>
+            </div>
+        </section>
+    </main>
+  </div>
+
+  <script src="/app/app.js"></script>
+</body>
+</html>

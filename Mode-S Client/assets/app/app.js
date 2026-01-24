@@ -265,87 +265,21 @@ async function pollLog(){
   }
 }
 
-
-// -----------------------------------------------------------------------------
-// Overlay Title (Header) page helpers
-// -----------------------------------------------------------------------------
-async function loadOverlayTitle(){
-  try {
-    const res = await fetch("/api/overlay/header");
-    if(!res.ok) throw new Error("HTTP " + res.status);
-    const data = await res.json();
-    const t = document.getElementById("overlayTitle");
-    const s = document.getElementById("overlaySubtitle");
-    if (t) t.value = data.title || "";
-    if (s) s.value = data.subtitle || "";
-  } catch (e) {
-    console.warn("Failed to load overlay title", e);
-    const status = document.getElementById("overlayTitleStatus");
-    if (status) status.textContent = "Failed to load";
-  }
-}
-
-async function saveOverlayTitle(){
-  const status = document.getElementById("overlayTitleStatus");
-  if (status) status.textContent = "Saving...";
-  try {
-    const body = {
-      title: document.getElementById("overlayTitle")?.value || "",
-      subtitle: document.getElementById("overlaySubtitle")?.value || ""
-    };
-    const res = await fetch("/api/overlay/header", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body)
-    });
-    if(!res.ok) throw new Error("HTTP " + res.status);
-    if (status) status.textContent = "Saved";
-  } catch (e) {
-    console.error(e);
-    if (status) status.textContent = "Error saving";
-  }
-}
-
-function wireOverlayTitlePage(){
-  // Only activate on overlay_title.html (elements present)
-  if (!document.getElementById("overlayTitle")) return;
-
-  document.getElementById("btnSaveOverlayTitle")?.addEventListener("click", saveOverlayTitle);
-  document.getElementById("btnBackHome")?.addEventListener("click", () => {
-    window.location.href = "/app/";
-  });
-
-  loadOverlayTitle();
-}
-
-function wireSettingsPage(){
-  // Only run on /app/settings.html
-  if (!document.getElementById("settingsPage")) return;
-
-  $("#btnBackHome")?.addEventListener("click", () => {
-    window.location.href = "/app/";
-  });
-
-  $("#btnGoBot")?.addEventListener("click", () => {
-    window.location.href = "/app/bot.html";
-  });
-
-  $("#btnGoOverlayTitle")?.addEventListener("click", () => {
-    window.location.href = "/app/overlay_title.html";
-  });
-}
-
 function wireActions(){
   $("#btnOpenChat")?.addEventListener("click", () => {
     window.open("/app/chat.html", "_blank", "noopener");
   });
-  
-  $("#btnOpenSettings")?.addEventListener("click", () => {
-    // Settings hub
-    window.location.href = "/app/settings.html";
+
+   $("#btnOpenSettings")?.addEventListener("click", () => {
+     window.location.href = "/app/settings.html";
+   });
+
+  $("#btnOpenBot")?.addEventListener("click", () => {
+    // Navigate within the same WebView/app window.
+    window.location.href = "/app/bot.html";
   });
 
-$("#btnStartAll")?.addEventListener("click", async () => {
+  $("#btnStartAll")?.addEventListener("click", async () => {
     logLine("start-all", "starting all platforms");
     const platforms = ["tiktok", "twitch", "youtube"];
     for (const p of platforms) {
@@ -358,6 +292,12 @@ $("#btnStartAll")?.addEventListener("click", async () => {
     }
     logLine("start-all", "done");
   });
+
+
+  $("#btnSave")?.addEventListener("click", async () => {
+    await saveSettingsFromInputs();
+  });
+
   $$(".platform").forEach(card => {
     const platform = card.dataset.platform;
     card.addEventListener("click", async (ev) => {
@@ -395,6 +335,9 @@ $("#btnStartAll")?.addEventListener("click", async () => {
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
+  wireSmartBackButtons();
+  wireSettingsHubPage();
+  wireTwitchStreamInfoPage();
   wireActions();
   await loadSettings();
   await pollMetrics();
@@ -403,32 +346,99 @@ document.addEventListener("DOMContentLoaded", async () => {
   setInterval(pollLog, 1000);
 });
 
-document.addEventListener("DOMContentLoaded", wireOverlayTitlePage);
 
+function wireSettingsHubPage(){
+  const root = document.getElementById("settingsPage");
+  if(!root) return;
 
-document.addEventListener("DOMContentLoaded", wireSettingsPage);
+  $("#btnGoBot")?.addEventListener("click", () => {
+    window.location.href = "/app/bot.html";
+  });
 
+  $("#btnGoOverlayTitle")?.addEventListener("click", () => {
+    window.location.href = "/app/overlay_title.html";
+  });
 
-// ------------------------------------------------------------
-// Smart Back routing: if user came from Settings hub, go back there.
-// Otherwise fall back to main UI.
-// ------------------------------------------------------------
-(function wireSmartBackButtons(){
-  function target() {
-    try {
+  $("#btnGoTwitchStream")?.addEventListener("click", () => {
+    window.location.href = "/app/twitch_stream.html";
+  });
+}
+
+// Smart back routing: if user came from Settings hub, go back there.
+function wireSmartBackButtons(){
+  function target(){
+    try{
       const ref = document.referrer || "";
       if (ref.includes("/app/settings.html")) return "/app/settings.html";
-    } catch(_) {}
+    }catch(_){}
     return "/app/index.html";
   }
+  // bot.html uses btnBack; other pages use btnBackHome
+  $("#btnBack")?.addEventListener("click", () => { window.location.href = target(); });
+  $("#btnBackHome")?.addEventListener("click", () => { window.location.href = target(); });
+}
 
-  const btnBack = document.getElementById("btnBack"); // bot.html
-  if (btnBack) {
-    btnBack.addEventListener("click", () => { window.location.href = target(); });
+function wireTwitchStreamInfoPage(){
+  const root = document.getElementById("twitchStreamPage");
+  if(!root) return;
+
+  const elTitle = $("#twitchStreamTitle");
+  const elCat   = $("#twitchStreamCategory");
+  const elDesc  = $("#twitchStreamDescription");
+  const elSave  = $("#btnSaveTwitchStream");
+  const elApply = $("#btnApplyTwitchStream");
+  const elStatus= $("#twitchStreamStatus");
+
+  const setStatus = (t)=>{ if(elStatus) elStatus.textContent = t||""; };
+
+  async function load(){
+    try{
+      const j = await apiGet("/api/twitch/streaminfo");
+      if(elTitle) elTitle.value = j.title || "";
+      if(elCat) elCat.value = j.category || "";
+      if(elDesc) elDesc.value = j.description || "";
+      setStatus("");
+    }catch(e){
+      console.warn("Failed to load Twitch stream info", e);
+      setStatus("Could not load current draft");
+    }
   }
 
-  const btnBackHome = document.getElementById("btnBackHome"); // overlay_title.html + settings.html
-  if (btnBackHome) {
-    btnBackHome.addEventListener("click", () => { window.location.href = target(); });
+  async function save(){
+    setStatus("Saving…");
+    try{
+      const body = {
+        title: elTitle ? elTitle.value : "",
+        category: elCat ? elCat.value : "",
+        description: elDesc ? elDesc.value : ""
+      };
+      const j = await apiPost("/api/twitch/streaminfo", body);
+      if(j && j.ok === false) throw new Error(j.error || "ok=false");
+      setStatus("Saved");
+      return true;
+    }catch(e){
+      console.error(e);
+      setStatus("Error saving");
+      return false;
+    }
   }
-})();
+
+  async function apply(){
+    setStatus("Updating Twitch…");
+    try{
+      const ok = await save();
+      if(!ok) return;
+      const j = await apiPost("/api/twitch/streaminfo/apply");
+      if(j && j.ok === false) throw new Error(j.error || "ok=false");
+      setStatus("Updated on Twitch");
+    }catch(e){
+      console.error(e);
+      setStatus("Error updating Twitch");
+    }
+  }
+
+  elSave?.addEventListener("click", save);
+  elApply?.addEventListener("click", apply);
+
+  load();
+}

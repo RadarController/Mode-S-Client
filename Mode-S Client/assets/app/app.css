@@ -70,7 +70,13 @@ body{
   margin-top:16px;
 }
 
-.grid--single{grid-template-columns:1fr}
+.grid--single{
+    grid-template-columns:1fr
+}
+
+.grid--double {
+    grid-template-columns: 1fr 1fr;
+}
 
 .card{
   background:linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.03));
@@ -78,6 +84,7 @@ body{
   border-radius:var(--r);
   box-shadow:var(--shadow);
   overflow:hidden;
+  padding: 12px;
 }
 .card--wide{grid-column:1 / 2}
 
@@ -257,50 +264,13 @@ body{
   .topbar__actions{margin-left:auto}
 }
 
-
-/* Overlay Title page */
-.overlay-title__status{ margin-top:8px; font-size:12px; opacity:0.85; }
-
-/* --- Settings hub tweaks --- */
-.settings-card__body{
-  padding:14px;
+/* Constrain logo image inside the brand mark (prevents huge image overflow) */
+.brand__mark{
+  overflow:hidden;
 }
-.settings-card__subtitle{
-  margin-top:6px;
-}
-.settings-card__actions{
-  gap:12px;
-}
-
-/* --- Settings hub card layout --- */
-.settings-grid{
-  display:grid;
-  grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
-  gap:16px;
-}
-
-.settings-card-link{
+.brand__mark img{
+  width:100%;
+  height:100%;
+  object-fit:contain;
   display:block;
-  padding:16px;
-  border-radius:12px;
-  background:rgba(255,255,255,0.04);
-  text-decoration:none;
-  color:inherit;
-  transition:background .15s ease, transform .15s ease;
-}
-
-.settings-card-link:hover{
-  background:rgba(255,255,255,0.07);
-  transform:translateY(-1px);
-}
-
-.settings-card-link__title{
-  font-size:16px;
-  font-weight:600;
-  margin-bottom:6px;
-}
-
-.settings-card-link__desc{
-  font-size:13px;
-  opacity:.8;
 }
