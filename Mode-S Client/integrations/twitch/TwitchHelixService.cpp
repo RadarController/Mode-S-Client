@@ -463,7 +463,7 @@ bool TwitchHelixSearchCategories(
     out.clear();
 
 
-DebugLog(L"TWITCH: SearchCategories query='" + ToW(query) + L"'");
+    DebugLog(L"TWITCH: SearchCategories query='" + ToW(query) + L"'");
     std::string cid, tok;
     if (!TryReadTwitchClientAndAccessTokenFromConfigJson(cid, tok)) {
         DebugLog(L"TWITCH: SearchCategories failed: missing credentials in config.json");
@@ -477,7 +477,8 @@ DebugLog(L"TWITCH: SearchCategories query='" + ToW(query) + L"'");
         if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
             c == '-' || c == '_' || c == '.' || c == '~') {
             enc << c;
-        } else {
+        }
+        else {
             enc << '%' << std::uppercase << std::hex << (int)c << std::nouppercase << std::dec;
         }
     }
@@ -490,7 +491,7 @@ DebugLog(L"TWITCH: SearchCategories query='" + ToW(query) + L"'");
     hdr << L"Accept: application/json\r\n";
 
     auto r = WinHttpRequest(L"GET", L"api.twitch.tv", INTERNET_DEFAULT_HTTPS_PORT, path,
-                            hdr.str(), "", true);
+        hdr.str(), "", true);
 
     if (r.winerr != 0) {
         DebugLog(L"TWITCH: SearchCategories WinHTTP error=" + std::to_wstring((int)r.winerr));
@@ -504,8 +505,11 @@ DebugLog(L"TWITCH: SearchCategories query='" + ToW(query) + L"'");
 
     try {
         auto j = json::parse(r.body);
-        if (!j.contains("data") || !j["data"].is_array()) DebugLog(L"TWITCH: SearchCategories OK results=" + std::to_wstring((int)out.size()));
-        return true;
+
+        if (!j.contains("data") || !j["data"].is_array()) {
+            DebugLog(L"TWITCH: SearchCategories OK but JSON missing 'data' array");
+            return true; // valid response, just no results we can read
+        }
 
         for (const auto& it : j["data"]) {
             TwitchCategory c;
@@ -514,6 +518,8 @@ DebugLog(L"TWITCH: SearchCategories query='" + ToW(query) + L"'");
             if (!c.id.empty() && !c.name.empty())
                 out.push_back(std::move(c));
         }
+
+        DebugLog(L"TWITCH: SearchCategories OK results=" + std::to_wstring((int)out.size()));
         return true;
     }
     catch (...) {
@@ -522,4 +528,3 @@ DebugLog(L"TWITCH: SearchCategories query='" + ToW(query) + L"'");
         return false;
     }
 }
-
