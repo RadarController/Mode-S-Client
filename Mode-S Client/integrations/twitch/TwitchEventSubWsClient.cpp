@@ -912,6 +912,12 @@ void TwitchEventSubWsClient::HandleNotification(const void* payloadPtr)
         int count = ev.value("total", 1);
         message = "gifted " + std::to_string(count) + " subs";
     }
+    else if (subType == "channel.raid")
+    {
+        user = ev.value("from_broadcaster_user_name", ev.value("from_broadcaster_user_login", ""));
+        int viewers = ev.value("viewers", 0);
+        message = "raided with " + std::to_string(viewers) + " viewers";
+    }
     else
     {
         return;
@@ -929,6 +935,58 @@ void TwitchEventSubWsClient::HandleNotification(const void* payloadPtr)
         on_event_(evOut);
     }
 
-    // IMPORTANT: Do NOT forward EventSub events into chat.
-    // (Remove on_chat_event_ usage here.)
+    // Forward EventSub events into chat as well (human-readable).
+    if (on_chat_event_) {
+        ChatMessage m{};
+        m.platform = "twitch";
+        m.user = user;
+        m.message = BuildHumanReadableMessage(subType, ev);
+        m.ts_ms = ts;
+        on_chat_event_(m);
+    }
 }
+
+std::string TwitchEventSubWsClient::BuildHumanReadableMessage(const std::string& subType, const nlohmann::json& ev) const
+{
+    // Keep this short and readable in the chat overlay.
+    if (subType == "channel.follow")
+    {
+        const std::string user = ev.value("user_name", ev.value("user_login", "someone"));
+        return "👋 " + user + " followed";
+    }
+    if (subType == "channel.subscribe")
+    {
+        const std::string user = ev.value("user_name", ev.value("user_login", "someone"));
+        // Some payloads contain tier/is_gift; keep optional.
+        const std::string tier = ev.value("tier", "");
+        if (!tier.empty())
+        {
+            // Tier comes as "1000/2000/3000" for Twitch; make it nicer.
+            std::string niceTier = tier;
+            if (tier == "1000") niceTier = "Tier 1";
+            else if (tier == "2000") niceTier = "Tier 2";
+            else if (tier == "3000") niceTier = "Tier 3";
+            return "🎉 " + user + " subscribed (" + niceTier + ")";
+        }
+        return "🎉 " + user + " subscribed";
+    }
+    if (subType == "channel.subscription.gift")
+    {
+        const std::string user = ev.value("user_name", ev.value("user_login", "someone"));
+        const int total = ev.value("total", 1);
+        return "🎁 " + user + " gifted " + std::to_string(total) + (total == 1 ? " sub" : " subs");
+    }
+    if (subType == "channel.raid")
+    {
+        const std::string from = ev.value("from_broadcaster_user_name", ev.value("from_broadcaster_user_login", "someone"));
+        const int viewers = ev.value("viewers", 0);
+        return "🚨 RAID! " + from + " raided with " + std::to_string(viewers) + " viewers";
+    }
+
+    // Fallback: use any message field if present.
+    const std::string msg = ev.value("message", "");
+    if (!msg.empty()) return "📣 " + msg;
+    return "📣 Twitch event";
+}
+
+

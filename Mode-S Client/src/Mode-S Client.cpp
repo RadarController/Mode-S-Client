@@ -1751,10 +1751,13 @@ switch (msg) {
                         token,
                         config.twitch_login,
 
-                        // Do NOT use chat callback for EventSub
-                        nullptr,
+                        // EventSub -> Chat
+                        [&](const ChatMessage& msg)
+                        {
+                            chat.Add(msg);
+                        },
 
-                        // EventSub events
+                        // EventSub -> Alerts overlay
                         [&](const nlohmann::json& ev)
                         {
                             state.add_twitch_eventsub_event(ev);
@@ -1877,7 +1880,11 @@ LogLine(L"TIKTOK: starting followers poller thread");
                     config.twitch_client_id,
                     access,
                     config.twitch_login,
-                    [&](const ChatMessage& msg) { chat.Add(msg); }
+                    [&](const ChatMessage& msg) { chat.Add(msg); },
+                    [&](const nlohmann::json& ev)
+                    {
+                        state.add_twitch_eventsub_event(ev);
+                    }
                 );
 
                 // IRC needs oauth: prefix; TwitchIrcWsClient::StartAuthenticated normalizes.
@@ -1997,6 +2004,10 @@ case WM_COMMAND:
                     [&](const ChatMessage& msg)
                     {
                         chat.Add(msg);
+                    },
+                    [&](const nlohmann::json& ev)
+                    {
+                        state.add_twitch_eventsub_event(ev);
                     });
             }
             else {
