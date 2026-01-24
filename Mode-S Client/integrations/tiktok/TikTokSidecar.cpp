@@ -14,15 +14,20 @@ bool TikTokSidecar::start(const std::wstring& pythonExe,
     sa.nLength = sizeof(sa);
     sa.bInheritHandle = TRUE;
 
+    // Pipe for Python stdout/stderr -> C++ reads
     if (!CreatePipe(&hStdOutRd_, &hStdOutWr_, &sa, 0)) return false;
     SetHandleInformation(hStdOutRd_, HANDLE_FLAG_INHERIT, 0);
+
+    // Pipe for C++ -> Python stdin
+    if (!CreatePipe(&hStdInRd_, &hStdInWr_, &sa, 0)) return false;
+    SetHandleInformation(hStdInWr_, HANDLE_FLAG_INHERIT, 0);
 
     STARTUPINFOW si{};
     si.cb = sizeof(si);
     si.dwFlags |= STARTF_USESTDHANDLES;
     si.hStdOutput = hStdOutWr_;
     si.hStdError = hStdOutWr_;
-    si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+    si.hStdInput = hStdInRd_; // << key change (Python reads from our pipe)
 
     std::wstring cmd = L"\"" + pythonExe + L"\" \"" + scriptPath + L"\"";
     std::vector<wchar_t> cmdBuf(cmd.begin(), cmd.end());
@@ -32,8 +37,6 @@ bool TikTokSidecar::start(const std::wstring& pythonExe,
     if (!CreateProcessW(nullptr, cmdBuf.data(), nullptr, nullptr, TRUE,
         CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi_))
     {
-        // IMPORTANT: GetLastError() is only meaningful immediately after CreateProcessW fails.
-        // Do not call it on the success path (it may be 0 or stale).
         const DWORD err = GetLastError();
         wchar_t buf[1024];
         swprintf_s(
@@ -45,15 +48,16 @@ bool TikTokSidecar::start(const std::wstring& pythonExe,
             cmd.c_str());
         OutputDebugStringW(buf);
 
-        CloseHandle(hStdOutRd_); hStdOutRd_ = nullptr;
-        CloseHandle(hStdOutWr_); hStdOutWr_ = nullptr;
+        if (hStdOutRd_) { CloseHandle(hStdOutRd_); hStdOutRd_ = nullptr; }
+        if (hStdOutWr_) { CloseHandle(hStdOutWr_); hStdOutWr_ = nullptr; }
+        if (hStdInRd_) { CloseHandle(hStdInRd_);  hStdInRd_ = nullptr; }
+        if (hStdInWr_) { CloseHandle(hStdInWr_);  hStdInWr_ = nullptr; }
         return false;
     }
 
-    // Success: do not call GetLastError() here.
-
-    CloseHandle(hStdOutWr_);
-    hStdOutWr_ = nullptr;
+    // Parent must close the ends the child uses, otherwise pipes can hang.
+    if (hStdOutWr_) { CloseHandle(hStdOutWr_); hStdOutWr_ = nullptr; }
+    if (hStdInRd_) { CloseHandle(hStdInRd_);  hStdInRd_ = nullptr; }
 
     running_ = true;
     reader_ = std::thread([this] { reader_loop(); });
@@ -74,8 +78,31 @@ void TikTokSidecar::stop()
         CloseHandle(pi_.hThread);
         pi_.hThread = nullptr;
     }
+
     if (hStdOutRd_) { CloseHandle(hStdOutRd_); hStdOutRd_ = nullptr; }
+    if (hStdInWr_) { CloseHandle(hStdInWr_);  hStdInWr_ = nullptr; }
+
     if (reader_.joinable()) reader_.join();
+}
+
+bool TikTokSidecar::send_chat(const std::string& text)
+{
+    if (!running_ || !hStdInWr_) return false;
+
+    nlohmann::json j;
+    j["op"] = "send_chat";
+    j["text"] = text;
+
+    std::string line = j.dump();
+    line.push_back('\n');
+
+    std::lock_guard<std::mutex> lk(stdin_mu_);
+
+    DWORD written = 0;
+    if (!WriteFile(hStdInWr_, line.data(), (DWORD)line.size(), &written, nullptr)) {
+        return false;
+    }
+    return written == line.size();
 }
 
 void TikTokSidecar::reader_loop()
