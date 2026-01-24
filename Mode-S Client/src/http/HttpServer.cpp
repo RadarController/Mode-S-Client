@@ -37,6 +37,23 @@ static std::string Trim(const std::string& s) {
     return s.substr(a, b - a);
 }
 
+
+
+static std::string HtmlEscape(const std::string& in) {
+    std::string out;
+    out.reserve(in.size() + 16);
+    for (char ch : in) {
+        switch (ch) {
+        case '&': out += "&amp;"; break;
+        case '<': out += "&lt;"; break;
+        case '>': out += "&gt;"; break;
+        case '"': out += "&quot;"; break;
+        case '\'': out += "&#39;"; break;
+        default: out.push_back(ch); break;
+        }
+    }
+    return out;
+}
 static bool ReplaceAll(std::string& s, const std::string& from, const std::string& to) {
     if (from.empty()) return false;
     bool changed = false;
@@ -199,6 +216,21 @@ void HttpServer::ApplyOverlayTokens(std::string& html)
     // Text shadow style tokens
     changed |= ReplaceAll(html, "{{TEXT_SHADOW_STYLE}}", shadow);
     changed |= ReplaceAll(html, "{TEXT_SHADOW_STYLE}", shadow);
+
+
+// Header overlay tokens (configured via /api/overlay/header)
+{
+    const auto h = state_.overlay_header_snapshot();
+    const std::string title = HtmlEscape(h.title);
+    const std::string sub   = HtmlEscape(h.subtitle);
+
+    changed |= ReplaceAll(html, "{{HEADER_TITLE}}", title);
+    changed |= ReplaceAll(html, "{HEADER_TITLE}", title);
+    changed |= ReplaceAll(html, "{{HEADER_SUBTITLE}}", sub);
+    changed |= ReplaceAll(html, "{HEADER_SUBTITLE}", sub);
+    changed |= ReplaceAll(html, "{{HEADER_SUB}}", sub);
+    changed |= ReplaceAll(html, "{HEADER_SUB}", sub);
+}
 
     // If you also have placeholders like --font-stack in CSS, you can do:
     // changed |= ReplaceAll(html, "%%FONT_STACK%%", fontStack);
@@ -864,6 +896,41 @@ void HttpServer::RegisterRoutes() {
         res.set_header("Pragma", "no-cache");
         res.set_content(out.dump(2), "application/json; charset=utf-8");
         });
+
+
+// --- API: overlay header settings ---
+// GET  /api/overlay/header -> {"title":"...","subtitle":"..."}
+// POST /api/overlay/header with JSON body {"title":"...","subtitle":"..."} -> same response
+svr.Get("/api/overlay/header", [&](const httplib::Request&, httplib::Response& res) {
+    const auto j = state_.overlay_header_json();
+    res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+    res.set_header("Pragma", "no-cache");
+    res.set_content(j.dump(2), "application/json; charset=utf-8");
+});
+
+svr.Post("/api/overlay/header", [&](const httplib::Request& req, httplib::Response& res) {
+    json body;
+    try {
+        body = json::parse(req.body);
+    }
+    catch (...) {
+        res.status = 400;
+        res.set_content(R"({"ok":false,"error":"invalid_json"})", "application/json");
+        return;
+    }
+
+    std::string err;
+    if (!state_.set_overlay_header(body, &err)) {
+        res.status = 400;
+        json out = { {"ok", false}, {"error", err} };
+        res.set_content(out.dump(2), "application/json; charset=utf-8");
+        return;
+    }
+
+    json out = state_.overlay_header_json();
+    out["ok"] = true;
+    res.set_content(out.dump(2), "application/json; charset=utf-8");
+});
 
     // --- Overlay: special chat.html injection ---
     svr.Get("/overlay/chat.html", [&](const httplib::Request&, httplib::Response& res) {

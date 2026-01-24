@@ -335,6 +335,101 @@ AppState::BotSettings AppState::bot_settings_snapshot() const {
     return bot_settings_;
 }
 
+
+void AppState::set_overlay_header_storage_path(const std::string& path_utf8) {
+    std::lock_guard<std::mutex> lk(mtx_);
+    overlay_header_path_utf8_ = path_utf8;
+}
+
+bool AppState::load_overlay_header_from_disk() {
+    std::string path;
+    {
+        std::lock_guard<std::mutex> lk(mtx_);
+        path = overlay_header_path_utf8_;
+    }
+    if (path.empty()) return false;
+
+    try {
+        std::ifstream f(std::filesystem::u8path(path));
+        if (!f.is_open()) return false;
+
+        nlohmann::json j;
+        f >> j;
+
+        OverlayHeaderSettings loaded{};
+        if (j.is_object()) {
+            if (j.contains("title") && j["title"].is_string()) loaded.title = j["title"].get<std::string>();
+            if (j.contains("subtitle") && j["subtitle"].is_string()) loaded.subtitle = j["subtitle"].get<std::string>();
+        }
+
+        {
+            std::lock_guard<std::mutex> lk(mtx_);
+            overlay_header_ = std::move(loaded);
+        }
+        return true;
+    }
+    catch (...) {
+        return false;
+    }
+}
+
+bool AppState::set_overlay_header(const nlohmann::json& obj, std::string* err) {
+    if (!obj.is_object()) {
+        if (err) *err = "expected JSON object";
+        return false;
+    }
+
+    OverlayHeaderSettings s;
+    std::string path;
+    {
+        std::lock_guard<std::mutex> lk(mtx_);
+        s = overlay_header_;
+        path = overlay_header_path_utf8_;
+    }
+
+    if (obj.contains("title")) {
+        if (!obj["title"].is_string()) { if (err) *err = "title must be string"; return false; }
+        s.title = obj["title"].get<std::string>();
+    }
+    if (obj.contains("subtitle")) {
+        if (!obj["subtitle"].is_string()) { if (err) *err = "subtitle must be string"; return false; }
+        s.subtitle = obj["subtitle"].get<std::string>();
+    }
+
+    // Clamp lengths to keep overlays sane.
+    if (s.title.size() > 120) s.title.resize(120);
+    if (s.subtitle.size() > 160) s.subtitle.resize(160);
+
+    {
+        std::lock_guard<std::mutex> lk(mtx_);
+        overlay_header_ = s;
+        path = overlay_header_path_utf8_;
+    }
+
+    // Persist best-effort
+    if (!path.empty()) {
+        try {
+            (void)AtomicWriteUtf8File(path, overlay_header_json().dump(2));
+        }
+        catch (...) {}
+    }
+
+    return true;
+}
+
+nlohmann::json AppState::overlay_header_json() const {
+    std::lock_guard<std::mutex> lk(mtx_);
+    nlohmann::json j = nlohmann::json::object();
+    j["title"] = overlay_header_.title;
+    j["subtitle"] = overlay_header_.subtitle;
+    return j;
+}
+
+AppState::OverlayHeaderSettings AppState::overlay_header_snapshot() const {
+    std::lock_guard<std::mutex> lk(mtx_);
+    return overlay_header_;
+}
+
 static std::string NormalizeCommandKey(std::string cmd) {
     if (!cmd.empty() && cmd[0] == '!') cmd.erase(cmd.begin());
     cmd = ToLower(std::move(cmd));

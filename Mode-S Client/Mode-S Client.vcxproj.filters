@@ -37,6 +37,9 @@
     <Filter Include="assets\app">
       <UniqueIdentifier>{dd492cda-eefd-4463-be6a-e7980f594976}</UniqueIdentifier>
     </Filter>
+    <Filter Include="assets\overlay\portrait">
+      <UniqueIdentifier>{ee5b8218-a144-4c3a-9381-d46b700f67fb}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="targetver.h">
@@ -215,6 +218,12 @@
     </None>
     <None Include="assets\mergedChatFeed.js">
       <Filter>assets</Filter>
+    </None>
+    <None Include="assets\overlay\portrait\26_header.html">
+      <Filter>assets\overlay\portrait</Filter>
+    </None>
+    <None Include="assets\overlay\portrait\index.html">
+      <Filter>assets\overlay\portrait</Filter>
     </None>
   </ItemGroup>
 </Project>
