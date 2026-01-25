@@ -409,11 +409,19 @@ function wireTwitchStreamInfoPage(){
   async function save(){
     setStatus("Saving…");
     try{
-      const body = {
-        title: elTitle ? elTitle.value : "",
-        category: elCat ? elCat.value : "",
-        description: elDesc ? elDesc.value : ""
-      };
+        const body = {
+            title: elTitle ? elTitle.value : "",
+
+            // Keep legacy field for older backend compatibility
+            category: elCat ? elCat.value : "",
+
+            // New fields: store both name + id (Helix needs the id)
+            category_name: elCat ? elCat.value : "",
+            category_id: elGameId ? elGameId.value : "",
+            game_id: elGameId ? elGameId.value : "",
+
+            description: elDesc ? elDesc.value : ""
+        };
       const j = await apiPost("/api/twitch/streaminfo", body);
       if(j && j.ok === false) throw new Error(j.error || "ok=false");
       setStatus("Saved");
@@ -425,7 +433,12 @@ function wireTwitchStreamInfoPage(){
     }
   }
 
-  async function apply(){
+    async function apply() {
+        console.log("Apply clicked; current values:", {
+            title: document.getElementById("twitchTitle")?.value,
+            category_name: document.getElementById("twitchCategory")?.value,
+            category_id: document.getElementById("twitchGameId")?.value
+        });
     setStatus("Updating Twitch…");
     try{
       const ok = await save();
@@ -441,6 +454,12 @@ function wireTwitchStreamInfoPage(){
 
   elSave?.addEventListener("click", save);
   elApply?.addEventListener("click", apply);
+
+    console.log("Apply Twitch payload:", {
+    title: elTitle?.value,
+    category_name: elCat?.value,
+    category_id: elGameId?.value
+    });
 
   load();
 }
@@ -513,66 +532,85 @@ function debounce(fn, ms){
 }
 
 function wireTwitchCategoryLookup(){
-  const input = document.getElementById("twitchCategory");
-  const results = document.getElementById("twitchCategoryResults");
-  const gameId = document.getElementById("twitchGameId");
+    const input = document.getElementById("twitchCategory");
+    const results = document.getElementById("twitchCategoryResults");
+    const gameId = document.getElementById("twitchGameId");
+    const gameIdLabel = document.getElementById("twitchGameIdLabel");
+    const setGameIdLabel = () => {
+        if (!gameIdLabel) return;
+        gameIdLabel.textContent = (gameId.value || "—");
+    };
+    setGameIdLabel();
 
   if (!input || !results || !gameId) return;
 
   const hide = () => { results.style.display = "none"; results.innerHTML = ""; };
   const show = () => { results.style.display = "block"; };
 
-  async function search(q){
-    q = (q || "").trim();
-    // Reset selection if user edits text
-    gameId.value = "";
+    async function search(q) {
+        q = (q || "").trim();
 
-    if (q.length < 2){
-      hide();
-      return;
-    }
+        // Reset selection if user edits text
+        gameId.value = "";
+        setGameIdLabel();
 
-    try{
-      const r = await fetch(`/api/twitch/categories?q=${encodeURIComponent(q)}`, { cache: "no-store" });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const items = await r.json(); // expected: [{ id, name }, ...] or richer
+        if (q.length < 2) {
+            hide();
+            return;
+        }
 
-      if (!Array.isArray(items) || items.length === 0){
-        hide();
-        return;
-      }
+        try {
+            const r = await fetch(`/api/twitch/categories?q=${encodeURIComponent(q)}`, { cache: "no-store" });
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            const items = await r.json();
 
-      results.innerHTML = items.slice(0, 8).map(it => {
-        const name = (it && it.name) ? it.name : "";
-        const id = (it && it.id) ? it.id : "";
-        return `
-          <div class="typeahead__item" data-id="${id}" data-name="${name}">
-            <div>
-              <div><strong>${name}</strong></div>
-              <div class="typeahead__meta">Twitch category</div>
-            </div>
+            if (!Array.isArray(items) || items.length === 0) {
+                hide();
+                return;
+            }
+
+            // Escape for safe attribute injection
+            const esc = (s) => String(s ?? "")
+                .replace(/&/g, "&amp;")
+                .replace(/"/g, "&quot;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;");
+
+            results.innerHTML = items.slice(0, 8).map(it => {
+                const name = (it && (it.name || it.category_name || it.title)) ? (it.name || it.category_name || it.title) : "";
+                const id = (it && (it.id || it.game_id || it.category_id || it.twitch_game_id)) ? (it.id || it.game_id || it.category_id || it.twitch_game_id) : "";
+
+                return `
+        <div class="typeahead__item" data-id="${esc(id)}" data-name="${esc(name)}">
+          <div>
+            <div><strong>${esc(name)}</strong></div>
+            <div class="typeahead__meta">Twitch category</div>
           </div>
-        `;
-      }).join("");
+        </div>
+      `;
+            }).join("");
 
-      show();
-    }catch(e){
-      console.warn("Twitch category lookup failed:", e);
-      hide();
+            show();
+        } catch (e) {
+            console.warn("Twitch category lookup failed:", e);
+            hide();
+        }
     }
-  }
 
   const debounced = debounce(search, 250);
 
   input.addEventListener("input", () => debounced(input.value));
 
-  results.addEventListener("click", (ev) => {
-    const el = ev.target.closest(".typeahead__item");
-    if (!el) return;
-    input.value = el.getAttribute("data-name") || "";
-    gameId.value = el.getAttribute("data-id") || "";
-    hide();
-  });
+    // Handle click on a dropdown item
+    results.addEventListener("click", (ev) => {
+        const el = ev.target.closest(".typeahead__item");
+        if (!el) return;
+
+        input.value = el.getAttribute("data-name") || "";
+        gameId.value = el.getAttribute("data-id") || "";
+        setGameIdLabel();
+        hide();
+    });
 
   // Hide dropdown when clicking outside
   document.addEventListener("click", (ev) => {

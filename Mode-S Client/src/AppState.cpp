@@ -876,7 +876,7 @@ nlohmann::json AppState::twitch_stream_draft_json()
     j["ok"] = true;
     j["title"] = twitch_stream_draft_.title;
     j["category_name"] = twitch_stream_draft_.category_name;
-    j["category_id"] = twitch_stream_draft_.category_id;
+    j["category_id"] = twitch_stream_draft_.category_id;   // <-- REQUIRED
     j["description"] = twitch_stream_draft_.description;
     return j;
 }
