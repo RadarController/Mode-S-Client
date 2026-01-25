@@ -41,11 +41,14 @@ public:
 
     // ---- Interactive OAuth (one-time login to obtain/replace refresh token) ----
     // Build the URL for the user to open in a browser.
-    // The caller must provide the redirect_uri that Twitch is configured to send the user back to.
+    // redirect_uri must exactly match a URI registered in the Twitch developer console.
+    // If empty (or a legacy bare localhost URI), the implementation defaults to:
+    //   http://localhost:17845/auth/twitch/callback
     // This function stores an internal anti-CSRF "state" value which is verified in HandleOAuthCallback.
     std::string BuildAuthorizeUrl(const std::string& redirect_uri, std::string* out_error = nullptr);
 
     // Handle the redirect callback query params ("code" and "state"), exchanging the code for tokens.
+    // redirect_uri must match the one used in BuildAuthorizeUrl (same defaulting behaviour).
     // On success this updates in-memory tokens and persists them back to config.json.
     bool HandleOAuthCallback(const std::string& code,
         const std::string& state,
@@ -56,6 +59,9 @@ public:
     std::function<void(const std::string& access_token,
         const std::string& refresh_token,
         const std::string& login)> on_tokens_updated;
+
+    static const char* RequiredScopeEncoded();
+    static const char* RequiredScopeReadable();
 
 private:
     bool ValidateAndLogToken(const std::string& access_token, std::string* out_scope_joined);

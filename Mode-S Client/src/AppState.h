@@ -163,27 +163,49 @@ public:
     BotSettings bot_settings_snapshot() const;
 
 
-// --- Overlay settings (e.g. header title/subtitle) ---
-struct OverlayHeaderSettings {
-    std::string title = "StreamingATC.Live";
-    std::string subtitle = "";
+// --- Overlay header (stream title/subtitle shown in overlays) ---
+struct OverlayHeader {
+    std::string title;
+    std::string subtitle;
 };
 
-// Storage path should be set once at startup (utf-8 path). If empty, settings are in-memory only.
+// Storage path should be set once at startup (utf-8 path). If empty, header is in-memory only.
 void set_overlay_header_storage_path(const std::string& path_utf8);
-// Returns true if settings were loaded.
+// Returns true if header was loaded.
 bool load_overlay_header_from_disk();
 
-// Replace settings (and persist best-effort).
+// Replace header (and persist best-effort).
 // Accepts JSON object: {"title":"...","subtitle":"..."}
-bool set_overlay_header(const nlohmann::json& obj, std::string* err = nullptr);
+bool set_overlay_header(const nlohmann::json& header_obj, std::string* err = nullptr);
 nlohmann::json overlay_header_json() const;
-OverlayHeaderSettings overlay_header_snapshot() const;
+OverlayHeader overlay_header_snapshot() const;
+
+
+    // -----------------------------------------------------------------
+    // Twitch Stream Info draft (used by /app/twitch_stream.html)
+    // Persists to config.json under key: twitch_streaminfo
+    // -----------------------------------------------------------------
+    struct TwitchStreamDraft {
+        std::string title;
+        std::string category_name; // display text
+        std::string category_id;   // Twitch "game_id" for Helix updates
+        std::string description;   // stored for YouTube phase 2
+    };
+
+    void set_twitch_stream_draft(const TwitchStreamDraft& d);
+    TwitchStreamDraft twitch_stream_draft_snapshot();
+    nlohmann::json twitch_stream_draft_json();
 
 private:
+    void load_twitch_stream_draft_from_config_unlocked();
+    void save_twitch_stream_draft_to_config_unlocked();
     static std::int64_t now_ms();
 
     mutable std::mutex mtx_;
+    // Twitch stream info draft (loaded lazily from config.json)
+    bool twitch_stream_draft_loaded_ = false;
+    TwitchStreamDraft twitch_stream_draft_{};
+
     Metrics metrics_{};
     std::deque<ChatMessage> chat_; // last 200
     std::deque<EventItem> tiktok_events_; // last 200
@@ -206,8 +228,8 @@ private:
     std::string bot_settings_path_utf8_;
 
 
-// --- Overlay header settings ---
-OverlayHeaderSettings overlay_header_{};
+// --- Overlay header ---
+OverlayHeader overlay_header_{};
 std::string overlay_header_path_utf8_;
 
     // EventSub status + events kept small for UI/debugging.

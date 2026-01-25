@@ -225,5 +225,17 @@
     <None Include="assets\overlay\portrait\index.html">
       <Filter>assets\overlay\portrait</Filter>
     </None>
+    <None Include="assets\app\bot.html">
+      <Filter>assets\app</Filter>
+    </None>
+    <None Include="assets\app\overlay_title.html">
+      <Filter>assets\app</Filter>
+    </None>
+    <None Include="assets\app\settings.html">
+      <Filter>assets\app</Filter>
+    </None>
+    <None Include="assets\app\twitch_stream.html">
+      <Filter>assets\app</Filter>
+    </None>
   </ItemGroup>
 </Project>

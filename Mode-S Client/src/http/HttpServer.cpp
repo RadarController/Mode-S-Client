@@ -12,6 +12,8 @@
 #include "../AppState.h"
 #include "../chat/ChatAggregator.h"
 #include "../../integrations/euroscope/EuroScopeIngestService.h"
+#include "../../integrations/twitch/TwitchHelixService.h"
+#include "../../integrations/twitch/TwitchAuth.h"
 #include "../AppConfig.h"
 
 namespace {
@@ -37,23 +39,6 @@ static std::string Trim(const std::string& s) {
     return s.substr(a, b - a);
 }
 
-
-
-static std::string HtmlEscape(const std::string& in) {
-    std::string out;
-    out.reserve(in.size() + 16);
-    for (char ch : in) {
-        switch (ch) {
-        case '&': out += "&amp;"; break;
-        case '<': out += "&lt;"; break;
-        case '>': out += "&gt;"; break;
-        case '"': out += "&quot;"; break;
-        case '\'': out += "&#39;"; break;
-        default: out.push_back(ch); break;
-        }
-    }
-    return out;
-}
 static bool ReplaceAll(std::string& s, const std::string& from, const std::string& to) {
     if (from.empty()) return false;
     bool changed = false;
@@ -217,21 +202,6 @@ void HttpServer::ApplyOverlayTokens(std::string& html)
     changed |= ReplaceAll(html, "{{TEXT_SHADOW_STYLE}}", shadow);
     changed |= ReplaceAll(html, "{TEXT_SHADOW_STYLE}", shadow);
 
-
-// Header overlay tokens (configured via /api/overlay/header)
-{
-    const auto h = state_.overlay_header_snapshot();
-    const std::string title = HtmlEscape(h.title);
-    const std::string sub   = HtmlEscape(h.subtitle);
-
-    changed |= ReplaceAll(html, "{{HEADER_TITLE}}", title);
-    changed |= ReplaceAll(html, "{HEADER_TITLE}", title);
-    changed |= ReplaceAll(html, "{{HEADER_SUBTITLE}}", sub);
-    changed |= ReplaceAll(html, "{HEADER_SUBTITLE}", sub);
-    changed |= ReplaceAll(html, "{{HEADER_SUB}}", sub);
-    changed |= ReplaceAll(html, "{HEADER_SUB}", sub);
-}
-
     // If you also have placeholders like --font-stack in CSS, you can do:
     // changed |= ReplaceAll(html, "%%FONT_STACK%%", fontStack);
 
@@ -274,7 +244,108 @@ void HttpServer::RegisterRoutes() {
         });
 
     // --- API: Twitch EventSub diagnostics ---
-    svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Response& res) {
+    
+    // --- API: Twitch category lookup (for typeahead in UI) ---
+    // GET /api/twitch/categories?q=<text>
+    svr.Get("/api/twitch/categories", [&](const httplib::Request& req, httplib::Response& res) {
+        std::string q;
+        if (req.has_param("q")) q = req.get_param_value("q");
+        else if (req.has_param("query")) q = req.get_param_value("query");
+
+        // Trim
+        q.erase(q.begin(), std::find_if(q.begin(), q.end(), [](unsigned char ch) { return !std::isspace(ch); }));
+        q.erase(std::find_if(q.rbegin(), q.rend(), [](unsigned char ch) { return !std::isspace(ch); }).base(), q.end());
+
+        if (q.size() < 2) {
+            res.set_content("[]", "application/json");
+            res.status = 200;
+            return;
+        }
+
+        std::vector<TwitchCategory> cats;
+        std::string err;
+        if (!TwitchHelixSearchCategories(config_, q, cats, &err)) {
+            json jerr = { {"ok", false}, {"error", err} };
+            res.set_content(jerr.dump(), "application/json");
+            res.status = 500;
+            return;
+        }
+
+        json out = json::array();
+        for (const auto& c : cats) {
+            out.push_back({ {"id", c.id}, {"name", c.name} });
+        }
+        res.set_content(out.dump(), "application/json");
+        res.status = 200;
+    });
+
+
+
+    // --- API: Twitch Stream Info draft (used by /app/twitch_stream.html) ---
+    // GET /api/twitch/streaminfo
+    svr.Get("/api/twitch/streaminfo", [&](const httplib::Request&, httplib::Response& res) {
+        auto j = state_.twitch_stream_draft_json();
+        res.set_content(j.dump(2), "application/json; charset=utf-8");
+        res.status = 200;
+    });
+
+    // POST /api/twitch/streaminfo (save draft)
+    svr.Post("/api/twitch/streaminfo", [&](const httplib::Request& req, httplib::Response& res) {
+        try {
+            auto j = nlohmann::json::parse(req.body);
+
+            AppState::TwitchStreamDraft d;
+
+            d.title = j.value("title", "");
+            d.description = j.value("description", "");
+
+            // Display name (safe to keep)
+            d.category_name = j.value("category_name", j.value("category", ""));
+
+            // IMPORTANT: persist the ID (Helix needs this)
+            d.category_id = j.value("category_id", j.value("game_id", ""));
+
+            state_.set_twitch_stream_draft(d);
+
+            nlohmann::json out = { {"ok", true} };
+            res.set_content(out.dump(), "application/json; charset=utf-8");
+            res.status = 200;
+        }
+        catch (...) {
+            res.status = 400;
+            res.set_content(R"({"ok":false,"error":"invalid_json"})", "application/json; charset=utf-8");
+        }
+    });
+
+    // POST /api/twitch/streaminfo/apply (apply to Twitch now)
+    svr.Post("/api/twitch/streaminfo/apply", [&](const httplib::Request&, httplib::Response& res) {
+        const auto d = state_.twitch_stream_draft_snapshot();
+
+        SafeOutputLog(log_,
+            L"TWITCH APPLY: title=" + std::wstring(d.title.begin(), d.title.end()) +
+            L" category_name=" + std::wstring(d.category_name.begin(), d.category_name.end()) +
+            L" category_id=" + std::wstring(d.category_id.begin(), d.category_id.end())
+        );
+
+        std::string err;
+        if (!TwitchHelixUpdateChannelInfo(
+            config_,
+            d.title,
+            d.category_id,   // <-- MUST be ID
+            &err))
+        {
+            nlohmann::json out = { {"ok", false}, {"error", err} };
+            res.status = 500;
+            res.set_content(out.dump(), "application/json; charset=utf-8");
+            return;
+        }
+
+        nlohmann::json out = { {"ok", true} };
+        res.set_content(out.dump(), "application/json; charset=utf-8");
+        res.status = 200;
+    });
+
+svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Response& res) {
         auto j = state_.twitch_eventsub_status_json();
         res.set_content(j.dump(2), "application/json; charset=utf-8");
         });
@@ -297,7 +368,21 @@ void HttpServer::RegisterRoutes() {
     //   http://localhost:17845/auth/twitch/start
     // Callback (handled automatically by browser):
     //   http://localhost:17845/auth/twitch/callback
-    svr.Get("/auth/twitch/start", [&](const httplib::Request& req, httplib::Response& res) {
+    
+    // --- API: Twitch OAuth info (for Settings UI) ---
+    // GET /api/twitch/auth/info
+    svr.Get("/api/twitch/auth/info", [&](const httplib::Request& /*req*/, httplib::Response& res) {
+        nlohmann::json j;
+        j["ok"] = true;
+        j["start_url"] = "/auth/twitch/start";
+        j["oauth_routes_wired"] = (bool)opt_.twitch_auth_build_authorize_url && (bool)opt_.twitch_auth_handle_callback;
+        j["scopes_readable"] = std::string(TwitchAuth::RequiredScopeReadable());
+        j["scopes_encoded"] = std::string(TwitchAuth::RequiredScopeEncoded());
+        res.status = 200;
+        res.set_content(j.dump(2), "application/json; charset=utf-8");
+    });
+
+svr.Get("/auth/twitch/start", [&](const httplib::Request& req, httplib::Response& res) {
         if (!opt_.twitch_auth_build_authorize_url) {
             SafeOutputLog(log_, L"HTTP: Twitch OAuth routes NOT enabled (callbacks not wired)");
             res.status = 404;
@@ -305,10 +390,9 @@ void HttpServer::RegisterRoutes() {
             return;
         }
 
-        // Build redirect URI based on the Host header (so localhost vs 127.0.0.1 both work).
-        std::string host = req.get_header_value("Host");
-        if (host.empty()) host = "localhost:" + std::to_string(opt_.port);
-        const std::string redirect_uri = std::string("http://") + host + "/auth/twitch/callback";
+        // Canonical redirect URI: always use localhost to match Twitch dev console exactly.
+        const std::string redirect_uri =
+            std::string("http://localhost:") + std::to_string(opt_.port) + "/auth/twitch/callback";
 
         std::string err;
         const std::string url = opt_.twitch_auth_build_authorize_url(redirect_uri, &err);
@@ -896,41 +980,6 @@ void HttpServer::RegisterRoutes() {
         res.set_header("Pragma", "no-cache");
         res.set_content(out.dump(2), "application/json; charset=utf-8");
         });
-
-
-// --- API: overlay header settings ---
-// GET  /api/overlay/header -> {"title":"...","subtitle":"..."}
-// POST /api/overlay/header with JSON body {"title":"...","subtitle":"..."} -> same response
-svr.Get("/api/overlay/header", [&](const httplib::Request&, httplib::Response& res) {
-    const auto j = state_.overlay_header_json();
-    res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
-    res.set_header("Pragma", "no-cache");
-    res.set_content(j.dump(2), "application/json; charset=utf-8");
-});
-
-svr.Post("/api/overlay/header", [&](const httplib::Request& req, httplib::Response& res) {
-    json body;
-    try {
-        body = json::parse(req.body);
-    }
-    catch (...) {
-        res.status = 400;
-        res.set_content(R"({"ok":false,"error":"invalid_json"})", "application/json");
-        return;
-    }
-
-    std::string err;
-    if (!state_.set_overlay_header(body, &err)) {
-        res.status = 400;
-        json out = { {"ok", false}, {"error", err} };
-        res.set_content(out.dump(2), "application/json; charset=utf-8");
-        return;
-    }
-
-    json out = state_.overlay_header_json();
-    out["ok"] = true;
-    res.set_content(out.dump(2), "application/json; charset=utf-8");
-});
 
     // --- Overlay: special chat.html injection ---
     svr.Get("/overlay/chat.html", [&](const httplib::Request&, httplib::Response& res) {
