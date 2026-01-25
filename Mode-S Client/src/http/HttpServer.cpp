@@ -13,6 +13,7 @@
 #include "../chat/ChatAggregator.h"
 #include "../../integrations/euroscope/EuroScopeIngestService.h"
 #include "../../integrations/twitch/TwitchHelixService.h"
+#include "../../integrations/twitch/TwitchAuth.h"
 #include "../AppConfig.h"
 
 namespace {
@@ -353,7 +354,21 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
     //   http://localhost:17845/auth/twitch/start
     // Callback (handled automatically by browser):
     //   http://localhost:17845/auth/twitch/callback
-    svr.Get("/auth/twitch/start", [&](const httplib::Request& req, httplib::Response& res) {
+    
+    // --- API: Twitch OAuth info (for Settings UI) ---
+    // GET /api/twitch/auth/info
+    svr.Get("/api/twitch/auth/info", [&](const httplib::Request& /*req*/, httplib::Response& res) {
+        nlohmann::json j;
+        j["ok"] = true;
+        j["start_url"] = "/auth/twitch/start";
+        j["oauth_routes_wired"] = (bool)opt_.twitch_auth_build_authorize_url && (bool)opt_.twitch_auth_handle_callback;
+        j["scopes_readable"] = std::string(TwitchAuth::RequiredScopeReadable());
+        j["scopes_encoded"] = std::string(TwitchAuth::RequiredScopeEncoded());
+        res.status = 200;
+        res.set_content(j.dump(2), "application/json; charset=utf-8");
+    });
+
+svr.Get("/auth/twitch/start", [&](const httplib::Request& req, httplib::Response& res) {
         if (!opt_.twitch_auth_build_authorize_url) {
             SafeOutputLog(log_, L"HTTP: Twitch OAuth routes NOT enabled (callbacks not wired)");
             res.status = 404;
@@ -361,10 +376,9 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
             return;
         }
 
-        // Build redirect URI based on the Host header (so localhost vs 127.0.0.1 both work).
-        std::string host = req.get_header_value("Host");
-        if (host.empty()) host = "localhost:" + std::to_string(opt_.port);
-        const std::string redirect_uri = std::string("http://") + host + "/auth/twitch/callback";
+        // Canonical redirect URI: always use localhost to match Twitch dev console exactly.
+        const std::string redirect_uri =
+            std::string("http://localhost:") + std::to_string(opt_.port) + "/auth/twitch/callback";
 
         std::string err;
         const std::string url = opt_.twitch_auth_build_authorize_url(redirect_uri, &err);

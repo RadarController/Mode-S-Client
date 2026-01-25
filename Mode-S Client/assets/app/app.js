@@ -17,22 +17,15 @@ async function apiGet(url){
   return await r.json();
 }
 
-async function apiPost(url, body) {
-    const r = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: body ? JSON.stringify(body) : ""
-    });
-
-    const text = await r.text();
-
-    if (!r.ok) {
-        // Include any server-provided error body (JSON or plain text)
-        const snippet = (text || "").trim().slice(0, 600);
-        throw new Error(`${r.status} ${r.statusText}${snippet ? ": " + snippet : ""}`);
-    }
-
-    try { return JSON.parse(text); } catch { return { ok: true, raw: text }; }
+async function apiPost(url, body){
+  const r = await fetch(url, {
+    method:"POST",
+    headers: {"Content-Type":"application/json"},
+    body: body ? JSON.stringify(body) : ""
+  });
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  const text = await r.text();
+  try { return JSON.parse(text); } catch { return { ok:true, raw:text }; }
 }
 
 async function loadSettings(){
@@ -345,6 +338,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   wireSmartBackButtons();
   wireSettingsHubPage();
   wireTwitchStreamInfoPage();
+  wireTwitchOAuthPage();
   wireActions();
   await loadSettings();
   await pollMetrics();
@@ -389,24 +383,22 @@ function wireTwitchStreamInfoPage(){
   const root = document.getElementById("twitchStreamPage");
   if(!root) return;
 
-  // Match twitch_stream.html IDs
-  const elTitle   = document.getElementById("twitchTitle");
-  const elCat     = document.getElementById("twitchCategory");     // display text
-  const elGameId  = document.getElementById("twitchGameId");       // selected id from typeahead
-  const elDesc    = document.getElementById("twitchDescription");
-  const elSave    = document.getElementById("btnSaveTwitchDraft");
-  const elApply   = document.getElementById("btnApplyTwitch");
-  const elStatus  = document.getElementById("twitchStreamStatus");
+    const elTitle = document.getElementById("twitchTitle");
+    const elCat = document.getElementById("twitchCategory");   // display name typed/selected
+    const elGameId = document.getElementById("twitchGameId");     // hidden selected id
+    const elDesc = document.getElementById("twitchDescription");
+    const elSave = document.getElementById("btnSaveTwitchDraft");
+    const elApply = document.getElementById("btnApplyTwitch");
+    const elStatus = document.getElementById("twitchStreamStatus");
 
   const setStatus = (t)=>{ if(elStatus) elStatus.textContent = t||""; };
 
   async function load(){
     try{
       const j = await apiGet("/api/twitch/streaminfo");
-      if(elTitle)  elTitle.value = j.title || "";
-      if(elCat)    elCat.value = j.category_name || j.category || "";
-      if(elGameId) elGameId.value = j.category_id || j.game_id || "";
-      if(elDesc)   elDesc.value = j.description || "";
+      if(elTitle) elTitle.value = j.title || "";
+      if(elCat) elCat.value = j.category || "";
+      if(elDesc) elDesc.value = j.description || "";
       setStatus("");
     }catch(e){
       console.warn("Failed to load Twitch stream info", e);
@@ -419,25 +411,16 @@ function wireTwitchStreamInfoPage(){
     try{
       const body = {
         title: elTitle ? elTitle.value : "",
-
-        // New fields
-        category_id: elGameId ? elGameId.value : "",
-        category_name: elCat ? elCat.value : "",
-
-        // Back-compat fields (if server expects these)
-        game_id: elGameId ? elGameId.value : "",
         category: elCat ? elCat.value : "",
-
         description: elDesc ? elDesc.value : ""
       };
-
       const j = await apiPost("/api/twitch/streaminfo", body);
       if(j && j.ok === false) throw new Error(j.error || "ok=false");
       setStatus("Saved");
       return true;
     }catch(e){
       console.error(e);
-      setStatus(`Error saving: ${e.message || e}`);
+      setStatus("Error saving");
       return false;
     }
   }
@@ -452,12 +435,70 @@ function wireTwitchStreamInfoPage(){
       setStatus("Updated on Twitch");
     }catch(e){
       console.error(e);
-      setStatus(`Error updating Twitch: ${e.message || e}`);
+      setStatus("Error updating Twitch");
     }
   }
 
   elSave?.addEventListener("click", save);
   elApply?.addEventListener("click", apply);
+
+  load();
+}
+
+
+function wireTwitchOAuthPage(){
+  const root = document.getElementById("twitchOAuthPage");
+  if(!root) return;
+
+  const elScopes = document.getElementById("twitchOAuthScopes");
+  const elStart = document.getElementById("btnTwitchOAuthStart");
+  const elCopy = document.getElementById("btnTwitchOAuthCopy");
+  const elStatus = document.getElementById("twitchOAuthStatus");
+
+  const setStatus = (t)=>{ if(elStatus) elStatus.textContent = t || ""; };
+
+  async function load(){
+    try{
+      const j = await apiGet("/api/twitch/auth/info");
+      if(elScopes) elScopes.textContent = (j.scopes_readable || "").trim();
+
+      if(j.oauth_routes_wired === false){
+        setStatus("OAuth routes are not wired in this build.");
+        elStart && (elStart.disabled = true);
+        elCopy && (elCopy.disabled = true);
+        return;
+      }
+
+      const startUrl = j.start_url || "/auth/twitch/start";
+      const abs = `${window.location.origin}${startUrl}`;
+
+      elStart?.addEventListener("click", () => {
+        window.open(startUrl, "_blank", "noopener");
+        setStatus("Opened OAuth flow in a new tab.");
+      });
+
+      elCopy?.addEventListener("click", async () => {
+        try{
+          await navigator.clipboard.writeText(abs);
+          setStatus("Copied start URL.");
+        }catch(e){
+          // Fallback
+          const ta = document.createElement("textarea");
+          ta.value = abs;
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand("copy");
+          document.body.removeChild(ta);
+          setStatus("Copied start URL.");
+        }
+      });
+
+      setStatus("");
+    }catch(e){
+      console.warn("Failed to load Twitch OAuth info", e);
+      setStatus("Could not load OAuth info.");
+    }
+  }
 
   load();
 }
@@ -542,6 +583,5 @@ function wireTwitchCategoryLookup(){
 
 // Call it on DOMContentLoaded (safe)
 document.addEventListener("DOMContentLoaded", () => {
-  wireTwitchStreamInfoPage();
   wireTwitchCategoryLookup();
 });

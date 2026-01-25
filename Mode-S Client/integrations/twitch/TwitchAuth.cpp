@@ -103,6 +103,9 @@ static const char* kTwitchScopeReadable =
 "chat:read "
 "chat:edit";
 
+const char* TwitchAuth::RequiredScopeEncoded() { return kTwitchScopeEncoded; }
+const char* TwitchAuth::RequiredScopeReadable() { return kTwitchScopeReadable; }
+
 static std::string MaskToken(const std::string& t) {
     if (t.empty()) return "(empty)";
     const auto n = t.size();
@@ -404,10 +407,23 @@ std::string TwitchAuth::HttpPostForm(const std::string& url,
 
 std::string TwitchAuth::BuildAuthorizeUrl(const std::string& redirect_uri, std::string* out_error) {
     if (out_error) out_error->clear();
-    if (redirect_uri.empty()) {
-        if (out_error) *out_error = "redirect_uri is empty";
-        return {};
-    }
+    // Twitch requires redirect_uri to EXACTLY match a registered URI.
+    // Some legacy callers passed a bare "http://localhost/" (or empty),
+    // which causes a redirect_mismatch. Default to our canonical local callback.
+    auto normalize_redirect = [](std::string uri) -> std::string {
+        const char* kDefault = "http://localhost:17845/auth/twitch/callback";
+        // Empty -> default
+        if (uri.empty()) return kDefault;
+        // Common legacy values -> default
+        if (uri == "http://localhost" || uri == "http://localhost/" ||
+            uri == "https://localhost" || uri == "https://localhost/" ||
+            uri == "http://127.0.0.1" || uri == "http://127.0.0.1/") {
+            return kDefault;
+        }
+        return uri;
+    };
+
+    const std::string eff_redirect = normalize_redirect(redirect_uri);
 
     // Ensure we have client id/secret loaded.
     std::string err;
@@ -429,12 +445,12 @@ std::string TwitchAuth::BuildAuthorizeUrl(const std::string& redirect_uri, std::
     std::string url = "https://id.twitch.tv/oauth2/authorize?";
     url += "response_type=code";
     url += "&client_id=" + UrlEncode(client_id_);
-    url += "&redirect_uri=" + UrlEncode(redirect_uri);
+    url += "&redirect_uri=" + UrlEncode(eff_redirect);
     url += "&scope=" + std::string(kTwitchScopeEncoded);
     url += "&state=" + UrlEncode(st);
     url += "&force_verify=true";
 
-    DebugLog("built authorize URL (state=" + st + ", redirect_uri=" + redirect_uri + ")");
+    DebugLog("built authorize URL (state=" + st + ", redirect_uri=" + eff_redirect + ")");
     return url;
 }
 
@@ -447,10 +463,20 @@ bool TwitchAuth::HandleOAuthCallback(const std::string& code,
         if (out_error) *out_error = "missing 'code'";
         return false;
     }
-    if (redirect_uri.empty()) {
-        if (out_error) *out_error = "redirect_uri is empty";
-        return false;
-    }
+    // Keep redirect_uri consistent with BuildAuthorizeUrl(). If the caller passes an
+    // empty/legacy URI, default to the canonical local callback.
+    auto normalize_redirect = [](std::string uri) -> std::string {
+        const char* kDefault = "http://localhost:17845/auth/twitch/callback";
+        if (uri.empty()) return kDefault;
+        if (uri == "http://localhost" || uri == "http://localhost/" ||
+            uri == "https://localhost" || uri == "https://localhost/" ||
+            uri == "http://127.0.0.1" || uri == "http://127.0.0.1/") {
+            return kDefault;
+        }
+        return uri;
+    };
+
+    const std::string eff_redirect = normalize_redirect(redirect_uri);
 
     // Validate state if we have one.
     {
@@ -482,7 +508,7 @@ bool TwitchAuth::HandleOAuthCallback(const std::string& code,
         "&code=" + UrlEncode(code) +
         "&client_id=" + UrlEncode(client_id_) +
         "&client_secret=" + UrlEncode(client_secret_) +
-        "&redirect_uri=" + UrlEncode(redirect_uri) +
+        "&redirect_uri=" + UrlEncode(eff_redirect) +
         "&scope=" + std::string(kTwitchScopeEncoded);
 
     long http = 0;

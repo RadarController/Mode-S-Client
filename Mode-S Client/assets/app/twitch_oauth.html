@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Twitch OAuth — RadarController</title>
+  <link rel="stylesheet" href="/app/app.css" />
+</head>
+<body>
+  <div class="app" id="twitchOAuthPage">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand__mark"><img src="/assets/icons/RClogo.png" alt=""></div>
+        <div class="brand__text">
+          <div class="brand__name">RadarController</div>
+          <div class="brand__tag">Mode‑S Client</div>
+        </div>
+      </div>
+
+      <div class="topbar__actions">
+        <button class="btn" id="btnBackHome">Back</button>
+      </div>
+    </header>
+
+    <main class="grid grid--single">
+      <section class="card">
+        <div class="card__head">
+          <h2>Twitch OAuth (Re‑Authorize)</h2>
+          <p class="muted">
+            If Twitch API actions fail with a “Missing scope” error, you need to re‑authorize the app so Twitch issues a new token
+            with the required scopes.
+          </p>
+        </div>
+
+        <div class="card__body">
+          <div class="field">
+            <label class="field__k">Required scopes</label>
+            <div class="input mono" id="twitchOAuthScopes" style="white-space:pre-wrap"></div>
+            <div class="hint">These are the scopes Mode‑S Client will request from Twitch.</div>
+          </div>
+
+          <div class="field">
+            <label class="field__k">Start OAuth in your browser</label>
+            <div class="toolbar">
+              <button class="btn btn--primary" id="btnTwitchOAuthStart">Start Twitch OAuth</button>
+              <button class="btn" id="btnTwitchOAuthCopy">Copy Start URL</button>
+              <div class="toolbar__spacer"></div>
+              <span class="note" id="twitchOAuthStatus"></span>
+            </div>
+            <div class="hint">
+              This opens the local authorize flow and redirects you to Twitch. When complete, you’ll be returned to Mode‑S Client.
+            </div>
+          </div>
+
+          <div class="note">
+            Tip: changing scopes in code does not upgrade existing tokens — you must complete the OAuth flow again to receive a new token.
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/app/app.js"></script>
+</body>
+</html>
