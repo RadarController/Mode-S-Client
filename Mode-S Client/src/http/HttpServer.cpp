@@ -278,6 +278,58 @@ void HttpServer::RegisterRoutes() {
         res.status = 200;
     });
 
+
+
+    // --- API: Twitch Stream Info draft (used by /app/twitch_stream.html) ---
+    // GET /api/twitch/streaminfo
+    svr.Get("/api/twitch/streaminfo", [&](const httplib::Request&, httplib::Response& res) {
+        auto j = state_.twitch_stream_draft_json();
+        res.set_content(j.dump(2), "application/json; charset=utf-8");
+        res.status = 200;
+    });
+
+    // POST /api/twitch/streaminfo (save draft)
+    svr.Post("/api/twitch/streaminfo", [&](const httplib::Request& req, httplib::Response& res) {
+        try {
+            auto j = nlohmann::json::parse(req.body);
+
+            AppState::TwitchStreamDraft d;
+            d.title = j.value("title", "");
+            d.description = j.value("description", "");
+
+            // Accept both legacy and new field names.
+            d.category_name = j.value("category_name", j.value("category", ""));
+            d.category_id   = j.value("category_id", j.value("game_id", ""));
+
+            state_.set_twitch_stream_draft(d);
+
+            nlohmann::json out = { {"ok", true} };
+            res.set_content(out.dump(), "application/json; charset=utf-8");
+            res.status = 200;
+        }
+        catch (...) {
+            res.status = 400;
+            res.set_content(R"({"ok":false,"error":"invalid_json"})", "application/json; charset=utf-8");
+        }
+    });
+
+    // POST /api/twitch/streaminfo/apply (apply to Twitch now)
+    svr.Post("/api/twitch/streaminfo/apply", [&](const httplib::Request&, httplib::Response& res) {
+        const auto d = state_.twitch_stream_draft_snapshot();
+
+        std::string err;
+        if (!TwitchHelixUpdateChannelInfo(config_, d.title, d.category_id, &err)) {
+            nlohmann::json out = { {"ok", false}, {"error", err.empty() ? "helix_update_failed" : err} };
+            res.set_content(out.dump(), "application/json; charset=utf-8");
+            res.status = 500;
+            return;
+        }
+
+        nlohmann::json out = { {"ok", true} };
+        res.set_content(out.dump(), "application/json; charset=utf-8");
+        res.status = 200;
+    });
+
 svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Response& res) {
         auto j = state_.twitch_eventsub_status_json();
         res.set_content(j.dump(2), "application/json; charset=utf-8");

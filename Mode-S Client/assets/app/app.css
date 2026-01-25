@@ -391,11 +391,11 @@ a.settings-card-link:visited {
 }
 
 .typeahead > div:last-child {
-borde   r-bottom: none;
+border-bottom: none;
 }
 
 .typeahead > div:hover {
-backgr  ound: rgba(59,130,246,.18);
+background: rgba(59,130,246,.18);
 }
 
 /* Twitch category field needs a positioning context */

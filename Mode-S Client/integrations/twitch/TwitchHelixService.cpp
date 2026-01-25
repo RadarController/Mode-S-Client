@@ -61,6 +61,15 @@ static void DebugLog(const std::wstring& msg)
         return out;
     }
 
+    static std::string Trim(const std::string& s)
+    {
+        auto is_space = [](unsigned char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; };
+        size_t a = 0, b = s.size();
+        while (a < b && is_space((unsigned char)s[a])) a++;
+        while (b > a && is_space((unsigned char)s[b - 1])) b--;
+        return s.substr(a, b - a);
+    }
+
     static HttpResult WinHttpRequest(const std::wstring& method,
         const std::wstring& host,
         INTERNET_PORT port,
@@ -463,7 +472,7 @@ bool TwitchHelixSearchCategories(
     out.clear();
 
 
-    DebugLog(L"TWITCH: SearchCategories query='" + ToW(query) + L"'");
+DebugLog(L"TWITCH: SearchCategories query='" + ToW(query) + L"'");
     std::string cid, tok;
     if (!TryReadTwitchClientAndAccessTokenFromConfigJson(cid, tok)) {
         DebugLog(L"TWITCH: SearchCategories failed: missing credentials in config.json");
@@ -477,8 +486,7 @@ bool TwitchHelixSearchCategories(
         if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
             c == '-' || c == '_' || c == '.' || c == '~') {
             enc << c;
-        }
-        else {
+        } else {
             enc << '%' << std::uppercase << std::hex << (int)c << std::nouppercase << std::dec;
         }
     }
@@ -491,7 +499,7 @@ bool TwitchHelixSearchCategories(
     hdr << L"Accept: application/json\r\n";
 
     auto r = WinHttpRequest(L"GET", L"api.twitch.tv", INTERNET_DEFAULT_HTTPS_PORT, path,
-        hdr.str(), "", true);
+                            hdr.str(), "", true);
 
     if (r.winerr != 0) {
         DebugLog(L"TWITCH: SearchCategories WinHTTP error=" + std::to_wstring((int)r.winerr));
@@ -505,10 +513,9 @@ bool TwitchHelixSearchCategories(
 
     try {
         auto j = json::parse(r.body);
-
         if (!j.contains("data") || !j["data"].is_array()) {
-            DebugLog(L"TWITCH: SearchCategories OK but JSON missing 'data' array");
-            return true; // valid response, just no results we can read
+            DebugLog(L"TWITCH: SearchCategories OK but JSON missing data array");
+            return true; // valid response shape we can't read; treat as empty
         }
 
         for (const auto& it : j["data"]) {
@@ -518,13 +525,107 @@ bool TwitchHelixSearchCategories(
             if (!c.id.empty() && !c.name.empty())
                 out.push_back(std::move(c));
         }
-
-        DebugLog(L"TWITCH: SearchCategories OK results=" + std::to_wstring((int)out.size()));
         return true;
     }
     catch (...) {
         DebugLog(L"TWITCH: SearchCategories failed: JSON parse");
         if (out_error) *out_error = "Failed to parse Twitch Helix JSON response";
+        return false;
+    }
+}
+
+
+
+bool TwitchHelixUpdateChannelInfo(
+    AppConfig& config,
+    const std::string& title,
+    const std::string& game_id,
+    std::string* out_error)
+{
+    try {
+        std::string login = config.twitch_login;
+        std::string cid = config.twitch_client_id;
+        // Access token is now stored under config.json -> twitch.user_access_token.
+        // AppConfig may not expose a flat twitch_access_token field anymore, so read from disk.
+        std::string tok;
+
+        // Fall back to config.json if AppConfig wasn't populated.
+        if (cid.empty() || tok.empty()) {
+            (void)TryReadTwitchClientAndAccessTokenFromConfigJson(cid, tok);
+        }
+        if (login.empty()) {
+            // Try reading login from config.json too (best-effort).
+            std::string cid2, secret2;
+            (void)TryReadTwitchFromConfigJson(login, cid2, secret2);
+            if (cid.empty()) cid = cid2;
+        }
+
+        if (cid.empty() || tok.empty()) {
+            if (out_error) *out_error = "Missing Twitch client_id/access_token";
+            return false;
+        }
+        if (login.empty()) {
+            if (out_error) *out_error = "Missing Twitch login";
+            return false;
+        }
+
+        const std::wstring headers =
+            L"Client-Id: " + ToW(cid) + L"\r\n" +
+            L"Authorization: Bearer " + ToW(tok) + L"\r\n";
+
+        // 1) Resolve broadcaster_id
+        const std::string usersPath = "/helix/users?login=" + UrlEncode(login);
+        HttpResult u = WinHttpRequest(L"GET", L"api.twitch.tv", 443, ToW(usersPath), headers, "", true);
+        if (u.status != 200) {
+            if (out_error) *out_error = "Helix users lookup failed (HTTP " + std::to_string((int)u.status) + ")";
+            return false;
+        }
+
+        auto uj = json::parse(u.body);
+        if (!uj.contains("data") || !uj["data"].is_array() || uj["data"].empty()) {
+            if (out_error) *out_error = "Helix users lookup returned no data";
+            return false;
+        }
+
+        const std::string broadcaster_id = uj["data"][0].value("id", "");
+        if (broadcaster_id.empty()) {
+            if (out_error) *out_error = "Helix users lookup missing broadcaster id";
+            return false;
+        }
+
+        // 2) PATCH channel info
+        json body;
+        body["title"] = title;
+        if (!game_id.empty()) body["game_id"] = game_id;
+
+        std::wstring headers2 = headers + L"Content-Type: application/json\r\n";
+        const std::string path = "/helix/channels?broadcaster_id=" + UrlEncode(broadcaster_id);
+
+        HttpResult p = WinHttpRequest(L"PATCH", L"api.twitch.tv", 443, ToW(path), headers2, body.dump(), true);
+
+        // Helix returns 204 No Content on success for PATCH /channels
+        if (p.status != 204 && p.status != 200) {
+            if (out_error) {
+                std::string snippet = p.body;
+                snippet = Trim(snippet);          // see helper below
+                if (snippet.size() > 300) snippet.resize(300);
+
+                *out_error = "Helix update failed (HTTP " + std::to_string((int)p.status) + ")";
+                if (!snippet.empty()) {
+                    *out_error += ": ";
+                    *out_error += snippet;
+                }
+                if (p.status == 401 || p.status == 403) {
+                    *out_error += " (check token scopes: channel:manage:broadcast)";
+                }
+            }
+            return false;
+        }
+
+        return true;
+    }
+    catch (...) {
+        if (out_error) *out_error = "Exception updating Twitch channel";
         return false;
     }
 }

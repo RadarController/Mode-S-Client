@@ -35,6 +35,15 @@ bool TwitchHelixSearchCategories(
     std::vector<TwitchCategory>& out,
     std::string* out_error);
 
+// Update Twitch channel title and category (game_id) via Helix.
+// Returns true on success; on failure returns false and (optionally) fills out_error.
+bool TwitchHelixUpdateChannelInfo(
+    AppConfig& config,
+    const std::string& title,
+    const std::string& game_id,
+    std::string* out_error);
+
+
 // Starts the Twitch Helix poller thread.
 // - Reads config fields each loop (so Save changes apply without restarting).
 // - If AppConfig fields are empty (e.g., JSON key mapping mismatch), the poller will also try reading config.json directly.

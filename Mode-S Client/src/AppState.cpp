@@ -771,3 +771,112 @@ nlohmann::json AppState::log_json(std::uint64_t since, int limit) const {
     out["entries"] = std::move(arr);
     return out;
 }
+
+
+// --- Twitch Stream Info draft ---
+
+void AppState::load_twitch_stream_draft_from_config_unlocked()
+{
+    if (twitch_stream_draft_loaded_) return;
+    twitch_stream_draft_loaded_ = true;
+
+    try {
+        const auto path = std::filesystem::absolute("config.json");
+        std::ifstream in(path, std::ios::binary);
+        if (!in) return;
+
+        std::string s((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        if (s.empty()) return;
+
+        auto j = nlohmann::json::parse(s);
+
+        // Preferred key
+        if (j.contains("twitch_streaminfo") && j["twitch_streaminfo"].is_object()) {
+            const auto& t = j["twitch_streaminfo"];
+            twitch_stream_draft_.title = t.value("title", "");
+            twitch_stream_draft_.category_name = t.value("category_name", t.value("category", ""));
+            twitch_stream_draft_.category_id = t.value("category_id", t.value("game_id", ""));
+            twitch_stream_draft_.description = t.value("description", "");
+            return;
+        }
+
+        // Back-compat: allow nesting under "twitch"
+        if (j.contains("twitch") && j["twitch"].is_object()) {
+            const auto& tw = j["twitch"];
+            if (tw.contains("streaminfo") && tw["streaminfo"].is_object()) {
+                const auto& t = tw["streaminfo"];
+                twitch_stream_draft_.title = t.value("title", "");
+                twitch_stream_draft_.category_name = t.value("category_name", t.value("category", ""));
+                twitch_stream_draft_.category_id = t.value("category_id", t.value("game_id", ""));
+                twitch_stream_draft_.description = t.value("description", "");
+                return;
+            }
+        }
+    }
+    catch (...) {
+        // best-effort; leave defaults
+    }
+}
+
+void AppState::save_twitch_stream_draft_to_config_unlocked()
+{
+    try {
+        const auto path = std::filesystem::absolute("config.json");
+
+        nlohmann::json j = nlohmann::json::object();
+
+        // Load existing config if present so we don't clobber secrets/other settings.
+        {
+            std::ifstream in(path, std::ios::binary);
+            if (in) {
+                std::string s((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+                if (!s.empty()) {
+                    j = nlohmann::json::parse(s);
+                    if (!j.is_object()) j = nlohmann::json::object();
+                }
+            }
+        }
+
+        nlohmann::json t;
+        t["title"] = twitch_stream_draft_.title;
+        t["category_name"] = twitch_stream_draft_.category_name;
+        t["category_id"] = twitch_stream_draft_.category_id;
+        t["description"] = twitch_stream_draft_.description;
+
+        j["twitch_streaminfo"] = t;
+
+        // Atomic write via existing helper (expects UTF-8 path).
+        AtomicWriteUtf8File(path.u8string(), j.dump(2));
+    }
+    catch (...) {
+        // best-effort persistence; ignore failures
+    }
+}
+
+void AppState::set_twitch_stream_draft(const TwitchStreamDraft& d)
+{
+    std::lock_guard<std::mutex> lk(mtx_);
+    load_twitch_stream_draft_from_config_unlocked(); // ensure loaded once
+    twitch_stream_draft_ = d;
+    save_twitch_stream_draft_to_config_unlocked();
+}
+
+AppState::TwitchStreamDraft AppState::twitch_stream_draft_snapshot()
+{
+    std::lock_guard<std::mutex> lk(mtx_);
+    load_twitch_stream_draft_from_config_unlocked();
+    return twitch_stream_draft_;
+}
+
+nlohmann::json AppState::twitch_stream_draft_json()
+{
+    std::lock_guard<std::mutex> lk(mtx_);
+    load_twitch_stream_draft_from_config_unlocked();
+    nlohmann::json j;
+    j["ok"] = true;
+    j["title"] = twitch_stream_draft_.title;
+    j["category_name"] = twitch_stream_draft_.category_name;
+    j["category_id"] = twitch_stream_draft_.category_id;
+    j["description"] = twitch_stream_draft_.description;
+    return j;
+}

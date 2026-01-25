@@ -83,19 +83,23 @@ bool TwitchAuth::ValidateAndLogToken(const std::string& access_token, std::strin
 // Hardcoded scope list (already URL-encoded).
 // NOTE: Keep this encoded string as-is so we don't double-encode it.
 static const char* kTwitchScopeEncoded =
+"user%3Aedit%3Abroadcast+"
 "moderator%3Aread%3Afollowers+"
 "channel%3Aread%3Ahype_train+"
 "channel%3Aread%3Aredemptions+"
 "channel%3Aread%3Asubscriptions+"
+"channel%3Amanage%3Abroadcast+"
 "chat%3Aread+"
 "chat%3Aedit";
 
 // Human-readable equivalent for diagnostics/logging.
 static const char* kTwitchScopeReadable =
+"user:edit:broadcast "
 "moderator:read:followers "
 "channel:read:hype_train "
 "channel:read:redemptions "
 "channel:read:subscriptions "
+"channel:manage:broadcast "
 "chat:read "
 "chat:edit";
 

@@ -17,15 +17,22 @@ async function apiGet(url){
   return await r.json();
 }
 
-async function apiPost(url, body){
-  const r = await fetch(url, {
-    method:"POST",
-    headers: {"Content-Type":"application/json"},
-    body: body ? JSON.stringify(body) : ""
-  });
-  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-  const text = await r.text();
-  try { return JSON.parse(text); } catch { return { ok:true, raw:text }; }
+async function apiPost(url, body) {
+    const r = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: body ? JSON.stringify(body) : ""
+    });
+
+    const text = await r.text();
+
+    if (!r.ok) {
+        // Include any server-provided error body (JSON or plain text)
+        const snippet = (text || "").trim().slice(0, 600);
+        throw new Error(`${r.status} ${r.statusText}${snippet ? ": " + snippet : ""}`);
+    }
+
+    try { return JSON.parse(text); } catch { return { ok: true, raw: text }; }
 }
 
 async function loadSettings(){
@@ -377,77 +384,85 @@ function wireSmartBackButtons(){
   $("#btnBack")?.addEventListener("click", () => { window.location.href = target(); });
   $("#btnBackHome")?.addEventListener("click", () => { window.location.href = target(); });
 }
-function wireTwitchStreamInfoPage() {
-    const root = document.getElementById("twitchStreamPage");
-    if (!root) return;
 
-    // Match twitch_stream.html IDs
-    const elTitle = document.getElementById("twitchTitle");
-    const elCat = document.getElementById("twitchCategory");     // text name
-    const elGameId = document.getElementById("twitchGameId");       // selected id from typeahead
-    const elDesc = document.getElementById("twitchDescription");
-    const elSave = document.getElementById("btnSaveTwitchDraft");
-    const elApply = document.getElementById("btnApplyTwitch");
+function wireTwitchStreamInfoPage(){
+  const root = document.getElementById("twitchStreamPage");
+  if(!root) return;
 
-    // Optional status line (only if you add <div id="twitchStreamStatus"> somewhere)
-    const elStatus = document.getElementById("twitchStreamStatus");
-    const setStatus = (t) => { if (elStatus) elStatus.textContent = t || ""; };
+  // Match twitch_stream.html IDs
+  const elTitle   = document.getElementById("twitchTitle");
+  const elCat     = document.getElementById("twitchCategory");     // display text
+  const elGameId  = document.getElementById("twitchGameId");       // selected id from typeahead
+  const elDesc    = document.getElementById("twitchDescription");
+  const elSave    = document.getElementById("btnSaveTwitchDraft");
+  const elApply   = document.getElementById("btnApplyTwitch");
+  const elStatus  = document.getElementById("twitchStreamStatus");
 
-    async function load() {
-        try {
-            const j = await apiGet("/api/twitch/streaminfo");
-            if (elTitle) elTitle.value = j.title || "";
-            if (elCat) elCat.value = j.category_name || j.category || ""; // tolerate either field name
-            if (elGameId) elGameId.value = j.category_id || j.game_id || "";
-            if (elDesc) elDesc.value = j.description || "";
-            setStatus("");
-        } catch (e) {
-            console.warn("Failed to load Twitch stream info", e);
-            setStatus("Could not load current draft");
-        }
+  const setStatus = (t)=>{ if(elStatus) elStatus.textContent = t||""; };
+
+  async function load(){
+    try{
+      const j = await apiGet("/api/twitch/streaminfo");
+      if(elTitle)  elTitle.value = j.title || "";
+      if(elCat)    elCat.value = j.category_name || j.category || "";
+      if(elGameId) elGameId.value = j.category_id || j.game_id || "";
+      if(elDesc)   elDesc.value = j.description || "";
+      setStatus("");
+    }catch(e){
+      console.warn("Failed to load Twitch stream info", e);
+      setStatus("Could not load current draft");
     }
+  }
 
-    async function save() {
-        setStatus("Saving…");
-        try {
-            const body = {
-                title: elTitle ? elTitle.value : "",
-                // Send BOTH so backend can use id (preferred) but keep name for display
-                category_id: elGameId ? elGameId.value : "",
-                category_name: elCat ? elCat.value : "",
-                description: elDesc ? elDesc.value : ""
-            };
+  async function save(){
+    setStatus("Saving…");
+    try{
+      const body = {
+        title: elTitle ? elTitle.value : "",
 
-            const j = await apiPost("/api/twitch/streaminfo", body);
-            if (j && j.ok === false) throw new Error(j.error || "ok=false");
-            setStatus("Saved");
-            return true;
-        } catch (e) {
-            console.error(e);
-            setStatus("Error saving");
-            return false;
-        }
+        // New fields
+        category_id: elGameId ? elGameId.value : "",
+        category_name: elCat ? elCat.value : "",
+
+        // Back-compat fields (if server expects these)
+        game_id: elGameId ? elGameId.value : "",
+        category: elCat ? elCat.value : "",
+
+        description: elDesc ? elDesc.value : ""
+      };
+
+      const j = await apiPost("/api/twitch/streaminfo", body);
+      if(j && j.ok === false) throw new Error(j.error || "ok=false");
+      setStatus("Saved");
+      return true;
+    }catch(e){
+      console.error(e);
+      setStatus(`Error saving: ${e.message || e}`);
+      return false;
     }
+  }
 
-    async function apply() {
-        setStatus("Updating Twitch…");
-        try {
-            const ok = await save();
-            if (!ok) return;
-            const j = await apiPost("/api/twitch/streaminfo/apply");
-            if (j && j.ok === false) throw new Error(j.error || "ok=false");
-            setStatus("Updated on Twitch");
-        } catch (e) {
-            console.error(e);
-            setStatus("Error updating Twitch");
-        }
+  async function apply(){
+    setStatus("Updating Twitch…");
+    try{
+      const ok = await save();
+      if(!ok) return;
+      const j = await apiPost("/api/twitch/streaminfo/apply");
+      if(j && j.ok === false) throw new Error(j.error || "ok=false");
+      setStatus("Updated on Twitch");
+    }catch(e){
+      console.error(e);
+      setStatus(`Error updating Twitch: ${e.message || e}`);
     }
+  }
 
-    elSave?.addEventListener("click", save);
-    elApply?.addEventListener("click", apply);
+  elSave?.addEventListener("click", save);
+  elApply?.addEventListener("click", apply);
 
-    load();
+  load();
 }
+
+
 function debounce(fn, ms){
   let t;
   return (...args) => {
@@ -527,6 +542,6 @@ function wireTwitchCategoryLookup(){
 
 // Call it on DOMContentLoaded (safe)
 document.addEventListener("DOMContentLoaded", () => {
-    wireTwitchStreamInfoPage();
-    wireTwitchCategoryLookup();
+  wireTwitchStreamInfoPage();
+  wireTwitchCategoryLookup();
 });

@@ -180,10 +180,32 @@ bool set_overlay_header(const nlohmann::json& header_obj, std::string* err = nul
 nlohmann::json overlay_header_json() const;
 OverlayHeader overlay_header_snapshot() const;
 
+
+    // -----------------------------------------------------------------
+    // Twitch Stream Info draft (used by /app/twitch_stream.html)
+    // Persists to config.json under key: twitch_streaminfo
+    // -----------------------------------------------------------------
+    struct TwitchStreamDraft {
+        std::string title;
+        std::string category_name; // display text
+        std::string category_id;   // Twitch "game_id" for Helix updates
+        std::string description;   // stored for YouTube phase 2
+    };
+
+    void set_twitch_stream_draft(const TwitchStreamDraft& d);
+    TwitchStreamDraft twitch_stream_draft_snapshot();
+    nlohmann::json twitch_stream_draft_json();
+
 private:
+    void load_twitch_stream_draft_from_config_unlocked();
+    void save_twitch_stream_draft_to_config_unlocked();
     static std::int64_t now_ms();
 
     mutable std::mutex mtx_;
+    // Twitch stream info draft (loaded lazily from config.json)
+    bool twitch_stream_draft_loaded_ = false;
+    TwitchStreamDraft twitch_stream_draft_{};
+
     Metrics metrics_{};
     std::deque<ChatMessage> chat_; // last 200
     std::deque<EventItem> tiktok_events_; // last 200

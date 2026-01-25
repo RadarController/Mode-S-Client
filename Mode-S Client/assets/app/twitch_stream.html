@@ -38,7 +38,7 @@
                     <input class="input" type="text" id="twitchTitle" placeholder="e.g. EGCC Director | VATSIM">
                 </div>
 
-                <div class="field">
+                <div class="field field--typeahead">
                     <label for="twitchCategory">Category (Twitch lookup)</label>
 
                     <!-- User types here -->
@@ -55,9 +55,7 @@
                     </div>
 
                     <!-- Results dropdown -->
-                    <div class="field field--typeahead">
-                        <div id="twitchCategoryResults" class="typeahead" style="display:none;"></div>
-                    </div>
+                    <div id="twitchCategoryResults" class="typeahead" style="display:none;"></div>
                 </div>
 
                 <div class="field">
@@ -69,8 +67,8 @@
                     <button class="btn" id="btnSaveTwitchDraft">Save Draft</button>
                     <button class="btn btn--primary" id="btnApplyTwitch">Update Twitch Now</button>
                 </div>
-                <div class="twitch-status muted" id="twitchStreamStatus" aria-live="polite"></div>
 
+                <div class="twitch-status muted" id="twitchStreamStatus" aria-live="polite"></div>
             </div>
         </section>
         <section class="card card--muted">
