@@ -230,10 +230,10 @@ function applyMetrics(m){
   const build = $("#buildInfo");
   if (build){
     // if you include build fields in metrics payload, they'll show here
-    const ver = m.version || (m.app && m.app.version) || null;
+    const ver = m.version || (m.app && m.app.version) || window.__APP_BUILDINFO || null;
     const port = m.port || (m.http && m.http.port) || null;
     const parts = [];
-    if (ver) parts.push(`v${ver}`);
+    if (ver) parts.push(`${ver}`);
     if (port) parts.push(`:${port}`);
     build.textContent = parts.length ? parts.join(" ") : "—";
   }

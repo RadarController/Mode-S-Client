@@ -87,12 +87,15 @@
     <IntDir>$(ProjectDir)0_debug\</IntDir>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <PreBuildEvent>
+      <Command>powershell -NoProfile -ExecutionPolicy Bypass -File "$(ProjectDir)tools\gen_version.ps1" -RepoRoot "$(SolutionDir)"</Command>
+    </PreBuildEvent>
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;%(PreprocessorDefinitions);CPPHTTPLIB_OPENSSL_SUPPORT</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ProjectDir)external;$(ProjectDir)src;$(ProjectDir)integrations;$(ProjectDir)assets;$(ProjectDir)core;$(ProjectDir)helpers;$(ProjectDir)scripts;$(ProjectDir)ui</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)external;$(ProjectDir)src;$(ProjectDir)integrations;$(ProjectDir)assets;$(ProjectDir)core;$(ProjectDir)helpers;$(ProjectDir)scripts;$(ProjectDir)ui;$(SolutionDir)generated</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -100,10 +103,13 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
     <ResourceCompile>
-      <AdditionalIncludeDirectories>$(ProjectDir)assets</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)assets;$(SolutionDir)generated</AdditionalIncludeDirectories>
     </ResourceCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <PreBuildEvent>
+      <Command>powershell -NoProfile -ExecutionPolicy Bypass -File "$(ProjectDir)tools\gen_version.ps1" -RepoRoot "$(SolutionDir)"</Command>
+    </PreBuildEvent>
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <FunctionLevelLinking>true</FunctionLevelLinking>
@@ -111,7 +117,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;%(PreprocessorDefinitions);CPPHTTPLIB_OPENSSL_SUPPORT</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ProjectDir)external;$(ProjectDir)src;$(ProjectDir)integrations;$(ProjectDir)assets;$(ProjectDir)core;$(ProjectDir)helpers;$(ProjectDir)scripts;$(ProjectDir)ui</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)external;$(ProjectDir)src;$(ProjectDir)integrations;$(ProjectDir)assets;$(ProjectDir)core;$(ProjectDir)helpers;$(ProjectDir)scripts;$(ProjectDir)ui;$(SolutionDir)generated</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -119,7 +125,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
     <ResourceCompile>
-      <AdditionalIncludeDirectories>$(ProjectDir)assets</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)assets;$(SolutionDir)generated</AdditionalIncludeDirectories>
     </ResourceCompile>
     <PostBuildEvent>
       <Command>if not exist "$(TargetDir)sidecar" mkdir "$(TargetDir)sidecar"
@@ -129,12 +135,15 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <PreBuildEvent>
+      <Command>powershell -NoProfile -ExecutionPolicy Bypass -File "$(ProjectDir)tools\gen_version.ps1" -RepoRoot "$(SolutionDir)"</Command>
+    </PreBuildEvent>
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_WINDOWS;%(PreprocessorDefinitions);CPPHTTPLIB_OPENSSL_SUPPORT</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ProjectDir)external;$(ProjectDir)src;$(ProjectDir)integrations;$(ProjectDir)assets;$(ProjectDir)core;$(ProjectDir)helpers;$(ProjectDir)scripts;$(ProjectDir)ui</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)external;$(ProjectDir)src;$(ProjectDir)integrations;$(ProjectDir)assets;$(ProjectDir)generated;$(ProjectDir)ui</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -142,10 +151,13 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
     <ResourceCompile>
-      <AdditionalIncludeDirectories>$(ProjectDir)assets</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)assets;$(SolutionDir)generated</AdditionalIncludeDirectories>
     </ResourceCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <PreBuildEvent>
+      <Command>powershell -NoProfile -ExecutionPolicy Bypass -File "$(ProjectDir)tools\gen_version.ps1" -RepoRoot "$(SolutionDir)"</Command>
+    </PreBuildEvent>
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <FunctionLevelLinking>true</FunctionLevelLinking>
@@ -153,7 +165,7 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_WINDOWS;%(PreprocessorDefinitions);CPPHTTPLIB_OPENSSL_SUPPORT</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ProjectDir)external;$(ProjectDir)src;$(ProjectDir)integrations;$(ProjectDir)assets;$(ProjectDir)core;$(ProjectDir)helpers;$(ProjectDir)scripts;$(ProjectDir)ui</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)external;$(ProjectDir)src;$(ProjectDir)integrations;$(ProjectDir)assets;$(ProjectDir)generated;$(ProjectDir)ui</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -161,7 +173,7 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
     <ResourceCompile>
-      <AdditionalIncludeDirectories>$(ProjectDir)assets</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)assets;$(SolutionDir)generated</AdditionalIncludeDirectories>
     </ResourceCompile>
     <PostBuildEvent>
       <Command>if not exist "$(TargetDir)sidecar" mkdir "$(TargetDir)sidecar"
@@ -244,6 +256,7 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
       <RootFolder Condition="'$(Configuration)|$(Platform)'=='Release|x64'">sidecar</RootFolder>
     </None>
     <None Include="scripts\sidecar\youtube_sidecar.py" />
+    <None Include="tools\gen_version.ps1" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="assets\icons\radarcontrollermodesclient.ico" />

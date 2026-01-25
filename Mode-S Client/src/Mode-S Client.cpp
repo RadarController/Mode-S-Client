@@ -25,6 +25,7 @@
 #include "json.hpp"
 
 #include "resource.h"
+#include "version.h"
 #include "AppConfig.h"
 #include "AppState.h"
 #include "http/HttpServer.h"
@@ -120,7 +121,7 @@ static constexpr UINT WM_APP_SPLASH_READY = WM_APP + 201;
 static constexpr UINT_PTR SPLASH_CLOSE_TIMER_ID = 1001;
 static constexpr UINT SPLASH_CLOSE_DELAY_MS = 1 * 1000; // test: keep splash for 1s after ready
 static const wchar_t* kAppDisplayName = L"StreamingATC.Live Mode-S Client";
-static const wchar_t* kAppVersion = L"v0.4.1"; // TODO: wire to resource/file version
+static const wchar_t* kAppVersion = APP_VERSION_W; // auto-generated per build
 
 static HWND hGroupTikTok = nullptr, hGroupTwitch = nullptr, hGroupYouTube = nullptr;
 static HWND hLblTikTok = nullptr, hLblTwitch = nullptr, hLblYouTube = nullptr;
@@ -687,6 +688,10 @@ static HWND CreateSplashWindow(HINSTANCE hInstance)
         nullptr, nullptr, hInstance, nullptr);
 
     if (hwnd) {
+        {
+            std::wstring title = std::wstring(kAppDisplayName) + L" " + APP_VERSION_FILE_W;
+            SetWindowTextW(hwnd, title.c_str());
+        }
         ShowWindow(hwnd, SW_SHOW);
         UpdateWindow(hwnd);
     }
@@ -1592,6 +1597,18 @@ catch (...) {
                                             settings->Release();
                                         }
 
+                                        // Inject build info for the /app UI (shown bottom-right).
+                                        {
+                                            std::wstring build = APP_VERSION_FILE_W; // e.g. 2026.1.25.48417
+                                            // JS: window.__APP_BUILDINFO="..."; set footer on DOMContentLoaded.
+                                            std::wstring js = L"window.__APP_BUILDINFO='" + build + L"';"
+                                                             L"document.addEventListener('DOMContentLoaded',function(){"
+                                                             L"var el=document.getElementById('buildInfo');"
+                                                             L"if(el){el.textContent=window.__APP_BUILDINFO;}"
+                                                             L"});";
+                                            gMainWebView->AddScriptToExecuteOnDocumentCreated(js.c_str(), nullptr);
+                                        }
+
                                         // If the HTTP server is already ready, navigate now.
                                         if (gHttpReady.load()) {
                                             gMainWebView->Navigate(kModernUiUrl);
@@ -2294,11 +2311,18 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
     HWND hwnd = CreateWindowExW(
         0, CLASS_NAME, kAppDisplayName,
         WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT, 1440, 810,
+        CW_USEDEFAULT, CW_USEDEFAULT, 1440, 900,
         nullptr, nullptr, hInstance, nullptr
     );
 
     gMainWnd = hwnd;
+
+    // Set window title to include build/file version
+    {
+        std::wstring title = std::wstring(kAppDisplayName) + L" " + APP_VERSION_FILE_W;
+        SetWindowTextW(hwnd, title.c_str());
+    }
+
 
     if (!hwnd) {
         DWORD e = GetLastError();

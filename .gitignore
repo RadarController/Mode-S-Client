@@ -35,8 +35,9 @@ bld/
 [Ll]ogs/
 0_debug/
 0_release/
-assets/overlay/
 enc_temp_folder/
+generated/
+tools/
 
 # Visual Studio 2015/2017 cache/options directory
 .vs/
