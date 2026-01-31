@@ -667,7 +667,7 @@ void TwitchEventSubWsClient::Run()
         if (delay > max_delay) delay = max_delay;
 
         // jitter up to 250ms
-        DWORD jitter = (DWORD)(GetTickCount() % 250);
+        DWORD jitter = (DWORD)(GetTickCount64() % 250);
 
         Sleep(delay + jitter);
     }
