@@ -7,6 +7,7 @@
 #include <cctype>
 #include <chrono>
 #include <thread>
+#include <mutex>
 
 #include "json.hpp"
 #include "../AppState.h"
@@ -1145,6 +1146,9 @@ svr.Get("/auth/twitch/start", [&](const httplib::Request& req, httplib::Response
             }
 
             bool ok = false;
+            // Serialize platform start/stop actions to avoid concurrent stop()/join() races.
+            static std::mutex g_platform_action_mu;
+            std::lock_guard<std::mutex> lk(g_platform_action_mu);
             try {
                 ok = fn();
             }

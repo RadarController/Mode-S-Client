@@ -69,6 +69,10 @@ private:
     std::string m_access_token;
     std::string m_channel; // joined channel, without '#'
     std::string m_nick;
+
+    // Guards start/stop/join so they are safe if called concurrently (e.g., from HTTP worker + UI).
+    std::mutex m_lifecycle_mu;
+
     std::atomic<bool> m_running{ false };
     std::thread m_thread;
 
