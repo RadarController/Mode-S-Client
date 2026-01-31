@@ -77,6 +77,9 @@ private:
     std::atomic<bool> running_{ false };
 
     // WebSocket handle so Stop() can unblock WinHttpWebSocketReceive.
+    // Lifecycle mutex: makes Start/Stop idempotent and thread-join safe.
+    std::mutex lifecycle_mu_;
+
     std::mutex ws_mu_;
     void* ws_handle_{ nullptr };
 
@@ -92,9 +95,11 @@ private:
     bool connected_ = false;
     bool subscribed_ = false;
     std::string session_id_;
+    int keepalive_timeout_sec_ = 0;
     std::int64_t last_ws_message_ms_ = 0;
     std::int64_t last_keepalive_ms_ = 0;
     std::int64_t last_helix_ok_ms_ = 0;
+    std::atomic<std::uint64_t> run_epoch_{0};
     std::string last_error_;
     nlohmann::json subscriptions_ = nlohmann::json::array();
 };
