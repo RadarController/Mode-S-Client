@@ -1779,50 +1779,42 @@ catch (...) {
             };
 
             opt.start_twitch = [&]() -> bool {
-                const std::string token = twitchAuth.GetAccessToken().value_or(token);
+                std::string token = twitchAuth.GetAccessToken().value_or("");
+                if (token.empty()) {
+                    LogLine(L"TWITCH: token not available yet (auth not ready) - refusing to start");
+                    return false;
+                }
+
                 const bool ok = PlatformControl::StartOrRestartTwitchIrc(
                     twitch, state, chat,
                     config.twitch_login,
                     token,
                     [](const std::wstring& s) { LogLine(s); });
 
-                if (ok) {
-                    // Start EventSub (follows/subs/gifts) using OAuth token in config.json
-                    twitchEventSub.Start(
-                        config.twitch_client_id,
-                        token,
-                        config.twitch_login,
+                if (!ok) return false;
 
-                        // EventSub -> Chat
-                        [&](const ChatMessage& msg)
-                        {
-                            chat.Add(msg);
-                        },
+                twitchEventSub.Start(
+                    config.twitch_client_id,
+                    token,
+                    config.twitch_login,
+                    [&](const ChatMessage& msg) { chat.Add(msg); },
+                    [&](const nlohmann::json& ev) { state.add_twitch_eventsub_event(ev); },
+                    [&](const nlohmann::json& st) {
+                        state.set_twitch_eventsub_status(st);
 
-                        // EventSub -> Alerts overlay
-                        [&](const nlohmann::json& ev)
-                        {
-                            state.add_twitch_eventsub_event(ev);
-                        },
-
-                        // Optional: status updates
-                        [&](const nlohmann::json& st)
-                        {
-                            state.set_twitch_eventsub_status(st);
-
-                            // Push new error events into AppState's ring buffer.
-                            static std::uint64_t last_seq = 0;
-                            const std::uint64_t seq = st.value("last_error_seq", (std::uint64_t)0);
-                            if (seq != 0 && seq != last_seq) {
-                                last_seq = seq;
-                                const std::string msg = st.value("last_error", std::string{});
-                                if (!msg.empty()) state.push_twitch_eventsub_error(msg);
-                            }
+                        // Optional: push “new” error events into AppState ring buffer
+                        static std::uint64_t last_seq = 0;
+                        const std::uint64_t seq = st.value("last_error_seq", (std::uint64_t)0);
+                        if (seq != 0 && seq != last_seq) {
+                            last_seq = seq;
+                            const std::string msg = st.value("last_error", std::string{});
+                            if (!msg.empty()) state.push_twitch_eventsub_error(msg);
                         }
-                    );
-                    return ok;
-                }
-            };
+                    }
+                );
+
+                return true;
+                };
             opt.stop_twitch = [&]() -> bool {
                 PlatformControl::StopTwitch(twitch, state, hwnd, (UINT)(WM_APP + 41), [](const std::wstring& s) { LogLine(s); });
                 return true;
