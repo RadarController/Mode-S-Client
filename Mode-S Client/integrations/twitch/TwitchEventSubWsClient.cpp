@@ -835,6 +835,14 @@ bool TwitchEventSubWsClient::CreateSubscription(const std::string& type,
 
 bool TwitchEventSubWsClient::SubscribeAll(const std::string& sessionId)
 {
+    // Capture current subscription-attempt log size so we can emit a clear
+    // one-line summary (and per-type HTTP codes) after attempting to subscribe.
+    size_t subs_before = 0;
+    {
+        std::lock_guard<std::mutex> lk(status_mu_);
+        subs_before = subscriptions_.size();
+    }
+
     std::string broadcasterUid = ResolveBroadcasterUserId();
     if (broadcasterUid.empty()) {
         OutputDebug(L"SubscribeAll: missing broadcaster user id (check twitch_login, token, client-id)");
@@ -892,6 +900,41 @@ okAny |= CreateSubscription(
         "1",
         json({ {"broadcaster_user_id", broadcasterUid} }).dump(),
         sessionId);
+
+    // Summary line: attempted/ok/fail + per-type HTTP result.
+    // (We base this on the subscription-attempt ring we maintain in subscriptions_.
+    // This makes logs reliable even if individual per-type lines scroll off.)
+    {
+        std::vector<json> new_attempts;
+        {
+            std::lock_guard<std::mutex> lk(status_mu_);
+            const size_t end = subscriptions_.size();
+            for (size_t i = subs_before; i < end; ++i) {
+                new_attempts.push_back(subscriptions_[i]);
+            }
+        }
+
+        int attempted = (int)new_attempts.size();
+        int ok = 0;
+        for (const auto& a : new_attempts) {
+            if (a.value("ok", false)) ok++;
+        }
+        int fail = attempted - ok;
+
+        std::wstring summary = L"SubscribeAll summary: attempted=" + std::to_wstring(attempted)
+            + L" ok=" + std::to_wstring(ok)
+            + L" fail=" + std::to_wstring(fail);
+
+        for (const auto& a : new_attempts) {
+            const std::string type = a.value("type", "");
+            const int status = a.value("status", 0);
+            const bool aok = a.value("ok", false);
+            summary += L"  - " + Utf8ToWide(type)
+                + L" HTTP " + std::to_wstring(status)
+                + (aok ? L" (ok)" : L" (fail)");
+        }
+        OutputDebug(summary);
+    }
 
     return okAny;
 }
