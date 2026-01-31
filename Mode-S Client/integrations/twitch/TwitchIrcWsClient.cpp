@@ -58,8 +58,25 @@ TwitchIrcWsClient::TwitchIrcWsClient() {}
 TwitchIrcWsClient::~TwitchIrcWsClient() { stop(); }
 
 void TwitchIrcWsClient::stop() {
-    m_running.store(false);
-    if (m_thread.joinable()) m_thread.join();
+    // stop() can be called from multiple threads (UI, HTTP routes, token refresh).
+    // Make it idempotent and avoid std::terminate from double-join or self-join.
+    std::thread to_join;
+    {
+        std::lock_guard<std::mutex> lk(m_lifecycle_mu);
+        m_running.store(false);
+        if (m_thread.joinable()) {
+            to_join = std::move(m_thread);
+        }
+    }
+
+    if (to_join.joinable()) {
+        if (to_join.get_id() == std::this_thread::get_id()) {
+            // Joining yourself throws; detach as a safe escape hatch.
+            to_join.detach();
+        } else {
+            to_join.join();
+        }
+    }
 }
 
 // -----------------------------------------------------------------------------
@@ -169,6 +186,7 @@ bool TwitchIrcWsClient::start(const std::string& oauth_token_with_oauth_prefix,
     const std::string& nick,
     const std::string& channel,
     OnPrivMsg cb) {
+    std::lock_guard<std::mutex> lk(m_lifecycle_mu);
     if (m_running.load()) return false;
     if (oauth_token_with_oauth_prefix.empty() || nick.empty() || channel.empty()) return false;
     m_running.store(true);

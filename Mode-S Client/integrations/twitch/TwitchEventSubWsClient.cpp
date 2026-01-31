@@ -846,35 +846,86 @@ bool TwitchEventSubWsClient::SubscribeAll(const std::string& sessionId)
         return false;
     }
 
-// Follow (v2) requires broadcaster_user_id and moderator_user_id, and scope moderator:read:followers.
-// For v2, Twitch expects moderator_user_id to match the user represented by the token (or a moderator),
-// otherwise subscription creation can fail.
-// https://dev.twitch.tv/docs/eventsub/eventsub-subscription-types/#channelfollow
-const std::string tokenUid = ResolveTokenUserId();
-const std::string moderatorUid = !tokenUid.empty() ? tokenUid : broadcasterUid;
+    // Capture how many subscription attempts we had before this pass (for a clean per-pass summary).
+    size_t beforeCount = 0;
+    {
+        std::lock_guard<std::mutex> lk(status_mu_);
+        beforeCount = subscriptions_.size();
+    }
 
-bool okAny = false;
-okAny |= CreateSubscription(
-    "channel.follow",
-    "2",
-    json({ {"broadcaster_user_id", broadcasterUid}, {"moderator_user_id", moderatorUid} }).dump(),
-    sessionId);
+    // Follow (v2) requires broadcaster_user_id and moderator_user_id, and scope moderator:read:followers.
+    // For v2, Twitch expects moderator_user_id to match the user represented by the token (or a moderator),
+    // otherwise subscription creation can fail.
+    // https://dev.twitch.tv/docs/eventsub/eventsub-subscription-types/#channelfollow
+    const std::string tokenUid = ResolveTokenUserId();
+    const std::string moderatorUid = !tokenUid.empty() ? tokenUid : broadcasterUid;
 
-// Subscriptions (v1) require broadcaster_user_id and scope channel:read:subscriptions.
+    bool okAny = false;
+
+    const bool okFollow = CreateSubscription(
+        "channel.follow",
+        "2",
+        json({ {"broadcaster_user_id", broadcasterUid}, {"moderator_user_id", moderatorUid} }).dump(),
+        sessionId);
+
+    okAny |= okFollow;
+
+    if (!okFollow) {
+        // Add extra context because follow is the most common “works on my machine” failure:
+        // the token user must be the broadcaster or a moderator of the channel.
+        OutputDebug(
+            L"Follow subscription failed context: broadcaster_user_id=" + Utf8ToWide(broadcasterUid) +
+            L" token_user_id=" + Utf8ToWide(tokenUid) +
+            L" moderator_user_id(sent)=" + Utf8ToWide(moderatorUid) +
+            L" (token user must be broadcaster or moderator; scope moderator:read:followers required)");
+    }
+
+    // Subscriptions (v1) require broadcaster_user_id and scope channel:read:subscriptions.
     // https://dev.twitch.tv/docs/eventsub/eventsub-subscription-types/#channelsubscribe
-    okAny |= CreateSubscription(
+    const bool okSub = CreateSubscription(
         "channel.subscribe",
         "1",
         json({ {"broadcaster_user_id", broadcasterUid} }).dump(),
         sessionId);
 
+    okAny |= okSub;
+
     // Gifted subscriptions (v1) require broadcaster_user_id and scope channel:read:subscriptions.
     // https://dev.twitch.tv/docs/eventsub/eventsub-subscription-types/#channelsubscriptiongift
-    okAny |= CreateSubscription(
+    const bool okGift = CreateSubscription(
         "channel.subscription.gift",
         "1",
         json({ {"broadcaster_user_id", broadcasterUid} }).dump(),
         sessionId);
+
+    okAny |= okGift;
+
+    // Log a short per-pass summary so you can diagnose “some events missing” instantly.
+    {
+        std::lock_guard<std::mutex> lk(status_mu_);
+        size_t afterCount = subscriptions_.size();
+        size_t added = (afterCount >= beforeCount) ? (afterCount - beforeCount) : 0;
+
+        int ok = 0, fail = 0;
+        std::wstring details;
+
+        for (size_t i = beforeCount; i < afterCount; ++i) {
+            const json& a = subscriptions_[i];
+            const bool aok = a.value("ok", false);
+            if (aok) ok++; else fail++;
+
+            std::string type = a.value("type", "");
+            int status = a.value("status", 0);
+
+            details += L"  - " + Utf8ToWide(type) +
+                       L" HTTP " + std::to_wstring(status) +
+                       (aok ? L" (ok)" : L" (fail)") + L"";
+        }
+
+        OutputDebug(L"SubscribeAll summary: attempted=" + std::to_wstring((int)added) +
+                    L" ok=" + std::to_wstring(ok) +
+                    L" fail=" + std::to_wstring(fail) + L"" + details);
+    }
 
     return okAny;
 }
