@@ -109,7 +109,38 @@ void AppState::set_twitch_eventsub_status(const nlohmann::json& status) {
 
 nlohmann::json AppState::twitch_eventsub_status_json() const {
     std::lock_guard<std::mutex> lk(mtx_);
-    return twitch_eventsub_status_;
+    nlohmann::json j = twitch_eventsub_status_;
+
+    // Derived health signal: "healthy" means we are connected, subscribed, and have seen a keepalive/message
+    // within the expected keepalive window (+ a small grace period).
+    const std::int64_t now = now_ms();
+    const bool connected = j.value("connected", false);
+    const bool subscribed = j.value("subscribed", false);
+    const int keepalive_sec = j.value("keepalive_timeout_sec", 0);
+
+    const std::int64_t last_keepalive = j.value("last_keepalive_ms", (std::int64_t)0);
+    const std::int64_t last_msg = j.value("last_ws_message_ms", (std::int64_t)0);
+    const std::int64_t last_activity = (last_keepalive > last_msg) ? last_keepalive : last_msg;
+
+    // If Twitch didn't give a keepalive timeout yet, fall back to "recent activity within 60s".
+    const std::int64_t allowed_ms = (keepalive_sec > 0 ? (std::int64_t)keepalive_sec * 1000 : 60000) + 5000;
+    const bool timely = (last_activity > 0) ? ((now - last_activity) <= allowed_ms) : false;
+
+    j["healthy"] = connected && subscribed && timely;
+    j["now_ms"] = now;
+
+    // Attach a small slice of recent EventSub errors for convenience.
+    const int kInline = 25;
+    nlohmann::json errs = nlohmann::json::array();
+    int start = (int)twitch_eventsub_errors_.size() - kInline;
+    if (start < 0) start = 0;
+    for (int i = start; i < (int)twitch_eventsub_errors_.size(); ++i) {
+        const auto& e = twitch_eventsub_errors_[i];
+        errs.push_back(nlohmann::json{{"id", e.id}, {"ts_ms", e.ts_ms}, {"msg", e.msg}});
+    }
+    j["recent_errors"] = std::move(errs);
+
+    return j;
 }
 
 void AppState::add_twitch_eventsub_event(const nlohmann::json& ev) {
@@ -139,6 +170,40 @@ nlohmann::json AppState::twitch_eventsub_events_json(int limit) const {
 void AppState::clear_twitch_eventsub_events() {
     std::lock_guard<std::mutex> lk(mtx_);
     twitch_eventsub_events_.clear();
+}
+
+
+void AppState::push_twitch_eventsub_error(const std::string& msg) {
+    if (msg.empty()) return;
+    std::lock_guard<std::mutex> lk(mtx_);
+    ErrorEntry e;
+    e.id = ++log_next_id_;
+    e.ts_ms = now_ms();
+    e.msg = msg;
+    twitch_eventsub_errors_.push_back(std::move(e));
+    while (twitch_eventsub_errors_.size() > 200) twitch_eventsub_errors_.pop_front();
+}
+
+nlohmann::json AppState::twitch_eventsub_errors_json(int limit) const {
+    std::lock_guard<std::mutex> lk(mtx_);
+    limit = std::max(1, std::min(limit, 1000));
+
+    nlohmann::json out;
+    out["count"] = (int)twitch_eventsub_errors_.size();
+    nlohmann::json arr = nlohmann::json::array();
+
+    int start = (int)twitch_eventsub_errors_.size() - limit;
+    if (start < 0) start = 0;
+    for (int i = start; i < (int)twitch_eventsub_errors_.size(); ++i) {
+        const auto& e = twitch_eventsub_errors_[i];
+        arr.push_back(nlohmann::json{
+            {"id", e.id},
+            {"ts_ms", e.ts_ms},
+            {"msg", e.msg}
+        });
+    }
+    out["errors"] = std::move(arr);
+    return out;
 }
 
 void AppState::push_tiktok_event(const EventItem& e) {

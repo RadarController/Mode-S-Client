@@ -7,7 +7,6 @@
 #include <cctype>
 #include <chrono>
 #include <thread>
-#include <mutex>
 
 #include "json.hpp"
 #include "../AppState.h"
@@ -350,6 +349,17 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
         auto j = state_.twitch_eventsub_status_json();
         res.set_content(j.dump(2), "application/json; charset=utf-8");
         });
+
+
+    svr.Get("/api/twitch/eventsub/errors", [&](const httplib::Request& req, httplib::Response& res) {
+        int limit = 50;
+        if (req.has_param("limit")) {
+            try { limit = std::max(1, std::min(1000, std::stoi(req.get_param_value("limit")))); }
+            catch (...) {}
+        }
+        auto j = state_.twitch_eventsub_errors_json(limit);
+        res.set_content(j.dump(2), "application/json; charset=utf-8");
+    });
 
     svr.Get("/api/twitch/eventsub/events", [&](const httplib::Request& req, httplib::Response& res) {
         int limit = 200;
@@ -1146,9 +1156,6 @@ svr.Get("/auth/twitch/start", [&](const httplib::Request& req, httplib::Response
             }
 
             bool ok = false;
-            // Serialize platform start/stop actions to avoid concurrent stop()/join() races.
-            static std::mutex g_platform_action_mu;
-            std::lock_guard<std::mutex> lk(g_platform_action_mu);
             try {
                 ok = fn();
             }

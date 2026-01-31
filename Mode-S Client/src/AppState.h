@@ -51,6 +51,13 @@ struct EventItem {
     std::int64_t ts_ms{};
 };
 
+struct ErrorEntry {
+        std::uint64_t id{};
+        std::int64_t ts_ms{};
+        std::string msg;
+    };
+
+
 struct Metrics {
     std::int64_t ts_ms{};
     int twitch_viewers{};
@@ -97,6 +104,10 @@ public:
     void add_twitch_eventsub_event(const nlohmann::json& ev);
     nlohmann::json twitch_eventsub_events_json(int limit = 200) const;
     void clear_twitch_eventsub_events();
+
+    // Ring buffer of recent EventSub errors/warnings (for quick diagnosis).
+    void push_twitch_eventsub_error(const std::string& msg);
+    nlohmann::json twitch_eventsub_errors_json(int limit = 50) const;
 
     void push_youtube_event(const EventItem& e);
     nlohmann::json youtube_events_json(size_t limit = 200) const;
@@ -211,6 +222,7 @@ private:
     std::deque<EventItem> tiktok_events_; // last 200
     std::deque<EventItem> youtube_events_; // last 200
     std::deque<nlohmann::json> twitch_eventsub_events_; // last 200 by default
+    std::deque<ErrorEntry> twitch_eventsub_errors_; // last 200 (most recent)
 
     // --- Bot commands ---
     struct BotCmd {
@@ -243,7 +255,9 @@ std::string overlay_header_path_utf8_;
         {"last_helix_ok_ms", 0},
         {"last_error", ""},
         {"subscriptions", nlohmann::json::array()}
-    };
+    };    
+
+
 
     struct LogEntry {
         std::uint64_t id{};
