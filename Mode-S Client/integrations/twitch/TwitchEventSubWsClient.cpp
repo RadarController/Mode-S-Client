@@ -136,32 +136,98 @@ static bool IsAllDigits(const std::string& s)
 
 static bool ParseWssUrl(const std::wstring& url, std::wstring& hostOut, std::wstring& pathOut)
 {
+    // Twitch may provide a reconnect_url with the "wss" scheme. WinHttpCrackUrl
+    // is not guaranteed to understand that scheme on all Windows versions.
+    // We'll try WinHttpCrackUrl first, then fall back to a manual parse.
+
+    auto manual_parse = [&]() -> bool {
+        std::wstring u = url;
+        // Trim whitespace
+        while (!u.empty() && iswspace(u.front())) u.erase(u.begin());
+        while (!u.empty() && iswspace(u.back())) u.pop_back();
+
+        // Normalize leading scheme to lowercase for comparison.
+        auto starts_with_i = [&](const std::wstring& prefix) -> bool {
+            if (u.size() < prefix.size()) return false;
+            for (size_t i = 0; i < prefix.size(); ++i) {
+                wchar_t a = (wchar_t)towlower(u[i]);
+                wchar_t b = (wchar_t)towlower(prefix[i]);
+                if (a != b) return false;
+            }
+            return true;
+        };
+
+        const std::wstring wss = L"wss://";
+        const std::wstring https = L"https://";
+        const std::wstring http = L"http://";
+
+        size_t off = 0;
+        if (starts_with_i(wss)) off = wss.size();
+        else if (starts_with_i(https)) off = https.size();
+        else if (starts_with_i(http)) off = http.size();
+        else {
+            // Some providers may omit a scheme; assume wss.
+            off = 0;
+        }
+
+        // host[:port]/path?query
+        size_t slash = u.find(L'/', off);
+        size_t qmark = u.find(L'?', off);
+        // Avoid Windows min/max macros (NOMINMAX may not be set in this TU).
+        const size_t slash_pos = (slash == std::wstring::npos) ? u.size() : slash;
+        const size_t qmark_pos = (qmark == std::wstring::npos) ? u.size() : qmark;
+        size_t host_end = (slash_pos < qmark_pos) ? slash_pos : qmark_pos;
+        if (host_end <= off) return false;
+
+        std::wstring host = u.substr(off, host_end - off);
+        // Strip :port if present (we always connect 443 for wss)
+        size_t colon = host.find(L':');
+        if (colon != std::wstring::npos) host = host.substr(0, colon);
+        if (host.empty()) return false;
+
+        std::wstring path;
+        if (slash != std::wstring::npos) {
+            path = u.substr(slash);
+        } else if (qmark != std::wstring::npos) {
+            // URL has no slash but has a query - treat as /?query
+            path = L"/" + u.substr(qmark);
+        } else {
+            path = L"/ws";
+        }
+
+        hostOut = std::move(host);
+        pathOut = std::move(path);
+        return true;
+    };
+
     URL_COMPONENTS uc{};
     uc.dwStructSize = sizeof(uc);
 
     wchar_t host[256] = {};
     wchar_t path[1024] = {};
+    wchar_t extra[2048] = {};
     uc.lpszHostName = host;
     uc.dwHostNameLength = (DWORD)std::size(host);
     uc.lpszUrlPath = path;
     uc.dwUrlPathLength = (DWORD)std::size(path);
+    uc.lpszExtraInfo = extra;
+    uc.dwExtraInfoLength = (DWORD)std::size(extra);
 
-    // Note: WinHttpCrackUrl expects a scheme like "wss://"
-    if (!WinHttpCrackUrl(url.c_str(), (DWORD)url.size(), 0, &uc))
-        return false;
-
-    if (uc.dwHostNameLength == 0)
-        return false;
+    if (!WinHttpCrackUrl(url.c_str(), (DWORD)url.size(), 0, &uc)) {
+        return manual_parse();
+    }
+    if (uc.dwHostNameLength == 0) {
+        return manual_parse();
+    }
 
     hostOut.assign(uc.lpszHostName, uc.dwHostNameLength);
 
-    // Include extra info (query) if present
     std::wstring p;
-    if (uc.dwUrlPathLength > 0)
-        p.assign(uc.lpszUrlPath, uc.dwUrlPathLength);
-    if (p.empty())
-        p = L"/ws";
-    pathOut = p;
+    if (uc.dwUrlPathLength > 0) p.assign(uc.lpszUrlPath, uc.dwUrlPathLength);
+    std::wstring ex;
+    if (uc.dwExtraInfoLength > 0) ex.assign(uc.lpszExtraInfo, uc.dwExtraInfoLength);
+    if (p.empty()) p = L"/ws";
+    pathOut = p + ex;
     return true;
 }
 
@@ -363,7 +429,12 @@ void TwitchEventSubWsClient::RequestReconnect(const std::wstring& wssUrl)
 {
     std::wstring host, path;
     if (!ParseWssUrl(wssUrl, host, path)) {
-        OutputDebug(L"session_reconnect: failed to parse reconnect_url");
+        // Helpful diagnostic: log the URL (trimmed) so we can see what Twitch sent.
+        std::wstring u = wssUrl;
+        while (!u.empty() && iswspace(u.front())) u.erase(u.begin());
+        while (!u.empty() && iswspace(u.back())) u.pop_back();
+        if (u.size() > 240) u = u.substr(0, 240) + L"...";
+        OutputDebug(L"session_reconnect: failed to parse reconnect_url: " + u);
         return;
     }
 
