@@ -1915,29 +1915,50 @@ LogLine(L"TIKTOK: starting followers poller thread");
             LogLine(L"TWITCH: refreshing OAuth token...");
             std::string auth_err;
             // When TwitchAuth refreshes tokens, push the new access token into IRC + EventSub.
-            twitchAuth.on_tokens_updated = [&](const std::string& access, const std::string& /*refresh*/, const std::string& login) {
-                // EventSub uses Helix Bearer token (raw).
-                twitchEventSub.UpdateAccessToken(access);
-                twitchEventSub.Stop();
-                twitchEventSub.Start(
-                    config.twitch_client_id,
-                    access,
-                    config.twitch_login,
-                    [&](const ChatMessage& msg) { chat.Add(msg); },
-                    [&](const nlohmann::json& ev)
-                    {
-                        state.add_twitch_eventsub_event(ev);
-                    }
-                );
+// When TwitchAuth refreshes tokens, push the new access token into IRC + EventSub.
+            twitchAuth.on_tokens_updated = [&](const std::string& access,
+                const std::string& /*refresh*/,
+                const std::string& login) {
+                    LogLine(L"TWITCH: tokens updated - restarting EventSub + IRC");
 
-                // IRC needs oauth: prefix; TwitchIrcWsClient::StartAuthenticated normalizes.
-                PlatformControl::StartOrRestartTwitchIrc(
-                    twitch, state, chat,
-                    login,
-                    access,
-                    [](const std::wstring& s) { LogLine(s); }
-                );
-            };
+                    // Defensive: validated login can be empty depending on validate/refresh edge cases.
+                    const std::string effective_login = !login.empty() ? login : config.twitch_login;
+
+                    twitchEventSub.UpdateAccessToken(access);
+                    twitchEventSub.Stop();
+                    twitchEventSub.Start(
+                        config.twitch_client_id,
+                        access,
+                        config.twitch_login,
+
+                        // EventSub -> Chat (optional messages you inject)
+                        [&](const ChatMessage& msg) { chat.Add(msg); },
+
+                        // EventSub -> Alerts overlay
+                        [&](const nlohmann::json& ev) { state.add_twitch_eventsub_event(ev); },
+
+                        // EventSub -> Status/health (THIS is what makes /api/twitch/eventsub/status meaningful)
+                        [&](const nlohmann::json& st) {
+                            state.set_twitch_eventsub_status(st);
+
+                            // Push new error events into AppState's ring buffer (optional but useful)
+                            static std::uint64_t last_seq = 0;
+                            const std::uint64_t seq = st.value("last_error_seq", (std::uint64_t)0);
+                            if (seq != 0 && seq != last_seq) {
+                                last_seq = seq;
+                                const std::string msg = st.value("last_error", std::string{});
+                                if (!msg.empty()) state.push_twitch_eventsub_error(msg);
+                            }
+                        }
+                    );
+
+                    PlatformControl::StartOrRestartTwitchIrc(
+                        twitch, state, chat,
+                        effective_login,
+                        access,
+                        [](const std::wstring& s) { LogLine(s); }
+                    );
+                };
 
             if (!twitchAuth.Start()) {
                 LogLine(L"TWITCH: OAuth token refresh/start failed (check config: twitch_client_id / twitch_client_secret / twitch.user_refresh_token)");
