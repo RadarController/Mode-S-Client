@@ -199,6 +199,8 @@ void TwitchEventSubWsClient::Start(
 {
     Stop();
 
+    std::lock_guard<std::mutex> lk_life(lifecycle_mu_);
+
     client_id_ = clientId;
     access_token_ = NormalizeRawAccessToken(userAccessToken);
 
@@ -239,22 +241,42 @@ void TwitchEventSubWsClient::Start(
 
 void TwitchEventSubWsClient::Stop()
 {
-    running_ = false;
+    std::thread to_join;
 
-    // Unblock WinHttpWebSocketReceive if it's waiting.
     {
-        std::lock_guard<std::mutex> lk(ws_mu_);
-        if (ws_handle_) {
-            HINTERNET ws = static_cast<HINTERNET>(ws_handle_);
-            // Best-effort close; ignore errors.
-            WinHttpWebSocketClose(ws, 1000, nullptr, 0);
-            WinHttpCloseHandle(ws);
-            ws_handle_ = nullptr;
+        // Make Stop() safe to call from multiple threads (HTTP routes, token refresh, UI).
+    
+        running_ = false;
+        // Bump epoch so any watchdog threads exit promptly.
+        run_epoch_.fetch_add(1);
+
+        // Unblock WinHttpWebSocketReceive if it's waiting.
+        {
+            std::lock_guard<std::mutex> lk(ws_mu_);
+            if (ws_handle_) {
+                HINTERNET ws = static_cast<HINTERNET>(ws_handle_);
+                // Best-effort close; ignore errors.
+                WinHttpWebSocketClose(ws, 1000, nullptr, 0);
+                WinHttpCloseHandle(ws);
+                ws_handle_ = nullptr;
+            }
+        }
+
+        // Move the worker thread out under the lifecycle lock. Join outside.
+        if (worker_.joinable()) {
+            to_join = std::move(worker_);
         }
     }
 
-    if (worker_.joinable())
-        worker_.join();
+    if (to_join.joinable()) {
+        if (to_join.get_id() == std::this_thread::get_id()) {
+            // Never self-join; detach as a last resort.
+            to_join.detach();
+        }
+        else {
+            to_join.join();
+        }
+    }
 
     {
         std::lock_guard<std::mutex> lk(status_mu_);
@@ -262,9 +284,11 @@ void TwitchEventSubWsClient::Stop()
         connected_ = false;
         subscribed_ = false;
         session_id_.clear();
+        keepalive_timeout_sec_ = 0;
     }
     EmitStatus();
 }
+
 
 
 void TwitchEventSubWsClient::UpdateAccessToken(const std::string& userAccessToken)
@@ -364,8 +388,12 @@ void TwitchEventSubWsClient::RequestReconnect(const std::wstring& wssUrl)
 
 void TwitchEventSubWsClient::Run()
 {
+    int attempt = 0;
+
     while (running_)
     {
+        const std::uint64_t epoch = run_epoch_.load();
+
         std::wstring host, path;
         {
             std::lock_guard<std::mutex> lk(reconnect_mu_);
@@ -381,6 +409,8 @@ void TwitchEventSubWsClient::Run()
             connected_ = false;
             subscribed_ = false;
             session_id_.clear();
+            keepalive_timeout_sec_ = 0;
+            last_error_.clear();
         }
         EmitStatus();
 
@@ -389,6 +419,28 @@ void TwitchEventSubWsClient::Run()
         HINTERNET hRequest = nullptr;
         HINTERNET hWebSocket = nullptr;
 
+        auto cleanup = [&]() {
+            {
+                std::lock_guard<std::mutex> lk(ws_mu_);
+                if (ws_handle_ == hWebSocket) {
+                    ws_handle_ = nullptr;
+                }
+            }
+            if (hWebSocket) WinHttpCloseHandle(hWebSocket);
+            if (hRequest)   WinHttpCloseHandle(hRequest);
+            if (hConnect)   WinHttpCloseHandle(hConnect);
+            if (hSession)   WinHttpCloseHandle(hSession);
+            hWebSocket = nullptr; hRequest = nullptr; hConnect = nullptr; hSession = nullptr;
+        };
+
+        auto fail = [&](const std::string& what) {
+            SetLastError(what);
+            cleanup();
+        };
+
+        bool connected_ok = false;
+
+        // ---- connect attempt (no goto; use connected_ok flag) ----
         hSession = WinHttpOpen(
             L"ModeS-Twitch-EventSub/1.0",
             WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
@@ -397,132 +449,158 @@ void TwitchEventSubWsClient::Run()
             0);
 
         if (!hSession) {
-            OutputDebug(L"WinHttpOpen failed");
-            break;
+            fail("WinHttpOpen failed");
+        } else {
+
+            // Ensure modern TLS is enabled (Twitch requires TLS 1.2+).
+            DWORD protocols = WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_2;
+#ifdef WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_3
+            protocols |= WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_3;
+#endif
+            WinHttpSetOption(hSession, WINHTTP_OPTION_SECURE_PROTOCOLS, &protocols, sizeof(protocols));
+
+            hConnect = WinHttpConnect(hSession, host.c_str(), INTERNET_DEFAULT_HTTPS_PORT, 0);
+            if (!hConnect) {
+                fail("WinHttpConnect failed");
+            } else {
+
+                hRequest = WinHttpOpenRequest(
+                    hConnect,
+                    L"GET",
+                    path.c_str(),
+                    nullptr,
+                    WINHTTP_NO_REFERER,
+                    WINHTTP_DEFAULT_ACCEPT_TYPES,
+                    WINHTTP_FLAG_SECURE);
+
+                if (!hRequest) {
+                    fail("WinHttpOpenRequest failed");
+                } else {
+
+                    // Tell WinHTTP this request will upgrade to a WebSocket.
+                    if (!WinHttpSetOption(hRequest, WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET, nullptr, 0)) {
+                        fail("WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET failed");
+                    } else {
+
+                        if (!WinHttpSendRequest(
+                            hRequest,
+                            WINHTTP_NO_ADDITIONAL_HEADERS,
+                            0,
+                            WINHTTP_NO_REQUEST_DATA,
+                            0,
+                            0,
+                            0))
+                        {
+                            fail("WinHttpSendRequest failed");
+                        }
+                        else if (!WinHttpReceiveResponse(hRequest, nullptr)) {
+                            fail("WinHttpReceiveResponse failed");
+                        }
+                        else {
+
+                            hWebSocket = WinHttpWebSocketCompleteUpgrade(hRequest, 0);
+                            hRequest = nullptr;
+
+                            if (!hWebSocket) {
+                                fail("WinHttpWebSocketCompleteUpgrade failed");
+                            } else {
+
+                                {
+                                    std::lock_guard<std::mutex> lk(ws_mu_);
+                                    ws_handle_ = hWebSocket;
+                                }
+
+                                OutputDebug(L"connected");
+                                {
+                                    std::lock_guard<std::mutex> lk(status_mu_);
+                                    ws_state_ = "connected";
+                                    connected_ = true;
+                                    last_ws_message_ms_ = NowMs();
+                                    last_keepalive_ms_ = NowMs(); // until welcome gives us the real keepalive schedule
+                                }
+                                EmitStatus();
+
+                                // Reset backoff on a successful connect.
+                                attempt = 0;
+
+                                // Watchdog: if keepalives stop arriving, force a reconnect.
+                                std::thread watchdog([this, epoch]() {
+                                    while (running_ && run_epoch_.load() == epoch)
+                                    {
+                                        int timeout_s = 0;
+                                        std::int64_t last_keep_ms = 0;
+                                        bool is_connected = false;
+
+                                        {
+                                            std::lock_guard<std::mutex> lk(status_mu_);
+                                            timeout_s = keepalive_timeout_sec_;
+                                            last_keep_ms = last_keepalive_ms_;
+                                            is_connected = connected_;
+                                        }
+
+                                        if (is_connected && timeout_s > 0 && last_keep_ms > 0) {
+                                            const std::int64_t now = NowMs();
+                                            const std::int64_t grace_ms = 5000; // be generous vs. transient stalls
+                                            const std::int64_t limit = (std::int64_t)timeout_s * 1000 + grace_ms;
+                                            if ((now - last_keep_ms) > limit) {
+                                                SetLastError("keepalive_timeout");
+                                                RequestReconnect(L"wss://eventsub.wss.twitch.tv/ws");
+                                                break;
+                                            }
+                                        }
+
+                                        Sleep(1000);
+                                    }
+                                });
+
+                                connected_ok = true;
+
+                                ReceiveLoop(hWebSocket);
+
+                                // End watchdog for this iteration.
+                                run_epoch_.fetch_add(1);
+                                if (watchdog.joinable()) watchdog.join();
+                            }
+                        }
+                    }
+                }
+            }
         }
 
-        
-        // Ensure modern TLS is enabled (Twitch requires TLS 1.2+).
-        DWORD protocols = WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_2;
-        // TLS 1.3 flag is available on newer SDKs; guard with ifdef.
-        #ifdef WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_3
-        protocols |= WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_3;
-        #endif
-        WinHttpSetOption(hSession, WINHTTP_OPTION_SECURE_PROTOCOLS, &protocols, sizeof(protocols));
+        cleanup();
 
-hConnect = WinHttpConnect(
-            hSession,
-            host.c_str(),
-            INTERNET_DEFAULT_HTTPS_PORT,
-            0);
+        if (!running_) break;
 
-        if (!hConnect) {
-            OutputDebug(L"WinHttpConnect failed");
-            WinHttpCloseHandle(hSession);
-            break;
-        }
-
-        hRequest = WinHttpOpenRequest(
-            hConnect,
-            L"GET",
-            path.c_str(),
-            nullptr,
-            WINHTTP_NO_REFERER,
-            WINHTTP_DEFAULT_ACCEPT_TYPES,
-            WINHTTP_FLAG_SECURE);
-
-        if (!hRequest) {
-            OutputDebug(L"WinHttpOpenRequest failed");
-            WinHttpCloseHandle(hConnect);
-            WinHttpCloseHandle(hSession);
-            break;
-        }
-
-        
-        // Tell WinHTTP this request will upgrade to a WebSocket.
-        // Without this, WinHttpWebSocketCompleteUpgrade will fail.
-        if (!WinHttpSetOption(hRequest, WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET, nullptr, 0)) {
-            DWORD err = GetLastError();
-            OutputDebug(L"WinHttpSetOption(WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET) failed, err=" + std::to_wstring(err));
-            WinHttpCloseHandle(hRequest);
-            WinHttpCloseHandle(hConnect);
-            WinHttpCloseHandle(hSession);
-            break;
-        }
-
-if (!WinHttpSendRequest(
-            hRequest,
-            WINHTTP_NO_ADDITIONAL_HEADERS,
-            0,
-            WINHTTP_NO_REQUEST_DATA,
-            0,
-            0,
-            0))
-        {
-            OutputDebug(L"WinHttpSendRequest failed, err=" + std::to_wstring(GetLastError()));
-            WinHttpCloseHandle(hRequest);
-            WinHttpCloseHandle(hConnect);
-            WinHttpCloseHandle(hSession);
-            break;
-        }
-
-        if (!WinHttpReceiveResponse(hRequest, nullptr)) {
-            OutputDebug(L"WinHttpReceiveResponse failed, err=" + std::to_wstring(GetLastError()));
-            WinHttpCloseHandle(hRequest);
-            WinHttpCloseHandle(hConnect);
-            WinHttpCloseHandle(hSession);
-            break;
-        }
-
-        hWebSocket = WinHttpWebSocketCompleteUpgrade(hRequest, 0);
-        hRequest = nullptr;
-
-        if (!hWebSocket) {
-            OutputDebug(L"WinHttpWebSocketCompleteUpgrade failed, err=" + std::to_wstring(GetLastError()));
-            WinHttpCloseHandle(hConnect);
-            WinHttpCloseHandle(hSession);
-            break;
-        }
-
-        {
-            std::lock_guard<std::mutex> lk(ws_mu_);
-            ws_handle_ = hWebSocket;
-        }
-
-        OutputDebug(L"connected");
-        {
-            std::lock_guard<std::mutex> lk(status_mu_);
-            ws_state_ = "connected";
-            connected_ = true;
-        }
-        EmitStatus();
-        ReceiveLoop(hWebSocket);
-
-        {
-            std::lock_guard<std::mutex> lk(ws_mu_);
-            if (ws_handle_ == hWebSocket)
-                ws_handle_ = nullptr;
-        }
-
-        WinHttpCloseHandle(hWebSocket);
-        if (hRequest) WinHttpCloseHandle(hRequest);
-        if (hConnect) WinHttpCloseHandle(hConnect);
-        if (hSession) WinHttpCloseHandle(hSession);
-
-        if (!running_)
-            break;
-
-        // If not explicitly asked to reconnect, back off a touch.
+        // ---- reconnect backoff ----
         bool wantsReconnect = false;
         {
             std::lock_guard<std::mutex> lk(reconnect_mu_);
             wantsReconnect = reconnect_requested_;
         }
-        if (!wantsReconnect)
-            Sleep(750);
+
+        if (!wantsReconnect) {
+            attempt = (std::min)(attempt + 1, 8);
+        } else {
+            // Twitch asked us to reconnect; keep it snappy.
+            attempt = 0;
+        }
+
+        // base delay: 300ms, cap ~30s
+        DWORD base = 300;
+        DWORD max_delay = 30000;
+
+        DWORD delay = base;
+        if (attempt > 0) {
+            delay = base * (1u << (std::min)(attempt, 6));
+        }
+        if (delay > max_delay) delay = max_delay;
+
+        // jitter up to 250ms
+        DWORD jitter = (DWORD)(GetTickCount() % 250);
+
+        Sleep(delay + jitter);
     }
 }
-
 void TwitchEventSubWsClient::ReceiveLoop(void* ws)
 {
     HINTERNET hWebSocket = static_cast<HINTERNET>(ws);
@@ -599,6 +677,8 @@ void TwitchEventSubWsClient::HandleMessage(const std::string& payload)
             {
                 std::lock_guard<std::mutex> lk(status_mu_);
                 session_id_ = sessionId;
+                keepalive_timeout_sec_ = pl.contains("session") ? pl["session"].value("keepalive_timeout_seconds", 0) : 0;
+                last_keepalive_ms_ = NowMs();
                 subscribed_ = false;
                 subscriptions_ = json::array();
                 last_error_.clear();
@@ -815,7 +895,7 @@ bool TwitchEventSubWsClient::CreateSubscription(const std::string& type,
         attempt["type"] = type;
         attempt["version"] = version;
         attempt["status"] = r.status;
-        attempt["ok"] = (r.status == 202 || (r.status >= 200 && r.status < 300));
+        attempt["ok"] = (r.status == 202 || (r.status >= 200 && r.status < 300) || r.status == 409);
         if (!r.body.empty()) attempt["body"] = r.body;
         subscriptions_.push_back(attempt);
         if (attempt["ok"].get<bool>()) {
@@ -824,7 +904,7 @@ bool TwitchEventSubWsClient::CreateSubscription(const std::string& type,
     }
     EmitStatus();
 
-    if (r.status == 202 || (r.status >= 200 && r.status < 300)) {
+    if (r.status == 202 || (r.status >= 200 && r.status < 300) || r.status == 409) {
         OutputDebug(L"Subscribed: " + Utf8ToWide(type) + L" v" + Utf8ToWide(version));
         return true;
     }
@@ -1039,5 +1119,4 @@ std::string TwitchEventSubWsClient::BuildHumanReadableMessage(const std::string&
     if (!msg.empty()) return "📣 " + msg;
     return "📣 Twitch event";
 }
-
 
