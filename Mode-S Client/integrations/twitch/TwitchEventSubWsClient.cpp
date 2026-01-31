@@ -876,6 +876,23 @@ okAny |= CreateSubscription(
         json({ {"broadcaster_user_id", broadcasterUid} }).dump(),
         sessionId);
 
+
+    // Raids (v1) - incoming raids to this broadcaster.
+    // https://dev.twitch.tv/docs/eventsub/eventsub-subscription-types/#channelraid
+    okAny |= CreateSubscription(
+        "channel.raid",
+        "1",
+        json({ {"to_broadcaster_user_id", broadcasterUid} }).dump(),
+        sessionId);
+
+    // Resub messages (v1) require broadcaster_user_id and scope channel:read:subscriptions.
+    // https://dev.twitch.tv/docs/eventsub/eventsub-subscription-types/#channelsubscriptionmessage
+    okAny |= CreateSubscription(
+        "channel.subscription.message",
+        "1",
+        json({ {"broadcaster_user_id", broadcasterUid} }).dump(),
+        sessionId);
+
     return okAny;
 }
 
@@ -911,6 +928,20 @@ void TwitchEventSubWsClient::HandleNotification(const void* payloadPtr)
         user = ev.value("user_name", ev.value("user_login", ""));
         int count = ev.value("total", 1);
         message = "gifted " + std::to_string(count) + " subs";
+    }
+    else if (subType == "channel.subscription.message")
+    {
+        user = ev.value("user_name", ev.value("user_login", ""));
+        int months = ev.value("cumulative_months", 0);
+
+        std::string text;
+        if (ev.contains("message") && ev["message"].is_object()) {
+            text = ev["message"].value("text", "");
+        }
+
+        message = "resubscribed";
+        if (months > 0) message += " (" + std::to_string(months) + " months)";
+        if (!text.empty()) message += ": " + text;
     }
     else if (subType == "channel.raid")
     {
