@@ -210,12 +210,20 @@ OverlayHeader overlay_header_snapshot() const;
 private:
     void load_twitch_stream_draft_from_config_unlocked();
     void save_twitch_stream_draft_to_config_unlocked();
+
+    void load_metrics_cache_from_config_unlocked();
+    void save_metrics_cache_to_config_unlocked();
+
     static std::int64_t now_ms();
 
     mutable std::mutex mtx_;
     // Twitch stream info draft (loaded lazily from config.json)
     bool twitch_stream_draft_loaded_ = false;
     TwitchStreamDraft twitch_stream_draft_{};
+
+    // Metrics cache (loaded lazily from config.json under key: metrics_cache)
+    bool metrics_cache_loaded_ = false;
+    std::int64_t last_metrics_cache_save_ms_ = 0;
 
     Metrics metrics_{};
     std::deque<ChatMessage> chat_; // last 200
