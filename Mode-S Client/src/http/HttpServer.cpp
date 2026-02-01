@@ -205,6 +205,35 @@ void HttpServer::ApplyOverlayTokens(std::string& html)
     // If you also have placeholders like --font-stack in CSS, you can do:
     // changed |= ReplaceAll(html, "%%FONT_STACK%%", fontStack);
 
+    // Overlay header tokens (instant render before JS polling kicks in)
+    {
+        const auto hdr = state_.overlay_header_snapshot();
+
+        auto html_escape = [](const std::string& s) {
+            std::string o;
+            o.reserve(s.size());
+            for (char c : s) {
+                switch (c) {
+                case '&': o += "&amp;"; break;
+                case '<': o += "&lt;"; break;
+                case '>': o += "&gt;"; break;
+                case '"': o += "&quot;"; break;
+                case '\'': o += "&#39;"; break;
+                default: o += c; break;
+                }
+            }
+            return o;
+            };
+
+        const std::string t = html_escape(hdr.title);
+        const std::string s = html_escape(hdr.subtitle);
+
+        ReplaceAll(html, "{{HEADER_TITLE}}", t);
+        ReplaceAll(html, "{HEADER_TITLE}", t);
+        ReplaceAll(html, "{{HEADER_SUBTITLE}}", s);
+        ReplaceAll(html, "{HEADER_SUBTITLE}", s);
+    }
+
     (void)changed; // keep if you don't use it; helps debugging if you later add a loop
 }
 
@@ -730,6 +759,62 @@ svr.Get("/auth/twitch/start", [&](const httplib::Request& req, httplib::Response
         }
         return out;
     };
+
+    // --- API: overlay header ---
+// GET  /api/overlay/header -> {"ok":true,"title":"...","subtitle":"..."}
+// POST /api/overlay/header -> set {"title":"...","subtitle":"..."}
+    svr.Get("/api/overlay/header", [&](const httplib::Request&, httplib::Response& res) {
+        nlohmann::json out;
+        out["ok"] = true;
+        out["header"] = state_.overlay_header_json();
+
+        // Also provide flat fields for convenience
+        out["title"] = out["header"].value("title", "");
+        out["subtitle"] = out["header"].value("subtitle", "");
+
+        res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+        res.set_header("Pragma", "no-cache");
+        res.set_content(out.dump(2), "application/json; charset=utf-8");
+        });
+
+    svr.Post("/api/overlay/header", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!require_local(req, res)) return;
+
+        nlohmann::json body;
+        try {
+            body = nlohmann::json::parse(req.body);
+        }
+        catch (...) {
+            res.status = 400;
+            res.set_content(R"({"ok":false,"error":"bad_json"})", "application/json; charset=utf-8");
+            return;
+        }
+
+        // Accept either {"title":"..","subtitle":".."} OR {"header":{...}}
+        nlohmann::json header = body;
+        if (body.is_object() && body.contains("header")) header = body["header"];
+
+        std::string err;
+        if (!state_.set_overlay_header(header, &err)) {
+            res.status = 400;
+            nlohmann::json out;
+            out["ok"] = false;
+            out["error"] = err.empty() ? "invalid_header" : err;
+            out["header"] = state_.overlay_header_json();
+            res.set_content(out.dump(2), "application/json; charset=utf-8");
+            return;
+        }
+
+        nlohmann::json out;
+        out["ok"] = true;
+        out["header"] = state_.overlay_header_json();
+        out["title"] = out["header"].value("title", "");
+        out["subtitle"] = out["header"].value("subtitle", "");
+
+        res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+        res.set_header("Pragma", "no-cache");
+        res.set_content(out.dump(2), "application/json; charset=utf-8");
+        });
 
     // Upsert a single command without replacing the full list.
     // Body: {"command":"help","response":"...","enabled":true,"cooldown_ms":3000,"scope":"all"}
