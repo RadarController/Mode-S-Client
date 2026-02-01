@@ -1890,7 +1890,6 @@ catch (...) {
                 Sleep(5000);
             }
             });
-        metricsThread.detach();
 
         LogLine(L"TWITCH: starting Helix poller thread");
 
@@ -1909,7 +1908,6 @@ LogLine(L"TIKTOK: starting followers poller thread");
                 /*set_followers*/ [&](int f) { gTikTokFollowerCount = f; }
             }
         );
-        tiktokFollowersThread.detach();
         // Twitch OAuth token refresh (silent) - runs during boot while splash is visible
         {
             LogLine(L"TWITCH: refreshing OAuth token...");
@@ -2249,7 +2247,15 @@ config.youtube_handle = ToUtf8(GetWindowTextWString(hYouTube));
 
     case WM_DESTROY:
         gRunning = false;
+        // Stop metrics thread cleanly
+        if (metricsThread.joinable()) {
+            metricsThread.join();
+        }
 
+        // Stop TikTok followers poller cleanly
+        if (tiktokFollowersThread.joinable()) {
+            tiktokFollowersThread.join();
+        }
 
         // Stop Helix poller thread cleanly.
         if (twitchHelixThread.joinable()) {
