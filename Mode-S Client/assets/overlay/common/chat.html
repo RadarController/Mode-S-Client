@@ -30,44 +30,44 @@
             -ms-overflow-style: none;
         }
 
-        #log .line {
-            min-height: 20px;
-            margin: 2px 0;
-            display: flex;
-            align-items: flex-start;
-        }
+            #log .line {
+                min-height: 20px;
+                margin: 2px 0;
+                display: flex;
+                align-items: flex-start;
+            }
 
-        #log .icon {
-            width: 20px;
-            height: 20px;
-            flex: 0 0 20px;
-            margin-right: 8px;
-        }
+            #log .icon {
+                width: 20px;
+                height: 20px;
+                flex: 0 0 20px;
+                margin-right: 8px;
+            }
 
-        #log .icon svg {
-            width: 100% !important;
-            height: 100% !important;
-            display: block !important;
-        }
+                #log .icon svg {
+                    width: 100% !important;
+                    height: 100% !important;
+                    display: block !important;
+                }
 
-        #log .text {
-            white-space: normal;
-            word-break: break-word;
-            flex: 1 1 auto;
-        }
+            #log .text {
+                white-space: normal;
+                word-break: break-word;
+                flex: 1 1 auto;
+            }
 
-        /* Remove extra horizontal gap on the username so the colon added in JS produces a single space: "username: message" */
-        #log .user {
-            font-weight: 600;
-            margin-right: 0;
-        }
+            /* Remove extra horizontal gap on the username so the colon added in JS produces a single space: "username: message" */
+            #log .user {
+                font-weight: 600;
+                margin-right: 0;
+            }
 
-        /* Hide scrollbar for WebKit-based browsers */
-        #log::-webkit-scrollbar {
-            width: 0px;
-            height: 0px;
-            display: none;
-        }
+            /* Hide scrollbar for WebKit-based browsers */
+            #log::-webkit-scrollbar {
+                width: 0px;
+                height: 0px;
+                display: none;
+            }
 
         /* Base line styling */
         .line {
@@ -102,38 +102,71 @@
             border-left-color: #FF0000;
         }
 
-        /* Event styling: subtle "rail" + stronger type (no background blocks) */
+        /* --- Event styling (no rail, no background pills) --- */
+        @keyframes eventIn {
+            from {
+                opacity: 0;
+                transform: translateY(2px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
         .line.event {
             position: relative;
-            font-weight: 600;
-            padding-left: 14px; /* a touch more than normal */
-        }
-
-        /* Thin rail */
-        .line.event::before {
-            content: "";
-            position: absolute;
-            left: 4px;
-            top: 4px;
-            bottom: 4px;
-            width: 2px;
-            border-radius: 2px;
-            background: linear-gradient(to bottom, rgba(0,0,0,0.55), rgba(0,0,0,0.10) );
-        }
-
-        /* If your overlay is used on dark backgrounds, swap the rail to light:
-        (optional) */
-        @media (prefers-color-scheme: dark) {
-        .line.event::before {
-            background: linear-gradient(to bottom, rgba(255,255,255,0.70), rgba(255,255,255,0.15) );
-        }
-        }
-
-        /* Small glyph prefix */
-        .event-prefix {
-            opacity: 0.55;
-            margin-right: 6px;
+            animation: eventIn 140ms cubic-bezier(.2,.8,.2,1);
+            font-weight: 850;
             letter-spacing: 0.02em;
+            text-transform: none;
+            /* spacing so the glass has room */
+            padding: 8px;
+            margin: 3px 0;
+            border-radius: 0 12px 12px 0;
+            /* "glass" background: not a solid pill */
+            background: rgba(255,255,255,0.06);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.10), inset 0 -1px 0 rgba(0,0,0,0.25), 0 10px 18px rgba(0,0,0,0.18);
+            /* keep legibility */
+            text-shadow: 0 1px 16px rgba(0,0,0,0.45);
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+        }
+            /* Subtle platform tint via a soft ambient wash */
+            .line.event::before {
+                content: "";
+                position: absolute;
+                inset: 0;
+                border-radius: 12px;
+                pointer-events: none;
+                opacity: 0.22; /* keep this low to avoid tacky */
+                mix-blend-mode: screen;
+            }
+
+        .line.event.platform-twitch::before {
+            background: radial-gradient(120% 140% at 0% 50%, rgba(145,70,255,0.55), rgba(145,70,255,0.00) 60%);
+        }
+
+        .line.event.platform-youtube::before {
+            background: radial-gradient(120% 140% at 0% 50%, rgba(255,0,51,0.55), rgba(255,0,51,0.00) 60%);
+        }
+
+        .line.event.platform-tiktok::before {
+            background: radial-gradient(120% 140% at 0% 50%, rgba(0,242,234,0.55), rgba(0,242,234,0.00) 60%);
+        }
+
+        /* Optional: platform hint ONLY on glyph (clean, not blocky) */
+        .line.event.platform-twitch .event-prefix {
+            color: #cdb7ff;
+        }
+
+        .line.event.platform-youtube .event-prefix {
+            color: #ffb3c1;
+        }
+
+        .line.event.platform-tiktok .event-prefix {
+            color: #b7fff9;
         }
     </style>
     <script src="/assets/mergedChatFeed.js"></script>
@@ -141,17 +174,17 @@
 <body>
     <div id="log"></div>
     <!-- <div id="diag" style="
-  position: fixed;
-  left: 8px;
-  bottom: 8px;
-  font: 12px/1.2 monospace;
-  background: rgba(255,255,255,0.85);
-  padding: 6px 8px;
-  border-radius: 6px;
-  z-index: 9999;
-  max-width: 70vw;
-  white-space: pre;
-"></div>-->
+      position: fixed;
+      left: 8px;
+      bottom: 8px;
+      font: 12px/1.2 monospace;
+      background: rgba(255,255,255,0.85);
+      padding: 6px 8px;
+      border-radius: 6px;
+      z-index: 9999;
+      max-width: 70vw;
+      white-space: pre;
+    "></div>-->
 
     <script>
         const LOG = document.getElementById("log");
@@ -175,10 +208,10 @@
             if (!DEBUG_ENABLED || !DIAG) return;
             DIAG.textContent =
                 `recv=${dbg.received}  rend=${dbg.rendered}
-                        skip_empty=${dbg.skip_empty}  skip_dupe=${dbg.skip_dupe}  skip_other=${dbg.skip_other}
-                        warn_no_icon=${dbg.appended_without_icon}  warn_no_text=${dbg.appended_without_text}
-                        lastSkip=${dbg.lastSkip}
-                        lastWarn=${dbg.lastAppendWarn}`;
+                                skip_empty=${dbg.skip_empty}  skip_dupe=${dbg.skip_dupe}  skip_other=${dbg.skip_other}
+                                warn_no_icon=${dbg.appended_without_icon}  warn_no_text=${dbg.appended_without_text}
+                                lastSkip=${dbg.lastSkip}
+                                lastWarn=${dbg.lastAppendWarn}`;
         }
 
         function extractGateText(n) {
@@ -392,7 +425,8 @@
             const line = document.createElement('div');
             line.className = 'line';
 
-            const plat = (n.platform || '').toLowerCase();
+            const platRaw = (n.platform || '').toLowerCase();
+            const plat = platRaw.split(':')[0]; // strip ":event"
             if (plat) line.classList.add(`platform-${plat}`);
 
             if (n.is_event) line.classList.add('event');
@@ -404,11 +438,10 @@
             txt.className = 'text';
 
             // user
-            // user (+ optional event prefix)
+            // Event prefix (only for events)
             if (n.is_event) {
                 const p = document.createElement('span');
                 p.className = 'event-prefix';
-                p.textContent = '◈';
                 txt.appendChild(p);
             }
 
@@ -419,7 +452,14 @@
 
             // message
             const msgSpan = document.createElement('span');
-            msgSpan.appendChild(document.createTextNode(': '));
+
+            // Normal chat: "User: message"
+            // Event: "◈ User message"
+            if (!n.is_event) {
+                msgSpan.appendChild(document.createTextNode(': '));
+            } else {
+                msgSpan.appendChild(document.createTextNode(' '));
+            }
 
             const runs = Array.isArray(n.runs) ? n.runs : null;
             const baseText =
