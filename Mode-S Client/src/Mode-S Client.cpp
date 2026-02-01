@@ -639,12 +639,30 @@ static LRESULT CALLBACK SplashWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         break;
     }
 
+    case WM_CLOSE:
+    {
+        // If the user closes the splash, treat it as "exit app".
+        // Close main window too (it may still be hidden during boot).
+        if (gMainWnd && IsWindow(gMainWnd)) {
+            DestroyWindow(gMainWnd);
+        }
+
+        DestroyWindow(hwnd);      // close splash
+        PostQuitMessage(0);       // end message loop
+        return 0;
+    }
+
     case WM_DESTROY:
     {
         // cleanup fonts stored as properties
         if (auto h = (HFONT)GetPropW(hwnd, L"splash_font_title")) { DeleteObject(h); RemovePropW(hwnd, L"splash_font_title"); }
         if (auto h = (HFONT)GetPropW(hwnd, L"splash_font_body")) { DeleteObject(h); RemovePropW(hwnd, L"splash_font_body"); }
         gSplashLog = nullptr;
+
+        // If splash is closing and main window isn't alive, exit.
+        if (!gMainWnd || !IsWindow(gMainWnd)) {
+            PostQuitMessage(0);
+        }
         return 0;
     }
 
@@ -2247,21 +2265,7 @@ config.youtube_handle = ToUtf8(GetWindowTextWString(hYouTube));
 
     case WM_DESTROY:
         gRunning = false;
-        // Stop metrics thread cleanly
-        if (metricsThread.joinable()) {
-            metricsThread.join();
-        }
 
-        // Stop TikTok followers poller cleanly
-        if (tiktokFollowersThread.joinable()) {
-            tiktokFollowersThread.join();
-        }
-
-        // Stop Helix poller thread cleanly.
-        if (twitchHelixThread.joinable()) {
-            gTwitchHelixRunning = false;
-            twitchHelixThread.join();
-        }
         // Stop platform services first (they may still be producing events)
         tiktok.stop();
         youtube.stop();
@@ -2270,8 +2274,25 @@ config.youtube_handle = ToUtf8(GetWindowTextWString(hYouTube));
         twitchAuth.Stop();
         youtubeChat.stop();
 
+        // Stop HTTP server cleanly (stop + join)
+        if (gHttp) {
+            gHttp->Stop();
+            gHttp.reset();
+        }
+
+        // Now join background threads
+        if (tiktokFollowersThread.joinable()) {
+            tiktokFollowersThread.join();
+        }
+        if (twitchHelixThread.joinable()) {
+            gTwitchHelixRunning = false;
+            twitchHelixThread.join();
+        }
+        if (metricsThread.joinable()) {
+            metricsThread.join();
+        }
+
 #if HAVE_WEBVIEW2
-        // Tear down WebView2 last to avoid any late WM_SIZE/paint touching released objects.
         if (gMainWebController) {
             gMainWebController->put_IsVisible(FALSE);
             gMainWebController.Reset();
@@ -2280,12 +2301,6 @@ config.youtube_handle = ToUtf8(GetWindowTextWString(hYouTube));
             gMainWebView.Reset();
         }
 #endif
-
-        // Stop HTTP server cleanly (stop + join)
-        if (gHttp) {
-            gHttp->Stop();
-            gHttp.reset();
-        }
 
         PostQuitMessage(0);
         return 0;
