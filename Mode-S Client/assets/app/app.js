@@ -339,6 +339,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   wireSettingsHubPage();
   wireTwitchStreamInfoPage();
   wireTwitchOAuthPage();
+  wireOverlayTitlePage();
   wireActions();
   await loadSettings();
   await pollMetrics();
@@ -347,6 +348,68 @@ document.addEventListener("DOMContentLoaded", async () => {
   setInterval(pollLog, 1000);
 });
 
+function wireOverlayTitlePage() {
+    // overlay_title.html has these ids; if they exist, we are on that page.
+    const elTitle = document.getElementById("overlayTitle");
+    const elSub = document.getElementById("overlaySubtitle");
+    const elSave = document.getElementById("btnSaveOverlayTitle");
+    const elStatus = document.getElementById("overlayTitleStatus");
+
+    if (!elTitle || !elSub || !elSave) return;
+
+    const setStatus = (t) => { if (elStatus) elStatus.textContent = t || ""; };
+
+    async function load() {
+        setStatus("Loading…");
+        try {
+            const j = await apiGet("/api/overlay/header");
+            // Expecting: { title: "...", subtitle: "..." }
+            elTitle.value = (j && typeof j.title === "string") ? j.title : "";
+            elSub.value = (j && typeof j.subtitle === "string") ? j.subtitle : "";
+            setStatus("");
+        } catch (e) {
+            console.warn("Failed to load overlay header", e);
+            setStatus("Could not load current header");
+        }
+    }
+
+    async function save() {
+        setStatus("Saving…");
+        const body = { title: elTitle.value || "", subtitle: elSub.value || "" };
+
+        // Prefer the same route the overlay reads from.
+        // If your backend expects a different POST route, this fallback keeps it resilient.
+        try {
+            const j = await apiPost("/api/overlay/header", body);
+            if (j && j.ok === false) throw new Error(j.error || "ok=false");
+            setStatus("Saved");
+            return true;
+        } catch (e1) {
+            try {
+                // Fallback for older builds if you named it differently
+                const j = await apiPost("/api/overlay/header/save", body);
+                if (j && j.ok === false) throw new Error(j.error || "ok=false");
+                setStatus("Saved");
+                return true;
+            } catch (e2) {
+                console.error("Overlay header save failed", e1, e2);
+                setStatus("Error saving");
+                return false;
+            }
+        }
+    }
+
+    elSave.addEventListener("click", save);
+
+    // Optional QoL: Ctrl+Enter to save from an input
+    [elTitle, elSub].forEach(el => {
+        el.addEventListener("keydown", (ev) => {
+            if ((ev.ctrlKey || ev.metaKey) && ev.key === "Enter") save();
+        });
+    });
+
+    load();
+}
 
 function wireSettingsHubPage(){
   const root = document.getElementById("settingsPage");
