@@ -69,18 +69,6 @@
                 display: none;
             }
 
-        /* Event alert styling (EventSub merged into chat feed) */
-        .line.event {
-            background: #025492;
-            color: #fff;
-            border-radius: 10px;
-            padding: 4px 6px;
-        }
-
-        .line.event .text, .line.event .text span, .line.event .user {
-                color: #fff !important;
-         }
-
         /* Base line styling */
         .line {
             border-left: 4px solid transparent;
@@ -114,17 +102,71 @@
             border-left-color: #FF0000;
         }
 
-        /* Optional: EventSub/system events slightly styled */
-        .line.event {
-            opacity: 0.95;
-            font-style: italic;
+        /* --- Event styling (no rail, no background pills) --- */
+        @keyframes eventIn {
+            from {
+                opacity: 0;
+                transform: translateY(2px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
-        .yt-emoji {
-            width: 20px;
-            height: 20px;
-            vertical-align: -4px;
-            margin: 0 1px;
+        .line.event {
+            position: relative;
+            animation: eventIn 140ms cubic-bezier(.2,.8,.2,1);
+            font-weight: 850;
+            letter-spacing: 0.02em;
+            text-transform: none;
+            /* spacing so the glass has room */
+            padding: 8px;
+            margin: 3px 0;
+            border-radius: 0 12px 12px 0;
+            /* "glass" background: not a solid pill */
+            background: rgba(255,255,255,0.06);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.10), inset 0 -1px 0 rgba(0,0,0,0.25), 0 10px 18px rgba(0,0,0,0.18);
+            /* keep legibility */
+            text-shadow: 0 1px 16px rgba(0,0,0,0.45);
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+        }
+            /* Subtle platform tint via a soft ambient wash */
+            .line.event::before {
+                content: "";
+                position: absolute;
+                inset: 0;
+                border-radius: 12px;
+                pointer-events: none;
+                opacity: 0.22; /* keep this low to avoid tacky */
+                mix-blend-mode: screen;
+            }
+
+        .line.event.platform-twitch::before {
+            background: radial-gradient(120% 140% at 0% 50%, rgba(145,70,255,0.55), rgba(145,70,255,0.00) 60%);
+        }
+
+        .line.event.platform-youtube::before {
+            background: radial-gradient(120% 140% at 0% 50%, rgba(255,0,51,0.55), rgba(255,0,51,0.00) 60%);
+        }
+
+        .line.event.platform-tiktok::before {
+            background: radial-gradient(120% 140% at 0% 50%, rgba(0,242,234,0.55), rgba(0,242,234,0.00) 60%);
+        }
+
+        /* Optional: platform hint ONLY on glyph (clean, not blocky) */
+        .line.event.platform-twitch .event-prefix {
+            color: #cdb7ff;
+        }
+
+        .line.event.platform-youtube .event-prefix {
+            color: #ffb3c1;
+        }
+
+        .line.event.platform-tiktok .event-prefix {
+            color: #b7fff9;
         }
     </style>
     <script src="/assets/mergedChatFeed.js"></script>
@@ -132,17 +174,17 @@
 <body>
     <div id="log"></div>
     <!-- <div id="diag" style="
-  position: fixed;
-  left: 8px;
-  bottom: 8px;
-  font: 12px/1.2 monospace;
-  background: rgba(255,255,255,0.85);
-  padding: 6px 8px;
-  border-radius: 6px;
-  z-index: 9999;
-  max-width: 70vw;
-  white-space: pre;
-"></div>-->
+      position: fixed;
+      left: 8px;
+      bottom: 8px;
+      font: 12px/1.2 monospace;
+      background: rgba(255,255,255,0.85);
+      padding: 6px 8px;
+      border-radius: 6px;
+      z-index: 9999;
+      max-width: 70vw;
+      white-space: pre;
+    "></div>-->
 
     <script>
         const LOG = document.getElementById("log");
@@ -166,10 +208,10 @@
             if (!DEBUG_ENABLED || !DIAG) return;
             DIAG.textContent =
                 `recv=${dbg.received}  rend=${dbg.rendered}
-                        skip_empty=${dbg.skip_empty}  skip_dupe=${dbg.skip_dupe}  skip_other=${dbg.skip_other}
-                        warn_no_icon=${dbg.appended_without_icon}  warn_no_text=${dbg.appended_without_text}
-                        lastSkip=${dbg.lastSkip}
-                        lastWarn=${dbg.lastAppendWarn}`;
+                                skip_empty=${dbg.skip_empty}  skip_dupe=${dbg.skip_dupe}  skip_other=${dbg.skip_other}
+                                warn_no_icon=${dbg.appended_without_icon}  warn_no_text=${dbg.appended_without_text}
+                                lastSkip=${dbg.lastSkip}
+                                lastWarn=${dbg.lastAppendWarn}`;
         }
 
         function extractGateText(n) {
@@ -263,7 +305,8 @@
             }
 
             const runs = (m && Array.isArray(m.runs)) ? m.runs : null;
-            return { platform, user, text, ts, id, color, runs, raw: m, is_event: false };
+            const is_event = !!m.is_event;
+            return { platform, user, text, ts, id, color, runs, raw: m, is_event };
         }
 
         function normalizeEvent(raw) {
@@ -382,7 +425,8 @@
             const line = document.createElement('div');
             line.className = 'line';
 
-            const plat = (n.platform || '').toLowerCase();
+            const platRaw = (n.platform || '').toLowerCase();
+            const plat = platRaw.split(':')[0]; // strip ":event"
             if (plat) line.classList.add(`platform-${plat}`);
 
             if (n.is_event) line.classList.add('event');
@@ -394,6 +438,13 @@
             txt.className = 'text';
 
             // user
+            // Event prefix (only for events)
+            if (n.is_event) {
+                const p = document.createElement('span');
+                p.className = 'event-prefix';
+                txt.appendChild(p);
+            }
+
             const userSpan = document.createElement('span');
             userSpan.className = 'user';
             userSpan.textContent = n.user || '';
@@ -401,7 +452,14 @@
 
             // message
             const msgSpan = document.createElement('span');
-            msgSpan.appendChild(document.createTextNode(': '));
+
+            // Normal chat: "User: message"
+            // Event: "◈ User message"
+            if (!n.is_event) {
+                msgSpan.appendChild(document.createTextNode(': '));
+            } else {
+                msgSpan.appendChild(document.createTextNode(' '));
+            }
 
             const runs = Array.isArray(n.runs) ? n.runs : null;
             const baseText =
@@ -536,7 +594,6 @@
                 normalizeChatItem: (raw) => {
                     const n = normalize(raw);
                     if (!n) return n;
-                    n.is_event = false;
                     return n;
                 },
 

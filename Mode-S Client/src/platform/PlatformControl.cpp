@@ -122,6 +122,15 @@ bool StartOrRestartTikTokSidecar(
                 e.ts_ms = (std::int64_t)(ts * 1000.0);
             }
             state.push_tiktok_event(e);
+            // Mirror YouTube/Twitch behaviour: also inject TikTok events into the unified chat feed.
+            // This avoids relying on chat.html polling /api/tiktok/events and keeps everything server-side.
+            ChatMessage c;
+                c.platform = "tiktok";
+                c.user = e.user;
+                c.message = e.message;
+                c.ts_ms = e.ts_ms;
+                c.is_event = true;
+                chat.Add(std::move(c));
             uiPing();
         } else if (type == "tiktok.chat") {
             ChatMessage c;
@@ -236,8 +245,9 @@ bool StartOrRestartYouTubeSidecar(
                 ChatMessage c;
                 c.platform = "youtube";
                 c.user = "Someone";
-                c.message = "followed";
+                c.message = "followed 👋";
                 c.ts_ms = ts_ms + i; // micro-spread for stable ordering / ids
+                c.is_event = true;
                 chat.Add(std::move(c));
 
                 // 2) Alert event for /api/youtube/events (consumed by alerts.js)
@@ -245,7 +255,7 @@ bool StartOrRestartYouTubeSidecar(
                 e.platform = "youtube";
                 e.type = "subscribe";     // <-- this triggers your alerts.js mapping
                 e.user = "Someone";
-                e.message = "followed";   // safe; alerts.js won’t overwrite ATC phrase for "followed"
+                e.message = "followed 👋";   // safe; alerts.js won’t overwrite ATC phrase for "followed"
                 e.ts_ms = ts_ms + i;
                 state.push_youtube_event(e);
             }
