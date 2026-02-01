@@ -237,5 +237,15 @@
     <None Include="assets\app\twitch_stream.html">
       <Filter>assets\app</Filter>
     </None>
+    <None Include="tools\gen_version.ps1" />
+    <None Include="assets\overlay\alerts.css">
+      <Filter>assets\overlay</Filter>
+    </None>
+    <None Include="assets\overlay\alerts.html">
+      <Filter>assets\overlay</Filter>
+    </None>
+    <None Include="assets\overlay\alerts.js">
+      <Filter>assets\overlay</Filter>
+    </None>
   </ItemGroup>
 </Project>

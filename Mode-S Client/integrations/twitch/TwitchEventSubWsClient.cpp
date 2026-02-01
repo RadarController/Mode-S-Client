@@ -835,6 +835,14 @@ bool TwitchEventSubWsClient::CreateSubscription(const std::string& type,
 
 bool TwitchEventSubWsClient::SubscribeAll(const std::string& sessionId)
 {
+    // Capture current subscription-attempt log size so we can emit a clear
+    // one-line summary (and per-type HTTP codes) after attempting to subscribe.
+    size_t subs_before = 0;
+    {
+        std::lock_guard<std::mutex> lk(status_mu_);
+        subs_before = subscriptions_.size();
+    }
+
     std::string broadcasterUid = ResolveBroadcasterUserId();
     if (broadcasterUid.empty()) {
         OutputDebug(L"SubscribeAll: missing broadcaster user id (check twitch_login, token, client-id)");
@@ -876,6 +884,58 @@ okAny |= CreateSubscription(
         json({ {"broadcaster_user_id", broadcasterUid} }).dump(),
         sessionId);
 
+
+    // Raids (v1) - incoming raids to this broadcaster.
+    // https://dev.twitch.tv/docs/eventsub/eventsub-subscription-types/#channelraid
+    okAny |= CreateSubscription(
+        "channel.raid",
+        "1",
+        json({ {"to_broadcaster_user_id", broadcasterUid} }).dump(),
+        sessionId);
+
+    // Resub messages (v1) require broadcaster_user_id and scope channel:read:subscriptions.
+    // https://dev.twitch.tv/docs/eventsub/eventsub-subscription-types/#channelsubscriptionmessage
+    okAny |= CreateSubscription(
+        "channel.subscription.message",
+        "1",
+        json({ {"broadcaster_user_id", broadcasterUid} }).dump(),
+        sessionId);
+
+    // Summary line: attempted/ok/fail + per-type HTTP result.
+    // (We base this on the subscription-attempt ring we maintain in subscriptions_.
+    // This makes logs reliable even if individual per-type lines scroll off.)
+    {
+        std::vector<json> new_attempts;
+        {
+            std::lock_guard<std::mutex> lk(status_mu_);
+            const size_t end = subscriptions_.size();
+            for (size_t i = subs_before; i < end; ++i) {
+                new_attempts.push_back(subscriptions_[i]);
+            }
+        }
+
+        int attempted = (int)new_attempts.size();
+        int ok = 0;
+        for (const auto& a : new_attempts) {
+            if (a.value("ok", false)) ok++;
+        }
+        int fail = attempted - ok;
+
+        std::wstring summary = L"SubscribeAll summary: attempted=" + std::to_wstring(attempted)
+            + L" ok=" + std::to_wstring(ok)
+            + L" fail=" + std::to_wstring(fail);
+
+        for (const auto& a : new_attempts) {
+            const std::string type = a.value("type", "");
+            const int status = a.value("status", 0);
+            const bool aok = a.value("ok", false);
+            summary += L"  - " + Utf8ToWide(type)
+                + L" HTTP " + std::to_wstring(status)
+                + (aok ? L" (ok)" : L" (fail)");
+        }
+        OutputDebug(summary);
+    }
+
     return okAny;
 }
 
@@ -911,6 +971,20 @@ void TwitchEventSubWsClient::HandleNotification(const void* payloadPtr)
         user = ev.value("user_name", ev.value("user_login", ""));
         int count = ev.value("total", 1);
         message = "gifted " + std::to_string(count) + " subs";
+    }
+    else if (subType == "channel.subscription.message")
+    {
+        user = ev.value("user_name", ev.value("user_login", ""));
+        int months = ev.value("cumulative_months", 0);
+
+        std::string text;
+        if (ev.contains("message") && ev["message"].is_object()) {
+            text = ev["message"].value("text", "");
+        }
+
+        message = "resubscribed";
+        if (months > 0) message += " (" + std::to_string(months) + " months)";
+        if (!text.empty()) message += ": " + text;
     }
     else if (subType == "channel.raid")
     {

@@ -213,23 +213,26 @@
         let message = '';
 
         if (platform === 'twitch' && type === 'channel.follow') {
-            kind = 'NEW CONTACT';
-            message = 'Radar contact established.';
+            kind = 'HOLDING';
+            message = 'Enter the hold, delay undetermined.';
         } else if (platform === 'twitch' && type === 'channel.subscribe') {
-            kind = 'AIRSPACE CLEARANCE';
-            message = 'Control zone access approved.';
+            kind = 'HOLDING CANCELLED';
+            message = 'Your hold is cancelled, expect vectors!';
         } else if (platform === 'twitch' && (type === 'channel.subscription.gift' || type === 'channel.subscription.gifted' || type.includes('gift'))) {
-            kind = 'PAYLOAD TRANSFER';
-            message = 'Gifted clearance issued.';
+            kind = 'HOLD EMPTIED';
+            message = 'No delay, expect vectors!';
         } else if (platform === 'tiktok' && type === 'follow') {
-            kind = 'NEW CONTACT';
-            message = 'Inbound track acquired.';
+            kind = 'HOLDING';
+            message = 'Enter the hold, delay undetermined.';
         } else if (platform === 'tiktok' && type === 'gift') {
-            kind = 'PAYLOAD DELIVERY';
-            message = 'Delivery confirmed.';
+            kind = 'DESCEND';
+            message = 'Expected delay has been reduced.';
+        } else if (platform === 'youtube' && type === 'subscribe') {
+            kind = 'HOLDING';
+            message = 'Enter the hold, delay undetermined.';
         } else if (platform === 'youtube' && type === 'membership') {
-            kind = 'AIRSPACE CLEARANCE';
-            message = 'Control zone access approved.';
+            kind = 'HOLDING CANCELLED';
+            message = 'Your hold is cancelled, expect vectors!';
         } else {
             kind = (e.type || 'EVENT').toString();
             message = (e.message || '').toString();
