@@ -52,6 +52,8 @@ void TwitchIrcWsClient::stop() {
     // stop() can be called from multiple threads (UI, HTTP routes, token refresh).
     // Make it idempotent and avoid std::terminate from double-join or self-join.
     std::thread to_join;
+    HINTERNET ws_to_close = nullptr;
+
     {
         std::lock_guard<std::mutex> lk(m_lifecycle_mu);
         m_running.store(false);
@@ -59,11 +61,26 @@ void TwitchIrcWsClient::stop() {
             to_join = std::move(m_thread);
         }
     }
+
+    // IMPORTANT:
+    // Unblock WinHttpWebSocketReceive by initiating a close handshake.
+    {
+        std::lock_guard<std::mutex> lk(m_ws_mu);
+        ws_to_close = (HINTERNET)m_ws;
+        // Prevent further sends while shutting down.
+        m_ws = nullptr;
+    }
+    if (ws_to_close) {
+        // Do NOT WinHttpCloseHandle() here; the worker thread's cleanup() will close it.
+        WinHttpWebSocketClose(ws_to_close, WINHTTP_WEB_SOCKET_SUCCESS_CLOSE_STATUS, nullptr, 0);
+    }
+
     if (to_join.joinable()) {
         if (to_join.get_id() == std::this_thread::get_id()) {
             // Joining yourself throws; detach as a safe escape hatch.
             to_join.detach();
-        } else {
+        }
+        else {
             to_join.join();
         }
     }

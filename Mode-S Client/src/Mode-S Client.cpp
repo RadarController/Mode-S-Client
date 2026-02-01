@@ -248,6 +248,24 @@ static void LogLine(const std::wstring& s)
     AppendLogOnUiThread(s);
 }
 
+static void JoinWithTimeout(std::thread& t, DWORD timeoutMs, const wchar_t* name)
+{
+    if (!t.joinable()) return;
+
+    HANDLE h = (HANDLE)t.native_handle();
+    DWORD wait = WaitForSingleObject(h, timeoutMs);
+
+    if (wait == WAIT_OBJECT_0) {
+        t.join();
+        LogLine(std::wstring(L"Joined thread: ") + name);
+        return;
+    }
+
+    // Timed out (or failed). Don't hang shutdown.
+    LogLine(std::wstring(L"Timeout waiting for thread: ") + name + L" (detaching)");
+    t.detach(); // process exit will still terminate it if we quit main loop
+}
+
 static std::wstring ToW(const std::string& s) {
     if (s.empty()) return L"";
     int len = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
@@ -255,8 +273,6 @@ static std::wstring ToW(const std::string& s) {
     MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), w.data(), len);
     return w;
 }
-
-
 
 struct HttpResult {
     int status = 0;
@@ -639,12 +655,30 @@ static LRESULT CALLBACK SplashWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         break;
     }
 
+    case WM_CLOSE:
+    {
+        // If the user closes the splash, treat it as "exit app".
+        // Close main window too (it may still be hidden during boot).
+        if (gMainWnd && IsWindow(gMainWnd)) {
+            DestroyWindow(gMainWnd);
+        }
+
+        DestroyWindow(hwnd);      // close splash
+        PostQuitMessage(0);       // end message loop
+        return 0;
+    }
+
     case WM_DESTROY:
     {
         // cleanup fonts stored as properties
         if (auto h = (HFONT)GetPropW(hwnd, L"splash_font_title")) { DeleteObject(h); RemovePropW(hwnd, L"splash_font_title"); }
         if (auto h = (HFONT)GetPropW(hwnd, L"splash_font_body")) { DeleteObject(h); RemovePropW(hwnd, L"splash_font_body"); }
         gSplashLog = nullptr;
+
+        // If splash is closing and main window isn't alive, exit.
+        if (!gMainWnd || !IsWindow(gMainWnd)) {
+            PostQuitMessage(0);
+        }
         return 0;
     }
 
@@ -1285,6 +1319,89 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     static EuroScopeIngestService euroscope;
     static ObsWsClient obs;
 
+    // Centralised shutdown routine (idempotent).
+   // Lives inside WndProc so it can see the static service/thread instances above.
+    auto BeginShutdown = [&](HWND hwndToDestroy)
+        {
+            static std::atomic<bool> shuttingDown{ false };
+            if (shuttingDown.exchange(true)) return;
+
+            OutputDebugStringW(L"SHUTDOWN: BeginShutdown()\n");
+
+            // 1) Flip flags so loops exit
+            gRunning = false;
+            gTwitchHelixRunning = false;
+            OutputDebugStringW(L"SHUTDOWN: flags set\n");
+
+            // 2) Stop HTTP early
+            if (gHttp) {
+                OutputDebugStringW(L"SHUTDOWN: stopping HTTP\n");
+                gHttp->Stop();
+                gHttp.reset();
+                OutputDebugStringW(L"SHUTDOWN: HTTP stopped\n");
+            }
+
+            // 3) Join threads next
+            if (tiktokFollowersThread.joinable()) {
+                OutputDebugStringW(L"SHUTDOWN: join tiktokFollowersThread...\n");
+                tiktokFollowersThread.join();
+                OutputDebugStringW(L"SHUTDOWN: joined tiktokFollowersThread\n");
+            }
+
+            if (twitchHelixThread.joinable()) {
+                OutputDebugStringW(L"SHUTDOWN: join twitchHelixThread...\n");
+                twitchHelixThread.join();
+                OutputDebugStringW(L"SHUTDOWN: joined twitchHelixThread\n");
+            }
+
+            if (metricsThread.joinable()) {
+                OutputDebugStringW(L"SHUTDOWN: join metricsThread...\n");
+                metricsThread.join();
+                OutputDebugStringW(L"SHUTDOWN: joined metricsThread\n");
+            }
+
+            // 4) Stop services last (less risk of deadlock)
+            OutputDebugStringW(L"SHUTDOWN: stopping services...\n");
+
+            OutputDebugStringW(L"SHUTDOWN: stopping twitchEventSub...\n");
+            try { twitchEventSub.Stop(); }
+            catch (...) {}
+            OutputDebugStringW(L"SHUTDOWN: stopped twitchEventSub\n");
+
+            OutputDebugStringW(L"SHUTDOWN: stopping twitchAuth...\n");
+            try { twitchAuth.Stop(); }
+            catch (...) {}
+            OutputDebugStringW(L"SHUTDOWN: stopped twitchAuth\n");
+
+            OutputDebugStringW(L"SHUTDOWN: stopping twitch...\n");
+            try { twitch.stop(); }
+            catch (...) {}
+            OutputDebugStringW(L"SHUTDOWN: stopped twitch\n");
+
+            OutputDebugStringW(L"SHUTDOWN: stopping youtubeChat...\n");
+            try { youtubeChat.stop(); }
+            catch (...) {}
+            OutputDebugStringW(L"SHUTDOWN: stopped youtubeChat\n");
+
+            OutputDebugStringW(L"SHUTDOWN: stopping youtube...\n");
+            try { youtube.stop(); }
+            catch (...) {}
+            OutputDebugStringW(L"SHUTDOWN: stopped youtube\n");
+
+            OutputDebugStringW(L"SHUTDOWN: stopping tiktok...\n");
+            try { tiktok.stop(); }
+            catch (...) {}
+            OutputDebugStringW(L"SHUTDOWN: stopped tiktok\n");
+
+            OutputDebugStringW(L"SHUTDOWN: services stopped\n");
+
+            // Destroy window to reach WM_DESTROY -> PostQuitMessage
+            if (hwndToDestroy && IsWindow(hwndToDestroy)) {
+                OutputDebugStringW(L"SHUTDOWN: destroying window\n");
+                DestroyWindow(hwndToDestroy);
+            }
+        };
+
     // Subscribe the chatbot handler only once.
     // Must live at function scope (not inside a switch/case) to avoid C++ case-jump
     // rules that trigger C2360/C2361.
@@ -1326,7 +1443,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             gTwitchHelixRunning,
             (UINT)(WM_APP + 41),
             TwitchHelixUiCallbacks{
-                /*log*/          [](const std::wstring& s) { LogLine(s); },
+                /*log*/ [](const std::wstring& s) { OutputDebugStringW((s + L"\n").c_str()); },
                 /*set_status*/   [&](const std::wstring& s) {
                     gTwitchHelixStatus = s;
                     PostMessageW(hwnd, WM_APP + 41, 0, 0);
@@ -1890,7 +2007,6 @@ catch (...) {
                 Sleep(5000);
             }
             });
-        metricsThread.detach();
 
         LogLine(L"TWITCH: starting Helix poller thread");
 
@@ -1909,7 +2025,6 @@ LogLine(L"TIKTOK: starting followers poller thread");
                 /*set_followers*/ [&](int f) { gTikTokFollowerCount = f; }
             }
         );
-        tiktokFollowersThread.detach();
         // Twitch OAuth token refresh (silent) - runs during boot while splash is visible
         {
             LogLine(L"TWITCH: refreshing OAuth token...");
@@ -2190,6 +2305,10 @@ config.youtube_handle = ToUtf8(GetWindowTextWString(hYouTube));
         }
     }
 
+case WM_CLOSE:
+    BeginShutdown(hwnd);
+    return 0;
+
     case WM_SIZE:
 #if HAVE_WEBVIEW2
         if (gUseModernUi && gMainWebController) {
@@ -2248,39 +2367,8 @@ config.youtube_handle = ToUtf8(GetWindowTextWString(hYouTube));
     }
 
     case WM_DESTROY:
-        gRunning = false;
-
-
-        // Stop Helix poller thread cleanly.
-        if (twitchHelixThread.joinable()) {
-            gTwitchHelixRunning = false;
-            twitchHelixThread.join();
-        }
-        // Stop platform services first (they may still be producing events)
-        tiktok.stop();
-        youtube.stop();
-        twitch.stop();
-        twitchEventSub.Stop();
-        twitchAuth.Stop();
-        youtubeChat.stop();
-
-#if HAVE_WEBVIEW2
-        // Tear down WebView2 last to avoid any late WM_SIZE/paint touching released objects.
-        if (gMainWebController) {
-            gMainWebController->put_IsVisible(FALSE);
-            gMainWebController.Reset();
-        }
-        if (gMainWebView) {
-            gMainWebView.Reset();
-        }
-#endif
-
-        // Stop HTTP server cleanly (stop + join)
-        if (gHttp) {
-            gHttp->Stop();
-            gHttp.reset();
-        }
-
+        // Safety net: if we somehow got here without WM_CLOSE
+        BeginShutdown(nullptr);
         PostQuitMessage(0);
         return 0;
 

@@ -458,7 +458,7 @@ std::thread StartTwitchHelixPoller(
             Sleep(15000);
         }
 
-        SafeCall(cb.log, L"TWITCH: helix poller thread exiting");
+        OutputDebugStringW(L"TWITCH: helix poller thread exiting\n");
         });
 }
 
