@@ -244,7 +244,7 @@ bool StartOrRestartYouTubeSidecar(
                 ChatMessage c;
                 c.platform = "youtube";
                 c.user = "Someone";
-                c.message = "followed";
+                c.message = "followed 👋";
                 c.ts_ms = ts_ms + i; // micro-spread for stable ordering / ids
                 chat.Add(std::move(c));
 
@@ -253,7 +253,7 @@ bool StartOrRestartYouTubeSidecar(
                 e.platform = "youtube";
                 e.type = "subscribe";     // <-- this triggers your alerts.js mapping
                 e.user = "Someone";
-                e.message = "followed";   // safe; alerts.js won’t overwrite ATC phrase for "followed"
+                e.message = "followed 👋";   // safe; alerts.js won’t overwrite ATC phrase for "followed"
                 e.ts_ms = ts_ms + i;
                 state.push_youtube_event(e);
             }

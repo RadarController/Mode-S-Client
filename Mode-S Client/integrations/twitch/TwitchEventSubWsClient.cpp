@@ -1053,7 +1053,7 @@ std::string TwitchEventSubWsClient::BuildHumanReadableMessage(const std::string&
     if (subType == "channel.follow")
     {
         const std::string user = ev.value("user_name", ev.value("user_login", "someone"));
-        return "👋 " + user + " followed";
+        return " followed 👋";
     }
     if (subType == "channel.subscribe")
     {
@@ -1067,9 +1067,9 @@ std::string TwitchEventSubWsClient::BuildHumanReadableMessage(const std::string&
             if (tier == "1000") niceTier = "Tier 1";
             else if (tier == "2000") niceTier = "Tier 2";
             else if (tier == "3000") niceTier = "Tier 3";
-            return "🎉 " + user + " subscribed (" + niceTier + ")";
+            return " subscribed 🎉 (" + niceTier + ")";
         }
-        return "🎉 " + user + " subscribed";
+        return " subscribed 🎉";
     }
     if (subType == "channel.subscription.gift")
     {
@@ -1088,7 +1088,7 @@ std::string TwitchEventSubWsClient::BuildHumanReadableMessage(const std::string&
             text = ev["message"].get<std::string>();
         }
 
-        std::string out = "💎 " + user + " added " + std::to_string(bits) + " of delay on approach!";
+        std::string out = " added " + std::to_string(bits) + " of delay on approach! 💎";
         if (!text.empty()) out += ": " + text;
         return out;
     }
