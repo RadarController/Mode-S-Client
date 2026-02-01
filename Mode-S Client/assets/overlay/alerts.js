@@ -221,6 +221,13 @@
         } else if (platform === 'twitch' && (type === 'channel.subscription.gift' || type === 'channel.subscription.gifted' || type.includes('gift'))) {
             kind = 'HOLD EMPTIED';
             message = 'No delay, expect vectors!';
+        }
+        else if (platform === 'twitch' && type === 'channel.cheer') {
+            const bits = Number(e.bits || e.total_bits || 0);
+            kind = 'DESCEND';
+            message = bits > 0
+                ? `${bits} bits cheered — expected delay reduced.`
+                : 'Bits cheered — expected delay reduced.';
         } else if (platform === 'tiktok' && type === 'follow') {
             kind = 'HOLDING';
             message = 'Enter the hold, delay undetermined.';
