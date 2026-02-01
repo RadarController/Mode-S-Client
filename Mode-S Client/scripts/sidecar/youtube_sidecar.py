@@ -505,7 +505,7 @@ def main():
 
     # chat state
     chat_state = {"video_id": "", "api_key": "", "client_ver": "", "visitor": "", "continuation": ""}
-     seen_ids = set()
+    seen_ids = set()
 
     # follower delta state (synthetic "subscribe" approximation)
     last_followers = None
