@@ -556,6 +556,64 @@ static int ParseIntOrDefault(const std::wstring& w, int def)
 
 }
 
+static void BeginShutdown(HWND hwnd)
+{
+    static std::atomic<bool> shuttingDown{ false };
+    if (shuttingDown.exchange(true)) return;
+
+    LogLine(L"SHUTDOWN: BeginShutdown()");
+
+    // Flip flags first so loops exit
+    gRunning = false;
+    gTwitchHelixRunning = false;
+
+    // Stop services that may be producing work / callbacks
+    try { twitchEventSub.Stop(); }
+    catch (...) {}
+    try { twitchAuth.Stop(); }
+    catch (...) {}
+    try { twitch.stop(); }
+    catch (...) {}
+    try { youtubeChat.stop(); }
+    catch (...) {}
+    try { youtube.stop(); }
+    catch (...) {}
+    try { tiktok.stop(); }
+    catch (...) {}
+
+    // Stop HTTP server (you already added this)
+    if (gHttp) {
+        LogLine(L"SHUTDOWN: stopping HTTP...");
+        gHttp->Stop();
+        gHttp.reset();
+        LogLine(L"SHUTDOWN: HTTP stopped.");
+    }
+
+    // Join background threads (no detach)
+    if (tiktokFollowersThread.joinable()) {
+        LogLine(L"SHUTDOWN: joining TikTok followers thread...");
+        tiktokFollowersThread.join();
+        LogLine(L"SHUTDOWN: TikTok followers thread joined.");
+    }
+
+    if (twitchHelixThread.joinable()) {
+        LogLine(L"SHUTDOWN: joining Twitch Helix thread...");
+        twitchHelixThread.join();
+        LogLine(L"SHUTDOWN: Twitch Helix thread joined.");
+    }
+
+    if (metricsThread.joinable()) {
+        LogLine(L"SHUTDOWN: joining metrics thread...");
+        metricsThread.join();
+        LogLine(L"SHUTDOWN: metrics thread joined.");
+    }
+
+    // Finally destroy the window (triggers WM_DESTROY)
+    if (hwnd && IsWindow(hwnd)) {
+        DestroyWindow(hwnd);
+    }
+}
+
 // --------------------------- Splash screen ---------------------------------
 static LRESULT CALLBACK SplashWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
@@ -2222,6 +2280,10 @@ config.youtube_handle = ToUtf8(GetWindowTextWString(hYouTube));
         }
     }
 
+case WM_CLOSE:
+    BeginShutdown(hwnd);
+    return 0;
+
     case WM_SIZE:
 #if HAVE_WEBVIEW2
         if (gUseModernUi && gMainWebController) {
@@ -2280,39 +2342,8 @@ config.youtube_handle = ToUtf8(GetWindowTextWString(hYouTube));
     }
 
     case WM_DESTROY:
-        gRunning = false;
-
-        // Stop platform services first (they may still be producing events)
-        tiktok.stop();
-        youtube.stop();
-        twitch.stop();
-        twitchEventSub.Stop();
-        twitchAuth.Stop();
-        youtubeChat.stop();
-
-        // Stop HTTP server cleanly (stop + join)
-        if (gHttp) {
-            gHttp->Stop();
-            gHttp.reset();
-        }
-
-        gTwitchHelixRunning = false;
-
-        // Now join background threads (with timeouts to prevent shutdown hang)
-        JoinWithTimeout(tiktokFollowersThread, 5000, L"tiktokFollowersThread");
-        JoinWithTimeout(twitchHelixThread, 8000, L"twitchHelixThread");
-        JoinWithTimeout(metricsThread, 3000, L"metricsThread");
-
-#if HAVE_WEBVIEW2
-        if (gMainWebController) {
-            gMainWebController->put_IsVisible(FALSE);
-            gMainWebController.Reset();
-        }
-        if (gMainWebView) {
-            gMainWebView.Reset();
-        }
-#endif
-
+        // Safety net: if we somehow got here without WM_CLOSE
+        BeginShutdown(nullptr);
         PostQuitMessage(0);
         return 0;
 
