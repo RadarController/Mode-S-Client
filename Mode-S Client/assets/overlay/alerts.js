@@ -224,10 +224,10 @@
         }
         else if (platform === 'twitch' && type === 'channel.cheer') {
             const bits = Number(e.bits || e.total_bits || 0);
-            kind = 'DESCEND';
+            kind = 'DELAY';
             message = bits > 0
-                ? `${bits} bits cheered — expected delay reduced.`
-                : 'Bits cheered — expected delay reduced.';
+                ? `${bits} minutes of delay added.`
+                : 'The delay has increased.';
         } else if (platform === 'tiktok' && type === 'follow') {
             kind = 'HOLDING';
             message = 'Enter the hold, delay undetermined.';

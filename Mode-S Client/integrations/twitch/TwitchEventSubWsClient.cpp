@@ -1006,7 +1006,7 @@ void TwitchEventSubWsClient::HandleNotification(const void* payloadPtr)
             text = ev["message"].get<std::string>();
         }
 
-        message = "cheered " + std::to_string(bits) + " bits";
+        message = "added " + std::to_string(bits) + " minutes of delay on approach!";
         if (!text.empty()) message += ": " + text;
     }
 
@@ -1088,7 +1088,7 @@ std::string TwitchEventSubWsClient::BuildHumanReadableMessage(const std::string&
             text = ev["message"].get<std::string>();
         }
 
-        std::string out = "💎 " + user + " cheered " + std::to_string(bits) + " bits";
+        std::string out = "💎 " + user + " added " + std::to_string(bits) + " of delay on approach!";
         if (!text.empty()) out += ": " + text;
         return out;
     }

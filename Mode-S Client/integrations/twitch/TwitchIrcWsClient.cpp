@@ -296,7 +296,7 @@ void TwitchIrcWsClient::worker(std::string oauth, std::string nick, std::string 
                                     std::string line = TrimCRLF(recvBuf.substr(pos, eol - pos + 1));
                                     pos = eol + 1;
                                     {
-                                        std::wstring w = L"[TWITCH RAW] " + ToW(line);
+                                        std::wstring w = L"[TwitchChat] " + ToW(line);
                                         OutputDebugStringW(w.c_str());
                                     }
                                     if (line.rfind("PING", 0) == 0) {
@@ -320,8 +320,11 @@ void TwitchIrcWsClient::worker(std::string oauth, std::string nick, std::string 
                                     std::string msg = rest.substr(msgPos + 2);
                                     std::string user = "unknown";
                                     std::string userColor;
+                                    std::unordered_map<std::string, std::string> tags; // <-- add
+                                    bool haveTags = false;                              // <-- add
                                     if (!tagsPart.empty()) {
-                                        auto tags = ParseTags(tagsPart);
+                                        tags = ParseTags(tagsPart);                      // <-- change (was: auto tags = ...)
+                                        haveTags = true;                                // <-- add
                                         auto it = tags.find("display-name");
                                         if (it != tags.end() && !it->second.empty()) user = it->second;
                                         auto itc = tags.find("color");
@@ -331,6 +334,20 @@ void TwitchIrcWsClient::worker(std::string oauth, std::string nick, std::string 
                                         if (!rest.empty() && rest[0] == ':') {
                                             size_t bang = rest.find('!');
                                             if (bang != std::string::npos) user = rest.substr(1, bang - 1);
+                                        }
+                                    }
+                                    // -------------------------------------------------------------
+                                    // Suppress IRC cheer messages (handled via EventSub channel.cheer)
+                                    // -------------------------------------------------------------
+                                    if (haveTags) {
+                                        auto itBits = tags.find("bits");
+                                        if (itBits != tags.end()) {
+                                            int bits = 0;
+                                            try { bits = std::stoi(itBits->second); }
+                                            catch (...) { bits = 0; }
+                                            if (bits > 0) {
+                                                continue; // <-- skip this PRIVMSG line
+                                            }
                                         }
                                     }
                                     if (m_chat) {
