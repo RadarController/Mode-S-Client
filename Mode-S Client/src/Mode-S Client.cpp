@@ -556,64 +556,6 @@ static int ParseIntOrDefault(const std::wstring& w, int def)
 
 }
 
-static void BeginShutdown(HWND hwnd)
-{
-    static std::atomic<bool> shuttingDown{ false };
-    if (shuttingDown.exchange(true)) return;
-
-    LogLine(L"SHUTDOWN: BeginShutdown()");
-
-    // Flip flags first so loops exit
-    gRunning = false;
-    gTwitchHelixRunning = false;
-
-    // Stop services that may be producing work / callbacks
-    try { twitchEventSub.Stop(); }
-    catch (...) {}
-    try { twitchAuth.Stop(); }
-    catch (...) {}
-    try { twitch.stop(); }
-    catch (...) {}
-    try { youtubeChat.stop(); }
-    catch (...) {}
-    try { youtube.stop(); }
-    catch (...) {}
-    try { tiktok.stop(); }
-    catch (...) {}
-
-    // Stop HTTP server (you already added this)
-    if (gHttp) {
-        LogLine(L"SHUTDOWN: stopping HTTP...");
-        gHttp->Stop();
-        gHttp.reset();
-        LogLine(L"SHUTDOWN: HTTP stopped.");
-    }
-
-    // Join background threads (no detach)
-    if (tiktokFollowersThread.joinable()) {
-        LogLine(L"SHUTDOWN: joining TikTok followers thread...");
-        tiktokFollowersThread.join();
-        LogLine(L"SHUTDOWN: TikTok followers thread joined.");
-    }
-
-    if (twitchHelixThread.joinable()) {
-        LogLine(L"SHUTDOWN: joining Twitch Helix thread...");
-        twitchHelixThread.join();
-        LogLine(L"SHUTDOWN: Twitch Helix thread joined.");
-    }
-
-    if (metricsThread.joinable()) {
-        LogLine(L"SHUTDOWN: joining metrics thread...");
-        metricsThread.join();
-        LogLine(L"SHUTDOWN: metrics thread joined.");
-    }
-
-    // Finally destroy the window (triggers WM_DESTROY)
-    if (hwnd && IsWindow(hwnd)) {
-        DestroyWindow(hwnd);
-    }
-}
-
 // --------------------------- Splash screen ---------------------------------
 static LRESULT CALLBACK SplashWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
@@ -1376,6 +1318,66 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     static std::thread tiktokFollowersThread;
     static EuroScopeIngestService euroscope;
     static ObsWsClient obs;
+
+    // Centralised shutdown routine (idempotent).
+   // Lives inside WndProc so it can see the static service/thread instances above.
+    auto BeginShutdown = [&](HWND hwndToDestroy)
+        {
+            static std::atomic<bool> shuttingDown{ false };
+            if (shuttingDown.exchange(true)) return;
+
+            LogLine(L"SHUTDOWN: BeginShutdown()");
+
+            // Flip flags first so loops exit
+            gRunning = false;
+            gTwitchHelixRunning = false;
+
+            // Stop services that may be producing work / callbacks
+            try { twitchEventSub.Stop(); }
+            catch (...) {}
+            try { twitchAuth.Stop(); }
+            catch (...) {}
+            try { twitch.stop(); }
+            catch (...) {}
+            try { youtubeChat.stop(); }
+            catch (...) {}
+            try { youtube.stop(); }
+            catch (...) {}
+            try { tiktok.stop(); }
+            catch (...) {}
+
+            // Stop HTTP server (you already proved this is needed)
+            if (gHttp) {
+                LogLine(L"SHUTDOWN: stopping HTTP...");
+                gHttp->Stop();
+                gHttp.reset();
+                LogLine(L"SHUTDOWN: HTTP stopped.");
+            }
+
+            // Join background threads
+            if (tiktokFollowersThread.joinable()) {
+                LogLine(L"SHUTDOWN: joining TikTok followers thread...");
+                tiktokFollowersThread.join();
+                LogLine(L"SHUTDOWN: TikTok followers thread joined.");
+            }
+
+            if (twitchHelixThread.joinable()) {
+                LogLine(L"SHUTDOWN: joining Twitch Helix thread...");
+                twitchHelixThread.join();
+                LogLine(L"SHUTDOWN: Twitch Helix thread joined.");
+            }
+
+            if (metricsThread.joinable()) {
+                LogLine(L"SHUTDOWN: joining metrics thread...");
+                metricsThread.join();
+                LogLine(L"SHUTDOWN: metrics thread joined.");
+            }
+
+            // Trigger WM_DESTROY (which will PostQuitMessage)
+            if (hwndToDestroy && IsWindow(hwndToDestroy)) {
+                DestroyWindow(hwndToDestroy);
+            }
+        };
 
     // Subscribe the chatbot handler only once.
     // Must live at function scope (not inside a switch/case) to avoid C++ case-jump
