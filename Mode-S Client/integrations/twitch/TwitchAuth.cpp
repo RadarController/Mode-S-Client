@@ -90,7 +90,8 @@ static const char* kTwitchScopeEncoded =
 "channel%3Aread%3Asubscriptions+"
 "channel%3Amanage%3Abroadcast+"
 "chat%3Aread+"
-"chat%3Aedit";
+"chat%3Aedit+"
+"bits%3Aread";
 
 // Human-readable equivalent for diagnostics/logging.
 static const char* kTwitchScopeReadable =
@@ -101,7 +102,8 @@ static const char* kTwitchScopeReadable =
 "channel:read:subscriptions "
 "channel:manage:broadcast "
 "chat:read "
-"chat:edit";
+"chat:edit "
+"bits:read";
 
 const char* TwitchAuth::RequiredScopeEncoded() { return kTwitchScopeEncoded; }
 const char* TwitchAuth::RequiredScopeReadable() { return kTwitchScopeReadable; }

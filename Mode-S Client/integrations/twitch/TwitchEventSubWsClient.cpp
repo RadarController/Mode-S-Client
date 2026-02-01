@@ -901,6 +901,15 @@ okAny |= CreateSubscription(
         json({ {"broadcaster_user_id", broadcasterUid} }).dump(),
         sessionId);
 
+    // Cheers / Bits (v1) require broadcaster_user_id and scope bits:read.
+    // https://dev.twitch.tv/docs/eventsub/eventsub-subscription-types/#channelcheer
+    okAny |= CreateSubscription(
+        "channel.cheer",
+        "1",
+        json({ {"broadcaster_user_id", broadcasterUid} }).dump(),
+        sessionId);
+
+
     // Summary line: attempted/ok/fail + per-type HTTP result.
     // (We base this on the subscription-attempt ring we maintain in subscriptions_.
     // This makes logs reliable even if individual per-type lines scroll off.)
@@ -986,6 +995,21 @@ void TwitchEventSubWsClient::HandleNotification(const void* payloadPtr)
         if (months > 0) message += " (" + std::to_string(months) + " months)";
         if (!text.empty()) message += ": " + text;
     }
+    
+    else if (subType == "channel.cheer")
+    {
+        user = ev.value("user_name", ev.value("user_login", ""));
+        const int bits = ev.value("bits", 0);
+
+        std::string text;
+        if (ev.contains("message") && ev["message"].is_string()) {
+            text = ev["message"].get<std::string>();
+        }
+
+        message = "added " + std::to_string(bits) + " minutes of delay on approach!";
+        if (!text.empty()) message += ": " + text;
+    }
+
     else if (subType == "channel.raid")
     {
         user = ev.value("from_broadcaster_user_name", ev.value("from_broadcaster_user_login", ""));
@@ -1006,6 +1030,9 @@ void TwitchEventSubWsClient::HandleNotification(const void* payloadPtr)
         evOut["type"] = subType;
         evOut["user"] = user;
         evOut["message"] = message;
+        if (subType == "channel.cheer") {
+            evOut["bits"] = ev.value("bits", 0);
+        }
         on_event_(evOut);
     }
 
@@ -1049,6 +1076,21 @@ std::string TwitchEventSubWsClient::BuildHumanReadableMessage(const std::string&
         const std::string user = ev.value("user_name", ev.value("user_login", "someone"));
         const int total = ev.value("total", 1);
         return "🎁 " + user + " gifted " + std::to_string(total) + (total == 1 ? " sub" : " subs");
+    }
+
+    if (subType == "channel.cheer")
+    {
+        const std::string user = ev.value("user_name", ev.value("user_login", "someone"));
+        const int bits = ev.value("bits", 0);
+
+        std::string text;
+        if (ev.contains("message") && ev["message"].is_string()) {
+            text = ev["message"].get<std::string>();
+        }
+
+        std::string out = "💎 " + user + " added " + std::to_string(bits) + " of delay on approach!";
+        if (!text.empty()) out += ": " + text;
+        return out;
     }
     if (subType == "channel.raid")
     {
