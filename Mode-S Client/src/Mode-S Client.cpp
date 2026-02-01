@@ -1326,8 +1326,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             static std::atomic<bool> shuttingDown{ false };
             if (shuttingDown.exchange(true)) return;
 
-            LogLine(L"SHUTDOWN: BeginShutdown()");
-            OutputDebugStringW(L"SHUTDOWN: begin\n");
+            OutputDebugStringW(L"SHUTDOWN: BeginShutdown()\n");
 
             // 1) Flip flags so loops exit
             gRunning = false;
@@ -1363,18 +1362,37 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
             // 4) Stop services last (less risk of deadlock)
             OutputDebugStringW(L"SHUTDOWN: stopping services...\n");
+
+            OutputDebugStringW(L"SHUTDOWN: stopping twitchEventSub...\n");
             try { twitchEventSub.Stop(); }
             catch (...) {}
+            OutputDebugStringW(L"SHUTDOWN: stopped twitchEventSub\n");
+
+            OutputDebugStringW(L"SHUTDOWN: stopping twitchAuth...\n");
             try { twitchAuth.Stop(); }
             catch (...) {}
+            OutputDebugStringW(L"SHUTDOWN: stopped twitchAuth\n");
+
+            OutputDebugStringW(L"SHUTDOWN: stopping twitch...\n");
             try { twitch.stop(); }
             catch (...) {}
+            OutputDebugStringW(L"SHUTDOWN: stopped twitch\n");
+
+            OutputDebugStringW(L"SHUTDOWN: stopping youtubeChat...\n");
             try { youtubeChat.stop(); }
             catch (...) {}
+            OutputDebugStringW(L"SHUTDOWN: stopped youtubeChat\n");
+
+            OutputDebugStringW(L"SHUTDOWN: stopping youtube...\n");
             try { youtube.stop(); }
             catch (...) {}
+            OutputDebugStringW(L"SHUTDOWN: stopped youtube\n");
+
+            OutputDebugStringW(L"SHUTDOWN: stopping tiktok...\n");
             try { tiktok.stop(); }
             catch (...) {}
+            OutputDebugStringW(L"SHUTDOWN: stopped tiktok\n");
+
             OutputDebugStringW(L"SHUTDOWN: services stopped\n");
 
             // Destroy window to reach WM_DESTROY -> PostQuitMessage
@@ -1425,7 +1443,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             gTwitchHelixRunning,
             (UINT)(WM_APP + 41),
             TwitchHelixUiCallbacks{
-                /*log*/          [](const std::wstring& s) { LogLine(s); },
+                /*log*/ [](const std::wstring& s) { OutputDebugStringW((s + L"\n").c_str()); },
                 /*set_status*/   [&](const std::wstring& s) {
                     gTwitchHelixStatus = s;
                     PostMessageW(hwnd, WM_APP + 41, 0, 0);
