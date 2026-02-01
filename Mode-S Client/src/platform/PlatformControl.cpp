@@ -1,8 +1,10 @@
 #include "PlatformControl.h"
 
+#define NOMINMAX
 #include <windows.h>
 #include <string>
 #include <algorithm>
+#include <chrono>
 
 #include "tiktok/TikTokSidecar.h"
 #include "twitch/TwitchIrcWsClient.h"
@@ -204,6 +206,50 @@ bool StartOrRestartYouTubeSidecar(
             double ts = j.value("ts", 0.0);
             c.ts_ms = (std::int64_t)(ts * 1000.0);
             chat.Add(std::move(c));
+        }
+        else if (type == "youtube.followers_delta") {
+            // Synthetic "follow" approximation (no identity available on YouTube).
+            const int delta = j.value("delta", 0);
+            const int followers = j.value("followers", 0);
+
+            if (followers > 0) {
+                state.set_youtube_followers(followers);
+            }
+
+            // Prefer sidecar-supplied timestamp, fall back to "now".
+            std::int64_t ts_ms = 0;
+            if (j.contains("ts")) {
+                const double ts = j.value("ts", 0.0);
+                ts_ms = (std::int64_t)(ts * 1000.0);
+            }
+            if (ts_ms <= 0) {
+                ts_ms = (std::int64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()
+                ).count();
+            }
+
+            // Emit N events if delta jumps > 1 (keeps behaviour consistent with multiple follows).
+            const int n = (std::max)(0, (std::min)(delta, 25)); // cap to avoid burst spam
+            for (int i = 0; i < n; ++i) {
+                // 1) Chat line (YouTube styling in chat overlay)
+                // Note: chat overlay format varies; we aim for the visible phrase "Someone followed".
+                ChatMessage c;
+                c.platform = "youtube";
+                c.user = "Someone";
+                c.message = "followed";
+                c.ts_ms = ts_ms + i; // micro-spread for stable ordering / ids
+                chat.Add(std::move(c));
+
+                // 2) Alert event for /api/youtube/events (consumed by alerts.js)
+                EventItem e;
+                e.platform = "youtube";
+                e.type = "subscribe";     // <-- this triggers your alerts.js mapping
+                e.user = "Someone";
+                e.message = "followed";   // safe; alerts.js won’t overwrite ATC phrase for "followed"
+                e.ts_ms = ts_ms + i;
+                state.push_youtube_event(e);
+            }
+            uiPing();
         } else if (type == "youtube.stats") {
             bool live = j.value("live", false);
             int viewers = j.value("viewers", 0);

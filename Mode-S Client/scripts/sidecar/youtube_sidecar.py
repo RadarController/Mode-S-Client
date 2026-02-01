@@ -505,7 +505,12 @@ def main():
 
     # chat state
     chat_state = {"video_id": "", "api_key": "", "client_ver": "", "visitor": "", "continuation": ""}
-    seen_ids = set()
+     seen_ids = set()
+
+    # follower delta state (synthetic "subscribe" approximation)
+    last_followers = None
+    last_delta_emit_ts = 0.0
+    DELTA_DEBOUNCE_SEC = 30.0  # avoid spam if YouTube updates in bursts
 
     while True:
         cfg = load_config()
@@ -538,6 +543,33 @@ def main():
         followers = parse_followers(channel_html)
         if followers == 0:
             followers = parse_followers(live_html)
+
+        # --- Synthetic 'subscription' event via follower-count delta ---
+        # YouTube does not provide real-time named subscription events.
+        # We approximate by watching subscriber count changes and emitting an
+        # anonymous delta event.
+        now = time.time()
+        if followers > 0:
+            if last_followers is None:
+                last_followers = followers
+            else:
+                if followers > last_followers:
+                    delta = followers - last_followers
+
+                    # Debounce + sanity bounds
+                    if delta > 0 and (now - last_delta_emit_ts) >= DELTA_DEBOUNCE_SEC:
+                        emit({
+                            "type": "youtube.followers_delta",
+                            "ts": now,
+                            "prev": last_followers,
+                            "followers": followers,
+                            "delta": delta,
+                        })
+                        last_delta_emit_ts = now
+
+                # Always update baseline when we have a valid count
+                last_followers = followers
+        # --- /Synthetic delta ---
 
         emit({
             "type": "youtube.stats",
