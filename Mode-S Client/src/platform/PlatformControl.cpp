@@ -122,6 +122,14 @@ bool StartOrRestartTikTokSidecar(
                 e.ts_ms = (std::int64_t)(ts * 1000.0);
             }
             state.push_tiktok_event(e);
+            // Mirror YouTube/Twitch behaviour: also inject TikTok events into the unified chat feed.
+            // This avoids relying on chat.html polling /api/tiktok/events and keeps everything server-side.
+            ChatMessage c;
+                c.platform = "tiktok";
+                c.user = e.user;
+                c.message = e.message;
+                c.ts_ms = e.ts_ms;
+                chat.Add(std::move(c));
             uiPing();
         } else if (type == "tiktok.chat") {
             ChatMessage c;
