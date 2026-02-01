@@ -1327,12 +1327,42 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             if (shuttingDown.exchange(true)) return;
 
             LogLine(L"SHUTDOWN: BeginShutdown()");
+            OutputDebugStringW(L"SHUTDOWN: begin\n");
 
-            // Flip flags first so loops exit
+            // 1) Flip flags so loops exit
             gRunning = false;
             gTwitchHelixRunning = false;
+            OutputDebugStringW(L"SHUTDOWN: flags set\n");
 
-            // Stop services that may be producing work / callbacks
+            // 2) Stop HTTP early
+            if (gHttp) {
+                OutputDebugStringW(L"SHUTDOWN: stopping HTTP\n");
+                gHttp->Stop();
+                gHttp.reset();
+                OutputDebugStringW(L"SHUTDOWN: HTTP stopped\n");
+            }
+
+            // 3) Join threads next
+            if (tiktokFollowersThread.joinable()) {
+                OutputDebugStringW(L"SHUTDOWN: join tiktokFollowersThread...\n");
+                tiktokFollowersThread.join();
+                OutputDebugStringW(L"SHUTDOWN: joined tiktokFollowersThread\n");
+            }
+
+            if (twitchHelixThread.joinable()) {
+                OutputDebugStringW(L"SHUTDOWN: join twitchHelixThread...\n");
+                twitchHelixThread.join();
+                OutputDebugStringW(L"SHUTDOWN: joined twitchHelixThread\n");
+            }
+
+            if (metricsThread.joinable()) {
+                OutputDebugStringW(L"SHUTDOWN: join metricsThread...\n");
+                metricsThread.join();
+                OutputDebugStringW(L"SHUTDOWN: joined metricsThread\n");
+            }
+
+            // 4) Stop services last (less risk of deadlock)
+            OutputDebugStringW(L"SHUTDOWN: stopping services...\n");
             try { twitchEventSub.Stop(); }
             catch (...) {}
             try { twitchAuth.Stop(); }
@@ -1345,36 +1375,11 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             catch (...) {}
             try { tiktok.stop(); }
             catch (...) {}
+            OutputDebugStringW(L"SHUTDOWN: services stopped\n");
 
-            // Stop HTTP server (you already proved this is needed)
-            if (gHttp) {
-                LogLine(L"SHUTDOWN: stopping HTTP...");
-                gHttp->Stop();
-                gHttp.reset();
-                LogLine(L"SHUTDOWN: HTTP stopped.");
-            }
-
-            // Join background threads
-            if (tiktokFollowersThread.joinable()) {
-                LogLine(L"SHUTDOWN: joining TikTok followers thread...");
-                tiktokFollowersThread.join();
-                LogLine(L"SHUTDOWN: TikTok followers thread joined.");
-            }
-
-            if (twitchHelixThread.joinable()) {
-                LogLine(L"SHUTDOWN: joining Twitch Helix thread...");
-                twitchHelixThread.join();
-                LogLine(L"SHUTDOWN: Twitch Helix thread joined.");
-            }
-
-            if (metricsThread.joinable()) {
-                LogLine(L"SHUTDOWN: joining metrics thread...");
-                metricsThread.join();
-                LogLine(L"SHUTDOWN: metrics thread joined.");
-            }
-
-            // Trigger WM_DESTROY (which will PostQuitMessage)
+            // Destroy window to reach WM_DESTROY -> PostQuitMessage
             if (hwndToDestroy && IsWindow(hwndToDestroy)) {
+                OutputDebugStringW(L"SHUTDOWN: destroying window\n");
                 DestroyWindow(hwndToDestroy);
             }
         };
