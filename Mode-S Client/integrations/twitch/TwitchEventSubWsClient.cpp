@@ -1088,7 +1088,7 @@ std::string TwitchEventSubWsClient::BuildHumanReadableMessage(const std::string&
             text = ev["message"].get<std::string>();
         }
 
-        std::string out = " added " + std::to_string(bits) + " of delay on approach! 💎";
+        std::string out = "💎 " + user + " added " + std::to_string(bits) + "minutes of delay on approach!";
         if (!text.empty()) out += ": " + text;
         return out;
     }
