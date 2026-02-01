@@ -129,6 +129,7 @@ bool StartOrRestartTikTokSidecar(
                 c.user = e.user;
                 c.message = e.message;
                 c.ts_ms = e.ts_ms;
+                c.is_event = true;
                 chat.Add(std::move(c));
             uiPing();
         } else if (type == "tiktok.chat") {
@@ -246,6 +247,7 @@ bool StartOrRestartYouTubeSidecar(
                 c.user = "Someone";
                 c.message = "followed 👋";
                 c.ts_ms = ts_ms + i; // micro-spread for stable ordering / ids
+                c.is_event = true;
                 chat.Add(std::move(c));
 
                 // 2) Alert event for /api/youtube/events (consumed by alerts.js)

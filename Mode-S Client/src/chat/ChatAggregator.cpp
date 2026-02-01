@@ -70,6 +70,7 @@ nlohmann::json ChatAggregator::RecentJson(size_t limit) const
         // Optional role flags (used by bot scope; helpful for debugging).
         if (m.is_mod) item["is_mod"] = true;
         if (m.is_broadcaster) item["is_broadcaster"] = true;
+        if (m.is_event) item["is_event"] = true;
 
         // Include rich runs when present (YouTube custom emojis, etc.)
         if (m.runs.is_array() && !m.runs.empty()) {

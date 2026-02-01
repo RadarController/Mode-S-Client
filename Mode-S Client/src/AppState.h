@@ -23,6 +23,7 @@ struct ChatMessage {
     // Used by the chatbot scope rules (all/mods/broadcaster).
     bool is_mod = false;
     bool is_broadcaster = false;
+    bool is_event = false;
     std::int64_t ts_ms{};
 };
 
@@ -41,6 +42,7 @@ inline void to_json(nlohmann::json& j, const ChatMessage& c) {
     // Keep backward-compatibility: only include when true.
     if (c.is_mod) j["is_mod"] = true;
     if (c.is_broadcaster) j["is_broadcaster"] = true;
+    if (c.is_event) j["is_event"] = true;
 }
 
 struct EventItem {

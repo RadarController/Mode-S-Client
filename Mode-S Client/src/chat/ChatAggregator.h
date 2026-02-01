@@ -33,6 +33,8 @@ public:
 
     void Clear();
 
+    bool is_event = false;
+
 private:
     size_t capacity_;
     mutable std::mutex mu_;

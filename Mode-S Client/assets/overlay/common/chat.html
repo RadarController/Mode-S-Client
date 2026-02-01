@@ -30,56 +30,44 @@
             -ms-overflow-style: none;
         }
 
-            #log .line {
-                min-height: 20px;
-                margin: 2px 0;
-                display: flex;
-                align-items: flex-start;
-            }
-
-            #log .icon {
-                width: 20px;
-                height: 20px;
-                flex: 0 0 20px;
-                margin-right: 8px;
-            }
-
-                #log .icon svg {
-                    width: 100% !important;
-                    height: 100% !important;
-                    display: block !important;
-                }
-
-            #log .text {
-                white-space: normal;
-                word-break: break-word;
-                flex: 1 1 auto;
-            }
-
-            /* Remove extra horizontal gap on the username so the colon added in JS produces a single space: "username: message" */
-            #log .user {
-                font-weight: 600;
-                margin-right: 0;
-            }
-
-            /* Hide scrollbar for WebKit-based browsers */
-            #log::-webkit-scrollbar {
-                width: 0px;
-                height: 0px;
-                display: none;
-            }
-
-        /* Event alert styling (EventSub merged into chat feed) */
-        .line.event {
-            background: #025492;
-            color: #fff;
-            border-radius: 10px;
-            padding: 4px 6px;
+        #log .line {
+            min-height: 20px;
+            margin: 2px 0;
+            display: flex;
+            align-items: flex-start;
         }
 
-        .line.event .text, .line.event .text span, .line.event .user {
-                color: #fff !important;
-         }
+        #log .icon {
+            width: 20px;
+            height: 20px;
+            flex: 0 0 20px;
+            margin-right: 8px;
+        }
+
+        #log .icon svg {
+            width: 100% !important;
+            height: 100% !important;
+            display: block !important;
+        }
+
+        #log .text {
+            white-space: normal;
+            word-break: break-word;
+            flex: 1 1 auto;
+        }
+
+        /* Remove extra horizontal gap on the username so the colon added in JS produces a single space: "username: message" */
+        #log .user {
+            font-weight: 600;
+            margin-right: 0;
+        }
+
+        /* Hide scrollbar for WebKit-based browsers */
+        #log::-webkit-scrollbar {
+            width: 0px;
+            height: 0px;
+            display: none;
+        }
 
         /* Base line styling */
         .line {
@@ -114,17 +102,38 @@
             border-left-color: #FF0000;
         }
 
-        /* Optional: EventSub/system events slightly styled */
+        /* Event styling: subtle "rail" + stronger type (no background blocks) */
         .line.event {
-            opacity: 0.95;
-            font-style: italic;
+            position: relative;
+            font-weight: 600;
+            padding-left: 14px; /* a touch more than normal */
         }
 
-        .yt-emoji {
-            width: 20px;
-            height: 20px;
-            vertical-align: -4px;
-            margin: 0 1px;
+        /* Thin rail */
+        .line.event::before {
+            content: "";
+            position: absolute;
+            left: 4px;
+            top: 4px;
+            bottom: 4px;
+            width: 2px;
+            border-radius: 2px;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.55), rgba(0,0,0,0.10) );
+        }
+
+        /* If your overlay is used on dark backgrounds, swap the rail to light:
+        (optional) */
+        @media (prefers-color-scheme: dark) {
+        .line.event::before {
+            background: linear-gradient(to bottom, rgba(255,255,255,0.70), rgba(255,255,255,0.15) );
+        }
+        }
+
+        /* Small glyph prefix */
+        .event-prefix {
+            opacity: 0.55;
+            margin-right: 6px;
+            letter-spacing: 0.02em;
         }
     </style>
     <script src="/assets/mergedChatFeed.js"></script>
@@ -263,7 +272,8 @@
             }
 
             const runs = (m && Array.isArray(m.runs)) ? m.runs : null;
-            return { platform, user, text, ts, id, color, runs, raw: m, is_event: false };
+            const is_event = !!m.is_event;
+            return { platform, user, text, ts, id, color, runs, raw: m, is_event };
         }
 
         function normalizeEvent(raw) {
@@ -394,6 +404,14 @@
             txt.className = 'text';
 
             // user
+            // user (+ optional event prefix)
+            if (n.is_event) {
+                const p = document.createElement('span');
+                p.className = 'event-prefix';
+                p.textContent = '◈';
+                txt.appendChild(p);
+            }
+
             const userSpan = document.createElement('span');
             userSpan.className = 'user';
             userSpan.textContent = n.user || '';
@@ -536,7 +554,6 @@
                 normalizeChatItem: (raw) => {
                     const n = normalize(raw);
                     if (!n) return n;
-                    n.is_event = false;
                     return n;
                 },
 

@@ -1914,7 +1914,11 @@ catch (...) {
                     config.twitch_client_id,
                     token,
                     config.twitch_login,
-                    [&](const ChatMessage& msg) { chat.Add(msg); },
+                    [&](const ChatMessage& msg) {
+                        ChatMessage c = msg;
+                        c.is_event = true;
+                        chat.Add(std::move(c));
+                    },
                     [&](const nlohmann::json& ev) { state.add_twitch_eventsub_event(ev); },
                     [&](const nlohmann::json& st) {
                         state.set_twitch_eventsub_status(st);
@@ -2047,7 +2051,11 @@ LogLine(L"TIKTOK: starting followers poller thread");
                         config.twitch_login,
 
                         // EventSub -> Chat (optional messages you inject)
-                        [&](const ChatMessage& msg) { chat.Add(msg); },
+                        [&](const ChatMessage& msg) {
+                            ChatMessage c = msg;
+                            c.is_event = true;
+                            chat.Add(std::move(c));
+                        },
 
                         // EventSub -> Alerts overlay
                         [&](const nlohmann::json& ev) { state.add_twitch_eventsub_event(ev); },
