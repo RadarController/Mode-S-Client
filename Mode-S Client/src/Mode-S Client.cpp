@@ -248,6 +248,24 @@ static void LogLine(const std::wstring& s)
     AppendLogOnUiThread(s);
 }
 
+static void JoinWithTimeout(std::thread& t, DWORD timeoutMs, const wchar_t* name)
+{
+    if (!t.joinable()) return;
+
+    HANDLE h = (HANDLE)t.native_handle();
+    DWORD wait = WaitForSingleObject(h, timeoutMs);
+
+    if (wait == WAIT_OBJECT_0) {
+        t.join();
+        LogLine(std::wstring(L"Joined thread: ") + name);
+        return;
+    }
+
+    // Timed out (or failed). Don't hang shutdown.
+    LogLine(std::wstring(L"Timeout waiting for thread: ") + name + L" (detaching)");
+    t.detach(); // process exit will still terminate it if we quit main loop
+}
+
 static std::wstring ToW(const std::string& s) {
     if (s.empty()) return L"";
     int len = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
@@ -255,8 +273,6 @@ static std::wstring ToW(const std::string& s) {
     MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), w.data(), len);
     return w;
 }
-
-
 
 struct HttpResult {
     int status = 0;
@@ -2280,17 +2296,12 @@ config.youtube_handle = ToUtf8(GetWindowTextWString(hYouTube));
             gHttp.reset();
         }
 
-        // Now join background threads
-        if (tiktokFollowersThread.joinable()) {
-            tiktokFollowersThread.join();
-        }
-        if (twitchHelixThread.joinable()) {
-            gTwitchHelixRunning = false;
-            twitchHelixThread.join();
-        }
-        if (metricsThread.joinable()) {
-            metricsThread.join();
-        }
+        gTwitchHelixRunning = false;
+
+        // Now join background threads (with timeouts to prevent shutdown hang)
+        JoinWithTimeout(tiktokFollowersThread, 5000, L"tiktokFollowersThread");
+        JoinWithTimeout(twitchHelixThread, 8000, L"twitchHelixThread");
+        JoinWithTimeout(metricsThread, 3000, L"metricsThread");
 
 #if HAVE_WEBVIEW2
         if (gMainWebController) {
