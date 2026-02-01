@@ -1148,7 +1148,7 @@ svr.Get("/auth/twitch/start", [&](const httplib::Request& req, httplib::Response
         });
 
     // --- Static assets: /assets/... ---
-    // Your floating chat lives at /assets/app/chat.html.
+    // Your floating chat lives at /assets/overlay/chat.html.
     // Map this URL space to the on-disk "assets" directory next to the executable.
     // We can infer the assets root from overlay_root: <exe_dir>/assets/overlay -> <exe_dir>/assets
     const std::filesystem::path assetsRoot = opt_.overlay_root.parent_path();

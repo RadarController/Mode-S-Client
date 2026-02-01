@@ -52,7 +52,7 @@ bool FloatingChat::Open(HWND parent)
     }
 
     RECT pr{}; GetWindowRect(parent, &pr);
-    int w = 420, h = 600;
+    int w = 420, h = 760;
 
     // Prefer placing the floating chat immediately to the right of the main window.
     int x = pr.right + 10; // 10px gap
@@ -235,7 +235,8 @@ LRESULT CALLBACK FloatingChat::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
     // Using a <style> element works even before <body> exists.
     document.documentElement.style.background = 'transparent';
     var style = document.createElement('style');
-    style.textContent = 'html, body { background: rgba(0,0,0,0.65) !important; margin: 0 !important; }';
+    style.textContent =
+  'html, body { background: rgba(0,0,0,0.40) !important; margin: 0 !important; }'
     document.documentElement.appendChild(style);
   } catch(e) {}
 })();)" ,

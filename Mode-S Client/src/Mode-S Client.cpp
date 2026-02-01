@@ -1685,6 +1685,8 @@ catch (...) {
             gLog = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
                 WS_CHILD | ES_MULTILINE | ES_READONLY | WS_VSCROLL, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
 
+            if (!gFloatingChat) gFloatingChat = std::make_unique<FloatingChat>();
+
             // Init WebView2 (controller + view). Navigation happens once the HTTP server is running.
             HRESULT hr = CreateCoreWebView2EnvironmentWithOptions(
                 nullptr, nullptr, nullptr,
@@ -1703,6 +1705,47 @@ catch (...) {
                                     gMainWebController->get_CoreWebView2(&core);
                                     if (core) {
                                         gMainWebView.Attach(core);
+
+                                        // Allow the /app UI to request native popouts (e.g. chat) via postMessage.
+                                        {
+                                            EventRegistrationToken tok{};
+                                            gMainWebView->add_WebMessageReceived(
+                                                Microsoft::WRL::Callback<ICoreWebView2WebMessageReceivedEventHandler>(
+                                                    [hwnd](ICoreWebView2*, ICoreWebView2WebMessageReceivedEventArgs* args) -> HRESULT {
+                                                        LPWSTR jsonRaw = nullptr;
+                                                        args->get_WebMessageAsJson(&jsonRaw);
+                                                        std::wstring json = jsonRaw ? jsonRaw : L"";
+                                                        if (jsonRaw) CoTaskMemFree(jsonRaw);
+
+                                                        // Minimal parsing: look for our command string.
+                                                        if (json.find(L"open_chat") != std::wstring::npos) {
+                                                            if (gFloatingChat) gFloatingChat->Open(hwnd);
+                                                        }
+                                                        return S_OK;
+                                                    }).Get(),
+                                                        &tok);
+                                        }
+
+                                        // Fallback: if the UI still calls window.open("/overlay/chat.html"), hijack it.
+                                        {
+                                            EventRegistrationToken tok{};
+                                            gMainWebView->add_NewWindowRequested(
+                                                Microsoft::WRL::Callback<ICoreWebView2NewWindowRequestedEventHandler>(
+                                                    [hwnd](ICoreWebView2*, ICoreWebView2NewWindowRequestedEventArgs* args) -> HRESULT {
+                                                        LPWSTR uriRaw = nullptr;
+                                                        args->get_Uri(&uriRaw);
+                                                        std::wstring uri = uriRaw ? uriRaw : L"";
+                                                        if (uriRaw) CoTaskMemFree(uriRaw);
+
+                                                        if (uri.find(L"/overlay/chat.html") != std::wstring::npos) {
+                                                            if (gFloatingChat) gFloatingChat->Open(hwnd);
+                                                            args->put_Handled(TRUE); // prevent external popup window
+                                                        }
+                                                        return S_OK;
+                                                    }).Get(),
+                                                        &tok);
+                                        }
+
 
                                         // Tidy defaults
                                         ICoreWebView2Settings* settings = nullptr;

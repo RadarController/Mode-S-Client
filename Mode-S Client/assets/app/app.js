@@ -266,9 +266,16 @@ async function pollLog(){
 }
 
 function wireActions(){
-  $("#btnOpenChat")?.addEventListener("click", () => {
-    window.open("/app/chat.html", "_blank", "noopener");
-  });
+    $("#btnOpenChat")?.addEventListener("click", () => {
+        // In-app (WebView2): ask the native host to open the floating chat window.
+        if (window.chrome?.webview?.postMessage) {
+            window.chrome.webview.postMessage({ type: "open_chat" });
+            return;
+        }
+
+        // Fallback if /app is opened in a normal browser:
+        window.open("/overlay/chat.html", "_blank", "noopener");
+    });
 
    $("#btnOpenSettings")?.addEventListener("click", () => {
      window.location.href = "/app/settings.html";
