@@ -16,6 +16,77 @@ std::int64_t AppState::now_ms() {
     return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
 }
 
+void AppState::load_metrics_cache_from_config_unlocked()
+{
+    if (metrics_cache_loaded_) return;
+    metrics_cache_loaded_ = true;
+
+    try {
+        const auto path = std::filesystem::absolute("config.json");
+        std::ifstream in(path, std::ios::binary);
+        if (!in) return;
+
+        std::string s((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        if (s.empty()) return;
+
+        auto j = nlohmann::json::parse(s);
+        if (!j.is_object()) return;
+
+        if (!j.contains("metrics_cache") || !j["metrics_cache"].is_object()) return;
+        const auto& mc = j["metrics_cache"];
+
+        // Only hydrate follower counts (viewers/live are ephemeral)
+        metrics_.twitch_followers = mc.value("twitch_followers", metrics_.twitch_followers);
+        metrics_.tiktok_followers = mc.value("tiktok_followers", metrics_.tiktok_followers);
+        metrics_.youtube_followers = mc.value("youtube_followers", metrics_.youtube_followers);
+
+        // Optional: carry timestamp forward for UI freshness display
+        metrics_.ts_ms = mc.value("ts_ms", metrics_.ts_ms);
+    }
+    catch (...) {
+        // best-effort
+    }
+}
+
+void AppState::save_metrics_cache_to_config_unlocked()
+{
+    // Debounce disk writes (followers can update frequently)
+    const std::int64_t now = now_ms();
+    if (now - last_metrics_cache_save_ms_ < 5000) return; // 5 seconds
+    last_metrics_cache_save_ms_ = now;
+
+    try {
+        const auto path = std::filesystem::absolute("config.json");
+
+        nlohmann::json j = nlohmann::json::object();
+
+        // Load existing config so we don't clobber secrets/other settings.
+        {
+            std::ifstream in(path, std::ios::binary);
+            if (in) {
+                std::string s((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+                if (!s.empty()) {
+                    j = nlohmann::json::parse(s);
+                    if (!j.is_object()) j = nlohmann::json::object();
+                }
+            }
+        }
+
+        j["metrics_cache"] = nlohmann::json{
+            {"ts_ms", now},
+            {"twitch_followers",  metrics_.twitch_followers},
+            {"tiktok_followers",  metrics_.tiktok_followers},
+            {"youtube_followers", metrics_.youtube_followers}
+        };
+
+        // Use existing atomic writer helper (already in this file).
+        AtomicWriteUtf8File(path.u8string(), j.dump(2));
+    }
+    catch (...) {
+        // best-effort
+    }
+}
+
 std::vector<ChatMessage> AppState::recent_chat() const {
     std::lock_guard<std::mutex> lk(mtx_);
     return std::vector<ChatMessage>(chat_.begin(), chat_.end());
@@ -28,8 +99,11 @@ void AppState::set_tiktok_viewers(int v) {
 }
 void AppState::set_tiktok_followers(int f) {
     std::lock_guard<std::mutex> lk(mtx_);
+    load_metrics_cache_from_config_unlocked();
+    if (metrics_.tiktok_followers == f) return;
     metrics_.ts_ms = now_ms();
     metrics_.tiktok_followers = f;
+    save_metrics_cache_to_config_unlocked();
 }
 void AppState::set_tiktok_live(bool live) {
     std::lock_guard<std::mutex> lk(mtx_);
@@ -44,8 +118,11 @@ void AppState::set_twitch_viewers(int v) {
 }
 void AppState::set_twitch_followers(int f) {
     std::lock_guard<std::mutex> lk(mtx_);
+    load_metrics_cache_from_config_unlocked();
+    if (metrics_.twitch_followers == f) return;
     metrics_.ts_ms = now_ms();
     metrics_.twitch_followers = f;
+    save_metrics_cache_to_config_unlocked();
 }
 void AppState::set_twitch_live(bool live) {
     std::lock_guard<std::mutex> lk(mtx_);
@@ -60,8 +137,11 @@ void AppState::set_youtube_viewers(int v) {
 }
 void AppState::set_youtube_followers(int f) {
     std::lock_guard<std::mutex> lk(mtx_);
+    load_metrics_cache_from_config_unlocked();
+    if (metrics_.youtube_followers == f) return;
     metrics_.ts_ms = now_ms();
     metrics_.youtube_followers = f;
+    save_metrics_cache_to_config_unlocked();
 }
 void AppState::set_youtube_live(bool live) {
     std::lock_guard<std::mutex> lk(mtx_);
@@ -71,6 +151,7 @@ void AppState::set_youtube_live(bool live) {
 
 Metrics AppState::get_metrics() const {
     std::lock_guard<std::mutex> lk(mtx_);
+    const_cast<AppState*>(this)->load_metrics_cache_from_config_unlocked();
     return metrics_;
 }
 
