@@ -85,11 +85,22 @@ bool FloatingChat::Open(HWND parent)
 
     // Layered + topmost so we can apply whole-window opacity and keep it always-on-top.
     HWND wnd = CreateWindowExW(WS_EX_LAYERED | WS_EX_TOPMOST,
-        kClass, L"Floating Chat",
+        kClass, L"Mode-S Client Chat",
         WS_OVERLAPPEDWINDOW | WS_VISIBLE | WS_SYSMENU | WS_THICKFRAME,
         x, y, w, h,
-        nullptr, nullptr, GetModuleHandleW(nullptr), this);
+        parent, nullptr, GetModuleHandleW(nullptr), this);
     if (!wnd) return false;
+
+    // Use the same icon as the main application (caption + Alt-Tab)
+    HICON hSmall = (HICON)SendMessageW(parent, WM_GETICON, ICON_SMALL, 0);
+    HICON hBig = (HICON)SendMessageW(parent, WM_GETICON, ICON_BIG, 0);
+
+    // Fallback: sometimes ICON_BIG isn't set explicitly.
+    if (!hBig)   hBig = (HICON)GetClassLongPtrW(parent, GCLP_HICON);
+    if (!hSmall) hSmall = (HICON)GetClassLongPtrW(parent, GCLP_HICONSM);
+
+    if (hSmall) SendMessageW(wnd, WM_SETICON, ICON_SMALL, (LPARAM)hSmall);
+    if (hBig)   SendMessageW(wnd, WM_SETICON, ICON_BIG, (LPARAM)hBig);
 
     // ~65% opaque black background.
     const BYTE alpha = (BYTE)166;
@@ -132,7 +143,7 @@ LRESULT CALLBACK FloatingChat::WndProcThunk(HWND hwnd, UINT msg, WPARAM wParam, 
         if (cs && cs->lpCreateParams) {
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(cs->lpCreateParams));
         }
-        return TRUE;
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
     }
 
     auto* self = reinterpret_cast<FloatingChat*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
