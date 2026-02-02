@@ -193,6 +193,7 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClInclude Include="integrations\twitch\TwitchEventSubWsClient.h" />
     <ClInclude Include="integrations\twitch\TwitchHelixService.h" />
     <ClInclude Include="integrations\twitch\TwitchIrcWsClient.h" />
+    <ClInclude Include="integrations\youtube\YouTubeAuth.h" />
     <ClInclude Include="integrations\youtube\YouTubeLiveChatService.h" />
     <ClInclude Include="integrations\youtube\YouTubeSidecar.h" />
     <ClInclude Include="src\AppConfig.h" />
@@ -216,6 +217,7 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClCompile Include="integrations\twitch\TwitchEventSubWsClient.cpp" />
     <ClCompile Include="integrations\twitch\TwitchHelixService.cpp" />
     <ClCompile Include="integrations\twitch\TwitchIrcWsClient.cpp" />
+    <ClCompile Include="integrations\youtube\YouTubeAuth.cpp" />
     <ClCompile Include="integrations\youtube\YouTubeLiveChatService.cpp" />
     <ClCompile Include="integrations\youtube\YouTubeSidecar.cpp" />
     <ClCompile Include="src\AppState.cpp" />
