@@ -486,6 +486,154 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
         res.set_content(j.dump(2), "application/json; charset=utf-8");
         });
 
+    // --- API: YouTube VOD draft (stored in twitch_streaminfo.json for now) ---
+    // GET /api/youtube/vod/draft
+    svr.Get("/api/youtube/vod/draft", [&](const httplib::Request&, httplib::Response& res) {
+        nlohmann::json j;
+        ReadStreaminfoJson(&j);
+
+        nlohmann::json out;
+        out["ok"] = true;
+        out["title"] = j.value("youtube_vod_title", "");
+        out["description"] = j.value("youtube_vod_description", "");
+        res.status = 200;
+        res.set_content(out.dump(2), "application/json; charset=utf-8");
+        });
+
+    // POST /api/youtube/vod/draft
+    svr.Post("/api/youtube/vod/draft", [&](const httplib::Request& req, httplib::Response& res) {
+        try {
+            const auto in = nlohmann::json::parse(req.body);
+            nlohmann::json j;
+            ReadStreaminfoJson(&j);
+
+            j["youtube_vod_title"] = in.value("title", "");
+            j["youtube_vod_description"] = in.value("description", "");
+
+            if (!WriteStreaminfoJson(j)) {
+                res.status = 500;
+                res.set_content(R"({"ok":false,"error":"write_failed"})", "application/json; charset=utf-8");
+                return;
+            }
+
+            res.status = 200;
+            res.set_content(R"({"ok":true})", "application/json; charset=utf-8");
+        }
+        catch (...) {
+            res.status = 400;
+            res.set_content(R"({"ok":false,"error":"invalid_json"})", "application/json; charset=utf-8");
+        }
+        });
+
+    // POST /api/youtube/vod/apply
+    svr.Post("/api/youtube/vod/apply", [&](const httplib::Request&, httplib::Response& res) {
+        if (!opt_.youtube_get_access_token) {
+            res.status = 500;
+            res.set_content(R"({"ok":false,"error":"youtube_token_provider_missing"})", "application/json; charset=utf-8");
+            return;
+        }
+
+        const auto tok = opt_.youtube_get_access_token();
+        if (!tok.has_value() || tok->empty()) {
+            res.status = 401;
+            res.set_content(R"({"ok":false,"error":"youtube_not_connected"})", "application/json; charset=utf-8");
+            return;
+        }
+        const std::string access_token = *tok;
+
+        // Load draft
+        nlohmann::json jdraft;
+        ReadStreaminfoJson(&jdraft);
+        const std::string new_title = jdraft.value("youtube_vod_title", "");
+        const std::string new_desc = jdraft.value("youtube_vod_description", "");
+
+        // Determine target video id
+        std::string video_id;
+        std::string mode;
+
+        long st = 0;
+        std::string body;
+
+        // 1) Active broadcast (live now)
+        if (YouTubeApiGet("/youtube/v3/liveBroadcasts?part=id&broadcastStatus=active&mine=true&maxResults=1",
+            access_token, &st, &body) && st == 200) {
+            try {
+                auto jb = nlohmann::json::parse(body);
+                if (jb.contains("items") && jb["items"].is_array() && !jb["items"].empty()) {
+                    video_id = jb["items"][0].value("id", "");
+                    if (!video_id.empty()) mode = "live";
+                }
+            }
+            catch (...) {}
+        }
+
+        // 2) Fallback: latest completed livestream
+        if (video_id.empty()) {
+            if (YouTubeApiGet("/youtube/v3/search?part=id&forMine=true&type=video&eventType=completed&order=date&maxResults=1",
+                access_token, &st, &body) && st == 200) {
+                try {
+                    auto js = nlohmann::json::parse(body);
+                    if (js.contains("items") && js["items"].is_array() && !js["items"].empty()) {
+                        const auto& it = js["items"][0];
+                        if (it.contains("id") && it["id"].is_object()) {
+                            video_id = it["id"].value("videoId", "");
+                            if (!video_id.empty()) mode = "latest_completed";
+                        }
+                    }
+                }
+                catch (...) {}
+            }
+        }
+
+        if (video_id.empty()) {
+            res.status = 404;
+            res.set_content(R"({"ok":false,"error":"no_target_video_found"})", "application/json; charset=utf-8");
+            return;
+        }
+
+        // Fetch current categoryId (required for videos.update snippet)
+        std::string category_id;
+        if (YouTubeApiGet(("/youtube/v3/videos?part=snippet&id=" + video_id),
+            access_token, &st, &body) && st == 200) {
+            try {
+                auto jv = nlohmann::json::parse(body);
+                if (jv.contains("items") && jv["items"].is_array() && !jv["items"].empty()) {
+                    category_id = jv["items"][0]["snippet"].value("categoryId", "");
+                }
+            }
+            catch (...) {}
+        }
+
+        if (category_id.empty()) {
+            res.status = 500;
+            res.set_content(R"({"ok":false,"error":"missing_category_id"})", "application/json; charset=utf-8");
+            return;
+        }
+
+        // Update video snippet
+        nlohmann::json upd;
+        upd["id"] = video_id;
+        upd["snippet"] = {
+            {"title", new_title},
+            {"description", new_desc},
+            {"categoryId", category_id}
+        };
+
+        const std::string upd_body = upd.dump();
+
+        if (!YouTubeApiPutJson("/youtube/v3/videos?part=snippet", access_token, upd_body, &st, &body) || st < 200 || st >= 300) {
+            nlohmann::json out = { {"ok", false}, {"error", "update_failed"}, {"http_status", st}, {"body", body} };
+            res.status = 502;
+            res.set_content(out.dump(2), "application/json; charset=utf-8");
+            return;
+        }
+
+        nlohmann::json out = { {"ok", true}, {"video_id", video_id}, {"mode", mode} };
+        res.status = 200;
+        res.set_content(out.dump(2), "application/json; charset=utf-8");
+        });
+
+
     // --- Twitch OAuth (interactive) ---
     // Enables one-time auth to obtain a refresh token with additional scopes (e.g. chat:read/chat:edit).
     // Requires the main app to wire opt_.twitch_auth_build_authorize_url and opt_.twitch_auth_handle_callback.
