@@ -431,7 +431,7 @@ function wireSettingsHubPage(){
   });
 
   $("#btnGoTwitchStream")?.addEventListener("click", () => {
-    window.location.href = "/app/twitch_stream.html";
+    window.location.href = "/app/stream_details.html";
   });
 }
 
@@ -460,8 +460,21 @@ function wireTwitchStreamInfoPage(){
     const elSave = document.getElementById("btnSaveTwitchDraft");
     const elApply = document.getElementById("btnApplyTwitch");
     const elStatus = document.getElementById("twitchStreamStatus");
+        // YouTube (Phase 2): mirror stream fields into the YouTube VOD inputs on the same page.
+    // UI-only for now (no backend apply yet).
+    const ytVodTitle = document.getElementById("youtubeVodTitle");
+    const ytVodDesc  = document.getElementById("youtubeVodDescription");
 
-  const setStatus = (t)=>{ if(elStatus) elStatus.textContent = t||""; };
+    const mirrorToYouTubeVod = () => {
+      const title = elTitle ? (elTitle.value || "") : "";
+      const desc  = elDesc  ? (elDesc.value  || "") : "";
+      if (ytVodTitle) ytVodTitle.value = title;
+      if (ytVodDesc)  ytVodDesc.value  = desc;
+    };
+
+    elTitle?.addEventListener("input", mirrorToYouTubeVod);
+    elDesc?.addEventListener("input", mirrorToYouTubeVod);
+const setStatus = (t)=>{ if(elStatus) elStatus.textContent = t||""; };
 
   async function load(){
     try{
@@ -469,6 +482,8 @@ function wireTwitchStreamInfoPage(){
       if(elTitle) elTitle.value = j.title || "";
       if(elCat) elCat.value = j.category || "";
       if(elDesc) elDesc.value = j.description || "";
+      // Keep YouTube VOD fields in sync with loaded draft
+      mirrorToYouTubeVod();
       setStatus("");
     }catch(e){
       console.warn("Failed to load Twitch stream info", e);
@@ -494,6 +509,7 @@ function wireTwitchStreamInfoPage(){
         };
       const j = await apiPost("/api/twitch/streaminfo", body);
       if(j && j.ok === false) throw new Error(j.error || "ok=false");
+      mirrorToYouTubeVod();
       setStatus("Saved");
       return true;
     }catch(e){
@@ -503,19 +519,13 @@ function wireTwitchStreamInfoPage(){
     }
   }
 
-    async function apply() {
-        console.log("Apply clicked; current values:", {
-            title: document.getElementById("twitchTitle")?.value,
-            category_name: document.getElementById("twitchCategory")?.value,
-            category_id: document.getElementById("twitchGameId")?.value
-        });
-    setStatus("Updating Twitch…");
+    async function apply() {    setStatus("Updating stream details…");
     try{
       const ok = await save();
       if(!ok) return;
       const j = await apiPost("/api/twitch/streaminfo/apply");
       if(j && j.ok === false) throw new Error(j.error || "ok=false");
-      setStatus("Updated on Twitch");
+      setStatus("Twitch: Updated • YouTube: Not enabled yet");
     }catch(e){
       console.error(e);
       setStatus("Error updating Twitch");
@@ -524,13 +534,6 @@ function wireTwitchStreamInfoPage(){
 
   elSave?.addEventListener("click", save);
   elApply?.addEventListener("click", apply);
-
-    console.log("Apply Twitch payload:", {
-    title: elTitle?.value,
-    category_name: elCat?.value,
-    category_id: elGameId?.value
-    });
-
   load();
 }
 
