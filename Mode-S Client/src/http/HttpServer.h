@@ -17,6 +17,7 @@ struct AppConfig;
 class HttpServer {
 public:
     struct Options {
+        std::function<std::string()> youtube_auth_info_json;
         std::string bind_host = "127.0.0.1";
         int port = 17845;
         std::filesystem::path overlay_root; // typically <exe_dir>/assets/overlay

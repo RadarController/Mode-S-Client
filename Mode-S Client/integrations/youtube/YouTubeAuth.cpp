@@ -163,6 +163,14 @@ std::optional<YouTubeAuth::TokenSnapshot> YouTubeAuth::GetTokenSnapshot() const 
     return tokens_;
 }
 
+
+std::optional<std::string> YouTubeAuth::GetChannelId() const {
+    std::lock_guard<std::mutex> lock(mu_);
+    if (channel_id_.empty()) return std::nullopt;
+    return channel_id_;
+}
+
+
 bool YouTubeAuth::RefreshNow(std::string* out_error) {
     if (out_error) out_error->clear();
     const auto now = NowUnix();

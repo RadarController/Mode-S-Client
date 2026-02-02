@@ -42,6 +42,7 @@ public:
     // Thread-safe accessors
     std::optional<std::string> GetAccessToken() const;
     std::optional<TokenSnapshot> GetTokenSnapshot() const;
+    std::optional<std::string> GetChannelId() const;
 
     // Forces immediate refresh attempt (useful for debug endpoints).
     bool RefreshNow(std::string* out_error = nullptr);
