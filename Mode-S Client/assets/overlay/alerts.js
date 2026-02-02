@@ -60,6 +60,53 @@
     const LAST_TS_KEY = 'atc_alerts_last_ts_v1';
     const BOOT_MS = nowMs(); // local boot time, used to initialize cutoffs on first run
 
+    // --- anti-throttle timing helpers ---
+    const clockNow = () => performance.now();
+
+    // If we were paused/throttled for longer than this, don't "catch up" by dumping the queue.
+    const THROTTLE_GAP_MS = 2000;
+
+    let lastTick = clockNow();
+    let paused = (document.visibilityState !== 'visible');
+
+    document.addEventListener('visibilitychange', () => {
+        paused = (document.visibilityState !== 'visible');
+
+        // If the overlay isn't "visible", hide the card to avoid stale UI.
+        if (paused) {
+            playing = false;
+            card.hidden = true;
+        } else {
+            // kick the loop when we come back
+            lastTick = clockNow();
+            if (!playing) playNext();
+        }
+    });
+
+    function sleepExact(ms) {
+        return new Promise(r => setTimeout(r, ms));
+    }
+
+    async function sleepSafe(ms) {
+        // Wait in small chunks so we can detect throttling gaps and pause state.
+        const deadline = clockNow() + ms;
+        while (true) {
+            if (paused) return false;
+
+            const now = clockNow();
+            const gap = now - lastTick;
+            lastTick = now;
+
+            // If we've been throttled/paused hard, stop this alert (prevents burst/catch-up).
+            if (gap > THROTTLE_GAP_MS) return false;
+
+            const remaining = deadline - now;
+            if (remaining <= 0) return true;
+
+            await sleepExact(Math.min(remaining, 120));
+        }
+    }
+
     function loadLastTs() {
         try {
             const raw = localStorage.getItem(LAST_TS_KEY);
@@ -302,7 +349,11 @@
                     ? data.events
                     : (Array.isArray(data?.events?.events) ? data.events.events : []);
 
+                const MAX_ENQUEUE_PER_POLL = 5;
+                let added = 0;
+
                 for (const e of events) {
+                    if (added >= MAX_ENQUEUE_PER_POLL) break;
                     if (!shouldAcceptEvent(e)) continue;
 
                     const key = eventKey(e);
@@ -312,6 +363,7 @@
                     seen.set(key, nowMs());
                     enqueue(e);
                     markAcceptedEvent(e);
+                    added++;
                 }
 
                 pruneSeen();
@@ -334,7 +386,6 @@
         updateDebug();
         if (!playing) playNext();
     }
-
     function renderAlert(a) {
         setPlatformClass(a.platform);
         setPlatformIcon(a.platform);
@@ -362,6 +413,13 @@
             return;
         }
 
+        // If not visible, don't run the player loop.
+        if (paused) {
+            playing = false;
+            card.hidden = true;
+            return;
+        }
+
         playing = true;
         renderAlert(next);
 
@@ -369,23 +427,37 @@
         clearAnimClasses();
         card.classList.add('enter');
 
-        await sleep(320);
+        if (!(await sleepSafe(320))) return resetAfterThrottle();
+
         card.classList.remove('enter');
         card.classList.add('hold');
 
-        await sleep(CONFIG.holdMs);
+        if (!(await sleepSafe(CONFIG.holdMs))) return resetAfterThrottle();
+
         card.classList.remove('hold');
         card.classList.add('exit');
 
-        await sleep(420);
+        if (!(await sleepSafe(420))) return resetAfterThrottle();
+
         card.classList.remove('exit');
         card.hidden = true;
 
-        await sleep(CONFIG.gapMs);
+        if (!(await sleepSafe(CONFIG.gapMs))) return resetAfterThrottle();
+
         playNext();
     }
 
-    function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+    function resetAfterThrottle() {
+        // Stop cleanly; do NOT burn through the queue.
+        playing = false;
+        card.hidden = true;
+
+        // Optional: drop very old items so we don't play a backlog after a long stall.
+        const cutoff = Date.now() - 30_000;
+        for (let i = queue.length - 1; i >= 0; i--) {
+            if ((queue[i].ts_ms || 0) > 0 && queue[i].ts_ms < cutoff) queue.splice(i, 1);
+        }
+    }
 
     // Kick off
     setInterval(pollOnce, CONFIG.pollMs);
