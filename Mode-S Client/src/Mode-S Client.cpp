@@ -2057,6 +2057,27 @@ catch (...) {
                 return ok;
             };
 
+            // YouTube OAuth status (read-only): used by the UI to show "connected" vs "not connected".
+            // IMPORTANT: Do not return tokens here; only booleans + non-sensitive metadata.
+            opt.youtube_auth_info_json = []() {
+                nlohmann::json j;
+                j["ok"] = true;
+                j["start_url"] = "/auth/youtube/start";
+                j["oauth_routes_wired"] = true;
+
+                const auto snap = youtubeAuth.GetTokenSnapshot();
+                j["has_refresh_token"] = snap.has_value() && !snap->refresh_token.empty();
+                j["has_access_token"]  = snap.has_value() && !snap->access_token.empty();
+                j["expires_at_unix"]   = snap.has_value() ? snap->expires_at_unix : 0;
+                j["scope"]             = snap.has_value() ? snap->scope_joined : "";
+                j["channel_id"]        = youtubeAuth.GetChannelId().value_or("");
+
+                // Keep existing fields for callers that display scopes (and for debug).
+                j["scopes_readable"] = std::string(YouTubeAuth::RequiredScopeReadable());
+                j["scopes_encoded"] = std::string(YouTubeAuth::RequiredScopeEncoded());
+                return j.dump(2);
+            };
+
 
             gHttp = std::make_unique<HttpServer>(state, chat, euroscope, config, opt,
                 [](const std::wstring& s) { LogLine(s); });

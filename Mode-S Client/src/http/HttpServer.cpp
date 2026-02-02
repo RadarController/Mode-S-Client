@@ -479,6 +479,14 @@ svr.Get("/auth/twitch/start", [&](const httplib::Request& req, httplib::Response
     // --- API: YouTube OAuth info (for Settings UI) ---
     // GET /api/youtube/auth/info
     svr.Get("/api/youtube/auth/info", [&](const httplib::Request& /*req*/, httplib::Response& res) {
+        // If main app provided a detailed status JSON, prefer that.
+        if (opt_.youtube_auth_info_json) {
+            res.status = 200;
+            res.set_content(opt_.youtube_auth_info_json(), "application/json; charset=utf-8");
+            return;
+        }
+
+        // Fallback: basic wiring/scopes/start URL only.
         nlohmann::json j;
         j["ok"] = true;
         j["start_url"] = "/auth/youtube/start";
