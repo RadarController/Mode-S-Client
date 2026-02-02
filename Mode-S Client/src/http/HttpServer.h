@@ -1,6 +1,7 @@
 #pragma once
 #include <memory>
 #include <string>
+#include <optional>
 #include <thread>
 #include <filesystem>
 #include <functional>
@@ -47,6 +48,9 @@ public:
                            const std::string& state,
                            const std::string& redirect_uri,
                            std::string* out_error)> youtube_auth_handle_callback;
+
+        // YouTube API access token (non-interactive). Used by /api/youtube/vod/* endpoints.
+        std::function<std::optional<std::string>()> youtube_get_access_token;
     };
 
     using LogFn = std::function<void(const std::wstring&)>;

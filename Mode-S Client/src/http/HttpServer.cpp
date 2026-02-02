@@ -29,6 +29,91 @@ namespace {
     }
 }
 
+// --------------------------------------------------------------------------------------
+// Helpers: stream draft storage + minimal YouTube Data API calls (used by /api/youtube/vod/*)
+// NOTE: these are file-scope helpers so route lambdas can call them reliably.
+// --------------------------------------------------------------------------------------
+static std::filesystem::path FindStreaminfoPath() {
+    std::vector<std::filesystem::path> candidates;
+    try { candidates.push_back(std::filesystem::current_path() / "twitch_streaminfo.json"); } catch (...) {}
+#ifdef _WIN32
+    wchar_t buf[MAX_PATH];
+    DWORD len = GetModuleFileNameW(nullptr, buf, MAX_PATH);
+    if (len > 0) {
+        std::filesystem::path exe = std::filesystem::path(buf).parent_path();
+        candidates.push_back(exe / "twitch_streaminfo.json");
+    }
+#endif
+    for (const auto& p : candidates) {
+        std::error_code ec;
+        if (std::filesystem::exists(p, ec) && !ec) return p;
+    }
+    return std::filesystem::path("twitch_streaminfo.json");
+}
+
+static bool ReadStreaminfoJson(nlohmann::json* out) {
+    const auto p = FindStreaminfoPath();
+    std::ifstream f(p, std::ios::in | std::ios::binary);
+    if (!f) { *out = nlohmann::json::object(); return false; }
+    std::stringstream ss; ss << f.rdbuf();
+    try { *out = nlohmann::json::parse(ss.str()); return true; }
+    catch (...) { *out = nlohmann::json::object(); return false; }
+}
+
+static bool WriteStreaminfoJson(const nlohmann::json& j) {
+    const auto p = FindStreaminfoPath();
+    std::ofstream f(p, std::ios::out | std::ios::binary | std::ios::trunc);
+    if (!f) return false;
+    f << j.dump(2);
+    return true;
+}
+
+static bool YouTubeApiGet(const std::string& path_with_query,
+                          const std::string& access_token,
+                          long* out_status,
+                          std::string* out_body) {
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+    httplib::SSLClient cli("www.googleapis.com", 443);
+    cli.set_follow_location(true);
+    httplib::Headers h;
+    h.emplace("Authorization", std::string("Bearer ") + access_token);
+    auto res = cli.Get(path_with_query.c_str(), h);
+    if (!res) { if (out_status) *out_status = 0; if (out_body) *out_body = ""; return false; }
+    if (out_status) *out_status = res->status;
+    if (out_body) *out_body = res->body;
+    return true;
+#else
+    if (out_status) *out_status = 0;
+    if (out_body) *out_body = "openssl_not_enabled";
+    return false;
+#endif
+}
+
+static bool YouTubeApiPutJson(const std::string& path_with_query,
+                              const std::string& access_token,
+                              const std::string& body_json,
+                              long* out_status,
+                              std::string* out_body) {
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+    httplib::SSLClient cli("www.googleapis.com", 443);
+    cli.set_follow_location(true);
+    httplib::Headers h;
+    h.emplace("Authorization", std::string("Bearer ") + access_token);
+    h.emplace("Content-Type", "application/json; charset=utf-8");
+    auto res = cli.Put(path_with_query.c_str(), h, body_json, "application/json; charset=utf-8");
+    if (!res) { if (out_status) *out_status = 0; if (out_body) *out_body = ""; return false; }
+    if (out_status) *out_status = res->status;
+    if (out_body) *out_body = res->body;
+    return true;
+#else
+    if (out_status) *out_status = 0;
+    if (out_body) *out_body = "openssl_not_enabled";
+    return false;
+#endif
+}
+
+
+
 
 using json = nlohmann::json;
 

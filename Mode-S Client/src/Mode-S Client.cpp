@@ -2057,6 +2057,11 @@ catch (...) {
                 return ok;
             };
 
+            // YouTube access token provider (used by /api/youtube/vod/* endpoints)
+            opt.youtube_get_access_token = []() -> std::optional<std::string> {
+                return youtubeAuth.GetAccessToken();
+            };
+
             // YouTube OAuth status (read-only): used by the UI to show "connected" vs "not connected".
             // IMPORTANT: Do not return tokens here; only booleans + non-sensitive metadata.
             opt.youtube_auth_info_json = []() {
