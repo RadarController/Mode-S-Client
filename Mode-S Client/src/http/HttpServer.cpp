@@ -556,42 +556,93 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
 
         // 1) Active broadcast (live now)
         if (YouTubeApiGet("/youtube/v3/liveBroadcasts?part=id&broadcastStatus=active&mine=true&maxResults=1",
-            access_token, &st, &body) && st == 200) {
+                          access_token, &st, &body) && st == 200) {
             try {
                 auto jb = nlohmann::json::parse(body);
                 if (jb.contains("items") && jb["items"].is_array() && !jb["items"].empty()) {
                     video_id = jb["items"][0].value("id", "");
                     if (!video_id.empty()) mode = "live";
                 }
-            }
-            catch (...) {}
+            } catch (...) {}
         }
 
-        // 2) Fallback: latest completed livestream
+        // 2) Fallback: most recent livestream VOD by checking liveStreamingDetails on recent videos.
         if (video_id.empty()) {
-            if (YouTubeApiGet("/youtube/v3/search?part=id&forMine=true&type=video&eventType=completed&order=date&maxResults=1",
-                access_token, &st, &body) && st == 200) {
+            // Pull a small set of recent uploads for this channel.
+            if (YouTubeApiGet("/youtube/v3/search?part=snippet&forMine=true&type=video&order=date&maxResults=10",
+                              access_token, &st, &body) && st == 200) {
                 try {
-                    auto js = nlohmann::json::parse(body);
-                    if (js.contains("items") && js["items"].is_array() && !js["items"].empty()) {
-                        const auto& it = js["items"][0];
-                        if (it.contains("id") && it["id"].is_object()) {
-                            video_id = it["id"].value("videoId", "");
-                            if (!video_id.empty()) mode = "latest_completed";
+                    const auto js = nlohmann::json::parse(body);
+                    std::vector<std::string> ids;
+                    if (js.contains("items") && js["items"].is_array()) {
+                        for (const auto& it : js["items"]) {
+                            if (!it.contains("id") || !it["id"].is_object()) continue;
+                            const auto vid = it["id"].value("videoId", "");
+                            if (!vid.empty()) ids.push_back(vid);
                         }
                     }
-                }
-                catch (...) {}
+
+                    if (!ids.empty()) {
+                        // Batch query liveStreamingDetails for these videos (comma separated list).
+                        std::string id_param;
+                        for (size_t i = 0; i < ids.size(); ++i) {
+                            if (i) id_param += ",";
+                            id_param += ids[i];
+                        }
+
+                        std::string body2;
+                        long st2 = 0;
+                        if (YouTubeApiGet(("/youtube/v3/videos?part=liveStreamingDetails&id=" + id_param),
+                                          access_token, &st2, &body2) && st2 == 200) {
+                            const auto jv = nlohmann::json::parse(body2);
+                            if (jv.contains("items") && jv["items"].is_array()) {
+                                // Pick the most recent ended livestream (actualEndTime), else most recent started.
+                                std::string best_id;
+                                std::string best_time;
+                                bool best_is_end = false;
+
+                                auto pick_time = [](const nlohmann::json& lsd) -> std::pair<std::string, bool> {
+                                    if (lsd.contains("actualEndTime") && lsd["actualEndTime"].is_string())
+                                        return { lsd["actualEndTime"].get<std::string>(), true };
+                                    if (lsd.contains("actualStartTime") && lsd["actualStartTime"].is_string())
+                                        return { lsd["actualStartTime"].get<std::string>(), false };
+                                    return { "", false };
+                                };
+
+                                for (const auto& item : jv["items"]) {
+                                    if (!item.contains("id") || !item["id"].is_string()) continue;
+                                    if (!item.contains("liveStreamingDetails") || !item["liveStreamingDetails"].is_object()) continue;
+
+                                    const auto [t, is_end] = pick_time(item["liveStreamingDetails"]);
+                                    if (t.empty()) continue;
+
+                                    // ISO8601 timestamps compare lexicographically.
+                                    if (best_id.empty() ||
+                                        (is_end && !best_is_end) ||
+                                        (is_end == best_is_end && t > best_time)) {
+                                        best_id = item["id"].get<std::string>();
+                                        best_time = t;
+                                        best_is_end = is_end;
+                                    }
+                                }
+
+                                if (!best_id.empty()) {
+                                    video_id = best_id;
+                                    mode = "recent_livestream_vod";
+                                }
+                            }
+                        }
+                    }
+                } catch (...) {}
             }
         }
 
         if (video_id.empty()) {
             res.status = 404;
-            res.set_content(R"({"ok":false,"error":"no_target_video_found"})", "application/json; charset=utf-8");
+            res.set_content(R"({"ok":false,"error":"no_livestream_vod_found"})", "application/json; charset=utf-8");
             return;
         }
-
-        // Fetch current categoryId (required for videos.update snippet)
+// Fetch current categoryId (required for videos.update snippet)
         std::string category_id;
         if (YouTubeApiGet(("/youtube/v3/videos?part=snippet&id=" + video_id),
             access_token, &st, &body) && st == 200) {
