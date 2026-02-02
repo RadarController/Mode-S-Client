@@ -424,3 +424,8 @@ background: rgba(59,130,246,.18);
     font-size: 12px;
     min-height: 16px; /* prevents layout jump */
 }
+
+.yt-auth-status {
+    margin-top: 8px;
+    font-size: 0.85rem;
+}

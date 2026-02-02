@@ -345,6 +345,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   wireSmartBackButtons();
   wireSettingsHubPage();
   wireTwitchStreamInfoPage();
+  wireYouTubeAuthStatus();
   wireTwitchOAuthPage();
   wireOverlayTitlePage();
   wireActions();
@@ -431,7 +432,7 @@ function wireSettingsHubPage(){
   });
 
   $("#btnGoTwitchStream")?.addEventListener("click", () => {
-    window.location.href = "/app/stream_details.html";
+    window.location.href = "/app/twitch_stream.html";
   });
 }
 
@@ -460,21 +461,8 @@ function wireTwitchStreamInfoPage(){
     const elSave = document.getElementById("btnSaveTwitchDraft");
     const elApply = document.getElementById("btnApplyTwitch");
     const elStatus = document.getElementById("twitchStreamStatus");
-        // YouTube (Phase 2): mirror stream fields into the YouTube VOD inputs on the same page.
-    // UI-only for now (no backend apply yet).
-    const ytVodTitle = document.getElementById("youtubeVodTitle");
-    const ytVodDesc  = document.getElementById("youtubeVodDescription");
 
-    const mirrorToYouTubeVod = () => {
-      const title = elTitle ? (elTitle.value || "") : "";
-      const desc  = elDesc  ? (elDesc.value  || "") : "";
-      if (ytVodTitle) ytVodTitle.value = title;
-      if (ytVodDesc)  ytVodDesc.value  = desc;
-    };
-
-    elTitle?.addEventListener("input", mirrorToYouTubeVod);
-    elDesc?.addEventListener("input", mirrorToYouTubeVod);
-const setStatus = (t)=>{ if(elStatus) elStatus.textContent = t||""; };
+  const setStatus = (t)=>{ if(elStatus) elStatus.textContent = t||""; };
 
   async function load(){
     try{
@@ -482,8 +470,6 @@ const setStatus = (t)=>{ if(elStatus) elStatus.textContent = t||""; };
       if(elTitle) elTitle.value = j.title || "";
       if(elCat) elCat.value = j.category || "";
       if(elDesc) elDesc.value = j.description || "";
-      // Keep YouTube VOD fields in sync with loaded draft
-      mirrorToYouTubeVod();
       setStatus("");
     }catch(e){
       console.warn("Failed to load Twitch stream info", e);
@@ -509,7 +495,6 @@ const setStatus = (t)=>{ if(elStatus) elStatus.textContent = t||""; };
         };
       const j = await apiPost("/api/twitch/streaminfo", body);
       if(j && j.ok === false) throw new Error(j.error || "ok=false");
-      mirrorToYouTubeVod();
       setStatus("Saved");
       return true;
     }catch(e){
@@ -519,13 +504,19 @@ const setStatus = (t)=>{ if(elStatus) elStatus.textContent = t||""; };
     }
   }
 
-    async function apply() {    setStatus("Updating stream details…");
+    async function apply() {
+        console.log("Apply clicked; current values:", {
+            title: document.getElementById("twitchTitle")?.value,
+            category_name: document.getElementById("twitchCategory")?.value,
+            category_id: document.getElementById("twitchGameId")?.value
+        });
+    setStatus("Updating Twitch…");
     try{
       const ok = await save();
       if(!ok) return;
       const j = await apiPost("/api/twitch/streaminfo/apply");
       if(j && j.ok === false) throw new Error(j.error || "ok=false");
-      setStatus("Twitch: Updated • YouTube: Not enabled yet");
+      setStatus("Updated on Twitch");
     }catch(e){
       console.error(e);
       setStatus("Error updating Twitch");
@@ -534,8 +525,40 @@ const setStatus = (t)=>{ if(elStatus) elStatus.textContent = t||""; };
 
   elSave?.addEventListener("click", save);
   elApply?.addEventListener("click", apply);
+
+    console.log("Apply Twitch payload:", {
+    title: elTitle?.value,
+    category_name: elCat?.value,
+    category_id: elGameId?.value
+    });
+
   load();
 }
+
+function wireYouTubeAuthStatus() {
+  // stream_details.html renders YouTube connection status in two places using the same id.
+  // We update all matching nodes so the page stays consistent.
+  const nodes = document.querySelectorAll("#ytAuthStatusText");
+  if (!nodes || nodes.length === 0) return;
+
+  const setAll = (text) => nodes.forEach(n => { n.textContent = text; });
+
+  // Default while loading
+  setAll("Checking YouTube connection…");
+
+  fetch("/api/youtube/auth/info", { cache: "no-store" })
+    .then(r => r.ok ? r.json() : Promise.reject(new Error("http " + r.status)))
+    .then(data => {
+      if (!data || !data.ok || !data.has_refresh_token) {
+        setAll("Not connected");
+        return;
+      }
+      // Keep it simple for now; we can add channel/expiry later.
+      setAll("Connected");
+    })
+    .catch(() => setAll("Status unavailable"));
+}
+
 
 
 function wireTwitchOAuthPage(){
