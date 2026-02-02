@@ -21,6 +21,9 @@ public:
 
     static void SetUiLogger(UiLogFn fn);
 
+    // Internal helper used by the .cpp to emit UI logs without exposing the private logger.
+    static void LogUi(const std::string& msg);
+
     struct TokenSnapshot {
         std::string access_token;
         std::string refresh_token;

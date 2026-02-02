@@ -18,16 +18,21 @@ YouTubeAuth::UiLogFn YouTubeAuth::ui_log_ = nullptr;
 
 void YouTubeAuth::SetUiLogger(UiLogFn fn) { ui_log_ = fn; }
 
-// ---- helpers ----
-namespace {
 
-std::wstring ToW(const std::string& s) {
+// ---- helpers ----
+static std::wstring ToW(const std::string& s) {
     if (s.empty()) return L"";
     int len = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
     std::wstring w; w.resize(len);
     MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), &w[0], len);
     return w;
 }
+
+
+namespace {
+
+
+
 
 // config path: CWD first, then exe dir (same approach as TwitchAuth)
 std::filesystem::path FindConfigPath() {
@@ -87,6 +92,12 @@ std::int64_t NowUnix() {
 
 } // namespace
 
+
+
+void YouTubeAuth::LogUi(const std::string& msg) {
+    if (!ui_log_) return;
+    ui_log_(ToW(msg));
+}
 // ---- scopes ----
 const char* YouTubeAuth::RequiredScopeReadable() {
     // Minimum required for updating YouTube metadata (videos.update, liveBroadcasts.update, etc.)
@@ -582,7 +593,5 @@ static void DebugLog(const std::string& msg) {
 #ifdef _WIN32
     OutputDebugStringW((L"YTAUTH: " + ToW(msg) + L"\n").c_str());
 #endif
-    if (YouTubeAuth::ui_log_) {
-        YouTubeAuth::ui_log_(ToW(msg));
-    }
+    YouTubeAuth::LogUi(msg);
 }

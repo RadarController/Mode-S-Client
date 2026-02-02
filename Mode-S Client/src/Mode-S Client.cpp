@@ -34,6 +34,7 @@
 #include "twitch/TwitchIrcWsClient.h"
 #include "twitch/TwitchEventSubWsClient.h"
 #include "twitch/TwitchAuth.h"
+#include "youtube/YouTubeAuth.h"
 #include "tiktok/TikTokSidecar.h"
 #include "tiktok/TikTokFollowersService.h"
 #include "youtube/YouTubeLiveChatService.h"
@@ -1311,6 +1312,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     static TwitchIrcWsClient twitch;
     static TwitchEventSubWsClient twitchEventSub;
     static TwitchAuth twitchAuth;
+    static YouTubeAuth youtubeAuth;
     static YouTubeLiveChatService youtubeChat;
     static std::unique_ptr<HttpServer> gHttp;
     static std::thread metricsThread;
@@ -2030,6 +2032,31 @@ catch (...) {
                 return ok;
             };
 
+            // YouTube OAuth (interactive) endpoints
+            // Provides /auth/youtube/start and /auth/youtube/callback so you can authorize YouTube Data API access.
+            opt.youtube_auth_build_authorize_url = [&](const std::string& redirect_uri, std::string* out_error) -> std::string {
+                std::string err;
+                const std::string url = youtubeAuth.BuildAuthorizeUrl(redirect_uri, &err);
+                if (url.empty()) {
+                    if (out_error) *out_error = err;
+                    LogLine(ToW(std::string("YTAUTH: BuildAuthorizeUrl failed: ") + err));
+                }
+                return url;
+            };
+
+            opt.youtube_auth_handle_callback = [&](const std::string& code,
+                                                   const std::string& state,
+                                                   const std::string& redirect_uri,
+                                                   std::string* out_error) -> bool {
+                std::string err;
+                const bool ok = youtubeAuth.HandleOAuthCallback(code, state, redirect_uri, &err);
+                if (!ok) {
+                    if (out_error) *out_error = err;
+                    LogLine(ToW(std::string("YTAUTH: OAuth callback failed: ") + err));
+                }
+                return ok;
+            };
+
 
             gHttp = std::make_unique<HttpServer>(state, chat, euroscope, config, opt,
                 [](const std::wstring& s) { LogLine(s); });
@@ -2055,7 +2082,14 @@ catch (...) {
             }
             });
 
-        LogLine(L"TWITCH: starting Helix poller thread");
+        
+            if (!youtubeAuth.Start()) {
+                LogLine(L"YOUTUBE: OAuth token refresh/start failed (check config: youtube.client_id / youtube.client_secret / youtube.refresh_token)");
+            } else {
+                LogLine(L"YOUTUBE: OAuth token refresh/start OK");
+            }
+
+LogLine(L"TWITCH: starting Helix poller thread");
 
         // Bind the poller to the current config.twitch_login.
         RestartTwitchHelixPoller("init");

@@ -37,6 +37,15 @@ public:
                            const std::string& state,
                            const std::string& redirect_uri,
                            std::string* out_error)> twitch_auth_handle_callback;
+
+        // YouTube OAuth (interactive) endpoints (optional)
+        // /auth/youtube/start will call youtube_auth_build_authorize_url(redirect_uri)
+        // /auth/youtube/callback will call youtube_auth_handle_callback(code, state, redirect_uri)
+        std::function<std::string(const std::string& redirect_uri, std::string* out_error)> youtube_auth_build_authorize_url;
+        std::function<bool(const std::string& code,
+                           const std::string& state,
+                           const std::string& redirect_uri,
+                           std::string* out_error)> youtube_auth_handle_callback;
     };
 
     using LogFn = std::function<void(const std::wstring&)>;

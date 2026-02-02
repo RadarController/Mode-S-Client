@@ -14,6 +14,7 @@
 #include "../../integrations/euroscope/EuroScopeIngestService.h"
 #include "../../integrations/twitch/TwitchHelixService.h"
 #include "../../integrations/twitch/TwitchAuth.h"
+#include "../../integrations/youtube/YouTubeAuth.h"
 #include "../AppConfig.h"
 
 namespace {
@@ -474,6 +475,77 @@ svr.Get("/auth/twitch/start", [&](const httplib::Request& req, httplib::Response
 
         res.set_content("OK - Twitch auth completed. You can close this tab.", "text/plain; charset=utf-8");
     });
+
+    // --- API: YouTube OAuth info (for Settings UI) ---
+    // GET /api/youtube/auth/info
+    svr.Get("/api/youtube/auth/info", [&](const httplib::Request& /*req*/, httplib::Response& res) {
+        nlohmann::json j;
+        j["ok"] = true;
+        j["start_url"] = "/auth/youtube/start";
+        j["oauth_routes_wired"] = (bool)opt_.youtube_auth_build_authorize_url && (bool)opt_.youtube_auth_handle_callback;
+        j["scopes_readable"] = std::string(YouTubeAuth::RequiredScopeReadable());
+        j["scopes_encoded"] = std::string(YouTubeAuth::RequiredScopeEncoded());
+        res.status = 200;
+        res.set_content(j.dump(2), "application/json; charset=utf-8");
+    });
+
+    // --- YouTube OAuth (interactive) ---
+    // Start:
+    //   http://localhost:17845/auth/youtube/start
+    // Callback:
+    //   http://localhost:17845/auth/youtube/callback
+    svr.Get("/auth/youtube/start", [&](const httplib::Request& /*req*/, httplib::Response& res) {
+        if (!opt_.youtube_auth_build_authorize_url) {
+            SafeOutputLog(log_, L"HTTP: YouTube OAuth routes NOT enabled (callbacks not wired)");
+            res.status = 404;
+            res.set_content("not wired", "text/plain; charset=utf-8");
+            return;
+        }
+
+        // Canonical redirect URI: localhost + port.
+        const std::string redirect_uri =
+            std::string("http://localhost:") + std::to_string(opt_.port) + "/auth/youtube/callback";
+
+        std::string err;
+        const std::string url = opt_.youtube_auth_build_authorize_url(redirect_uri, &err);
+        if (url.empty()) {
+            SafeOutputLog(log_, L"HTTP: /auth/youtube/start failed to build authorize URL");
+            res.status = 500;
+            res.set_content(std::string("BuildAuthorizeUrl failed: ") + err, "text/plain; charset=utf-8");
+            return;
+        }
+
+        res.status = 302;
+        res.set_header("Location", url);
+    });
+
+    svr.Get("/auth/youtube/callback", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!opt_.youtube_auth_handle_callback) {
+            SafeOutputLog(log_, L"HTTP: YouTube OAuth routes NOT enabled (callbacks not wired)");
+            res.status = 404;
+            res.set_content("not wired", "text/plain; charset=utf-8");
+            return;
+        }
+
+        const std::string code = req.get_param_value("code");
+        const std::string state = req.get_param_value("state");
+
+        std::string host = req.get_header_value("Host");
+        if (host.empty()) host = "localhost:" + std::to_string(opt_.port);
+        const std::string redirect_uri = std::string("http://") + host + "/auth/youtube/callback";
+
+        std::string err;
+        const bool ok = opt_.youtube_auth_handle_callback(code, state, redirect_uri, &err);
+        if (!ok) {
+            SafeOutputLog(log_, L"HTTP: /auth/youtube/callback token exchange failed");
+            res.status = 500;
+            res.set_content(std::string("OAuth callback failed: ") + err, "text/plain; charset=utf-8");
+            return;
+        }
+
+        res.set_content("OK - YouTube auth completed. You can close this tab.", "text/plain; charset=utf-8");
+    });
+
 
     // --- API: settings save (used by /app UI) ---
     // Accept both legacy and newer paths.
