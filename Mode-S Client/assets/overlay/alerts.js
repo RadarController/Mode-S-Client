@@ -332,6 +332,14 @@
             kind,
             callsign: callsignFromUser(e.user),
             user: String(e.user || ''),
+            // Resub tenure (months) – present on our injected events, and on real EventSub resubs as cumulative_months.
+            months: Number(
+                e.months ??
+                e.cumulative_months ??
+                e.total_months ??
+                e.streak_months ??
+                0
+            ),
             message: message || '',
             ts_ms: Number(e.ts_ms || 0),
         };
@@ -420,7 +428,7 @@
         // Show a tiny tenure hint under the callsign when provided (e.g. resub months).
         const months = Number(a.months || 0);
         const monthsSuffix = (Number.isFinite(months) && months > 0)
-            ? ` (${months} mo)`
+            ? ` (${months} months)`
             : '';
         elUser.textContent = (a.user || 'UNKNOWN') + monthsSuffix;
         elType.textContent = a.kind || 'EVENT';

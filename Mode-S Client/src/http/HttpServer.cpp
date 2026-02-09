@@ -500,6 +500,69 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
         res.set_content(j.dump(2), "application/json; charset=utf-8");
         });
 
+
+    // --- API: Debug / test injection for alert overlay ---
+    // POST /api/debug/alerts
+    // Development-only: injects a synthetic Twitch EventSub-style event into the same queue
+    // served by /api/twitch/eventsub/events, so overlays can be tested without live events.
+#ifndef NDEBUG
+    svr.Post("/api/debug/alerts", [&](const httplib::Request& req, httplib::Response& res) {
+        // Safety: only allow local requests
+        const std::string ra = req.remote_addr;
+        if (!(ra == "127.0.0.1" || ra == "::1" || ra == "localhost")) {
+            res.status = 403;
+            res.set_content(R"({"ok":false,"error":"forbidden"})", "application/json; charset=utf-8");
+            return;
+        }
+
+        try {
+            auto in = nlohmann::json::parse(req.body);
+            if (!in.is_object()) {
+                res.status = 400;
+                res.set_content(R"({"ok":false,"error":"invalid_json"})", "application/json; charset=utf-8");
+                return;
+            }
+
+            // Require Twitch-shaped payloads for this endpoint.
+            const std::string platform = in.value("platform", "");
+            const std::string type = in.value("type", "");
+            if (platform != "twitch" || type.empty()) {
+                res.status = 400;
+                res.set_content(R"({"ok":false,"error":"expected_platform_twitch_and_type"})", "application/json; charset=utf-8");
+                return;
+            }
+
+            // Fill common fields if missing
+            if (!in.contains("ts_ms") || !in["ts_ms"].is_number_integer()) {
+                const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count();
+                in["ts_ms"] = now;
+            }
+            if (!in.contains("id") || !in["id"].is_string() || in["id"].get<std::string>().empty()) {
+                in["id"] = std::string("debug-") + std::to_string(in["ts_ms"].get<long long>());
+            }
+
+            state_.add_twitch_eventsub_event(in);
+
+            nlohmann::json out;
+            out["ok"] = true;
+            out["id"] = in.value("id", "");
+            res.status = 200;
+            res.set_content(out.dump(2), "application/json; charset=utf-8");
+        }
+        catch (...) {
+            res.status = 400;
+            res.set_content(R"({"ok":false,"error":"invalid_json"})", "application/json; charset=utf-8");
+        }
+    });
+#else
+    // In release builds, keep this endpoint disabled.
+    svr.Post("/api/debug/alerts", [&](const httplib::Request&, httplib::Response& res) {
+        res.status = 404;
+        res.set_content(R"({"ok":false,"error":"not_found"})", "application/json; charset=utf-8");
+    });
+#endif
+
     // --- API: YouTube VOD draft (stored in twitch_streaminfo.json for now) ---
     // GET /api/youtube/vod/draft
     svr.Get("/api/youtube/vod/draft", [&](const httplib::Request&, httplib::Response& res) {
