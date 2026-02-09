@@ -259,13 +259,36 @@
         let kind = 'EVENT';
         let message = '';
 
+
+        // If true, we won't override the mapped message with the raw payload text.
+        // (Useful when the raw payload is a noisy human-readable string, like resubs.)
+        let lockMessage = false;
         if (platform === 'twitch' && type === 'channel.follow') {
             kind = 'HOLDING';
             message = 'Enter the hold, delay undetermined.';
         } else if (platform === 'twitch' && type === 'channel.subscribe') {
             kind = 'HOLDING CANCELLED';
             message = 'Your hold is cancelled, expect vectors!';
-        } else if (platform === 'twitch' && (type === 'channel.subscription.gift' || type === 'channel.subscription.gifted' || type.includes('gift'))) {
+        }
+         else if (platform === 'twitch' && type === 'channel.subscription.message') {
+            kind = 'HOLDING CANCELLED';
+
+            // Prefer structured fields from the server (added for resubs); fall back to parsing.
+            const txt = (e.resub_text || '').toString().trim();
+            if (txt) {
+                message = txt;
+                lockMessage = true;
+            } else {
+                // Legacy fallback: the server may send a human string like "resubscribed (x months): <text>"
+                // Try to extract the part after ":"
+                const raw = (e.message || '').toString();
+                const i = raw.indexOf(':');
+                const tail = (i >= 0) ? raw.slice(i + 1).trim() : '';
+                message = tail || 'Your hold is cancelled, expect vectors!';
+                lockMessage = true;
+            }
+        }
+         else if (platform === 'twitch' && (type === 'channel.subscription.gift' || type === 'channel.subscription.gifted' || type.includes('gift'))) {
             kind = 'HOLD EMPTIED';
             message = 'No delay, expect vectors!';
         }
@@ -293,11 +316,14 @@
         }
 
         // Keep generic “followed/subscribed” out of the cinematic line; it reads better as the ATC phrase.
-        const rawMsg = String(e.message || '').trim();
-        if (rawMsg) {
-            const low = rawMsg.toLowerCase();
-            if (low !== 'followed' && low !== 'subscribed' && message !== rawMsg) {
-                message = rawMsg;
+        // Also: don't override messages we intentionally set (e.g., resub text extracted from structured fields).
+        if (!lockMessage) {
+            const rawMsg = String(e.message || '').trim();
+            if (rawMsg) {
+                const low = rawMsg.toLowerCase();
+                if (low !== 'followed' && low !== 'subscribed' && message !== rawMsg) {
+                    message = rawMsg;
+                }
             }
         }
 
@@ -391,7 +417,12 @@
         setPlatformIcon(a.platform);
 
         elCallsign.textContent = a.callsign || 'UNKNOWN';
-        elUser.textContent = a.user || 'UNKNOWN';
+        // Show a tiny tenure hint under the callsign when provided (e.g. resub months).
+        const months = Number(a.months || 0);
+        const monthsSuffix = (Number.isFinite(months) && months > 0)
+            ? ` (${months} mo)`
+            : '';
+        elUser.textContent = (a.user || 'UNKNOWN') + monthsSuffix;
         elType.textContent = a.kind || 'EVENT';
         elMsg.textContent = a.message || '';
         elTime.textContent = shortTime(a.ts_ms) || '';

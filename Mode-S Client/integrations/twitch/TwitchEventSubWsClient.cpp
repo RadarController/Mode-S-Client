@@ -964,6 +964,10 @@ void TwitchEventSubWsClient::HandleNotification(const void* payloadPtr)
     std::string user;
     std::string message;
 
+
+    // Optional rich fields for specific event types (used by overlays)
+    int resub_months = 0;
+    std::string resub_text;
     // Event payload fields differ slightly between types; prefer user_name if present.
     if (subType == "channel.follow")
     {
@@ -990,6 +994,10 @@ void TwitchEventSubWsClient::HandleNotification(const void* payloadPtr)
         if (ev.contains("message") && ev["message"].is_object()) {
             text = ev["message"].value("text", "");
         }
+
+        resub_months = months;
+
+        resub_text = text;
 
         message = "resubscribed";
         if (months > 0) message += " (" + std::to_string(months) + " months)";
@@ -1032,6 +1040,11 @@ void TwitchEventSubWsClient::HandleNotification(const void* payloadPtr)
         evOut["message"] = message;
         if (subType == "channel.cheer") {
             evOut["bits"] = ev.value("bits", 0);
+        } else if (subType == "channel.subscription.message") {
+            // Extra fields so the alert overlay can display the user's resub message cleanly
+            // without having to parse the human-readable string.
+            evOut["months"] = resub_months;
+            evOut["resub_text"] = resub_text;
         }
         on_event_(evOut);
     }
