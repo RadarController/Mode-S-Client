@@ -447,8 +447,21 @@
 
             const userSpan = document.createElement('span');
             userSpan.className = 'user';
-            userSpan.textContent = n.user || '';
+
+            const name = String(n.user || '').trim();
+            userSpan.textContent = name;
             txt.appendChild(userSpan);
+
+            // Username colour:
+            // - Twitch: prefer IRC-provided colour when present (n.color)
+            // - TikTok/YouTube (and any others): stable per-user colour derived from platform+name
+            const userColor = String(n.color || n.user_color || '').trim();
+            if (userColor && userColor.startsWith('#')) {
+                userSpan.style.color = userColor;
+            } else if (name) {
+                const key = `${String(n.platform || '').trim()}:${name}`;
+                userSpan.style.color = colorFromName(key);
+            }
 
             // message
             const msgSpan = document.createElement('span');
