@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Stream Details — RadarController</title>
+  <link rel="stylesheet" href="/app/app.css" />
+</head>
+<body>
+  <div class="app" id="twitchStreamPage">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand__mark"><img src="/assets/icons/RClogo.png" alt=""></div>
+        <div class="brand__text">
+          <div class="brand__name">RadarController</div>
+          <div class="brand__tag">Mode‑S Client</div>
+        </div>
+      </div>
+
+      <div class="topbar__actions">
+        <button class="btn" id="btnBackHome">Back</button>
+      </div>
+    </header>
+
+    <main class="grid grid--double">
+        <section class="card">
+            <div class="card__head">
+                <h2>Live Stream Details</h2>
+                <p class="muted">
+                    Edit the stream title and category for your live platforms. This updates Twitch, and updates YouTube when you are live.
+                </p>
+            </div>
+
+            <div class="card__body">
+                <div class="field">
+                    <label>Title</label>
+                    <input class="input" type="text" id="twitchTitle" placeholder="e.g. EGCC Director | VATSIM">
+                </div>
+
+                <div class="field field--typeahead">
+                    <label for="twitchCategory">Category (Twitch lookup)</label>
+
+                    <!-- User types here -->
+                    <input class="input" type="text"
+                           id="twitchCategory"
+                           placeholder="Start typing… e.g. Microsoft Flight Simulator"
+                           autocomplete="off" />
+
+                    <!-- Stores the selected Twitch game/category id -->
+                    <input type="hidden" id="twitchGameId" value="" />
+
+                    <div class="hint">
+                        Select a category from the suggestions (uses Twitch’s official categories).
+                    </div>
+                    <div class="hint">
+                        Selected game/category id: <span id="twitchGameIdLabel" class="mono">—</span>
+                    </div>
+
+                    <!-- Results dropdown -->
+                    <div id="twitchCategoryResults" class="typeahead" style="display:none;"></div>
+                </div>
+
+                <div class="field">
+                    <label>Description (saved for later)</label>
+                    <textarea class="input" id="twitchDescription" rows="4" placeholder="Used for YouTube in Phase 2."></textarea>
+                </div>
+
+                <div class="field__row">
+                    <button class="btn" id="btnSaveTwitchDraft">Save Draft</button>
+                    <button class="btn btn--primary" id="btnApplyTwitch">Update Stream Details</button>
+                </div>
+
+                <div class="twitch-status muted" id="twitchStreamStatus" aria-live="polite"></div>
+            </div>
+<!--
+            <div class="yt-auth-status muted" id="ytAuthStatus">
+                <span id="ytAuthStatusText">Checking YouTube connection…</span>
+            </div>
+-->
+        </section>
+
+        
+        
+        <section class="card card--muted">
+            <div class="card__head">
+                <h2>YouTube VOD</h2>
+                <p class="muted">
+                    These fields will control the YouTube video (VOD) title and description after the stream ends.
+                    They’re shown here for now but disabled until the backend is wired.
+                </p>
+            </div>
+
+            <div class="card__body">
+                <div class="field">
+                    <label>VOD title</label>
+                    <input class="input" type="text" id="youtubeVodTitle" placeholder="YouTube VOD title" readonly>
+                    <div class="hint">Will be used for the YouTube VOD title (video metadata).</div>
+                </div>
+
+                <div class="field">
+                    <label>VOD description</label>
+                    <textarea class="input" id="youtubeVodDescription" rows="7" placeholder="YouTube VOD description" readonly></textarea>
+                    <div class="hint">Will be used for the YouTube VOD description (video metadata).</div>
+                </div>
+
+                <div class="field__row">
+                    <button class="btn btn--primary" id="btnApplyYouTubeVod" disabled>Update YouTube VOD</button>
+                </div>
+
+<!--                <div class="twitch-status muted" id="youtubeStreamStatus" aria-live="polite">
+                    <span id="ytAuthStatusText">Checking YouTube connection…</span>
+                </div>
+            </div>
+-->
+        </section>
+
+
+    </main>
+  </div>
+
+  <script src="/app/app.js"></script>
+</body>
+</html>

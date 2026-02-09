@@ -34,6 +34,7 @@
 #include "twitch/TwitchIrcWsClient.h"
 #include "twitch/TwitchEventSubWsClient.h"
 #include "twitch/TwitchAuth.h"
+#include "youtube/YouTubeAuth.h"
 #include "tiktok/TikTokSidecar.h"
 #include "tiktok/TikTokFollowersService.h"
 #include "youtube/YouTubeLiveChatService.h"
@@ -1311,6 +1312,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     static TwitchIrcWsClient twitch;
     static TwitchEventSubWsClient twitchEventSub;
     static TwitchAuth twitchAuth;
+    static YouTubeAuth youtubeAuth;
     static YouTubeLiveChatService youtubeChat;
     static std::unique_ptr<HttpServer> gHttp;
     static std::thread metricsThread;
@@ -2030,6 +2032,57 @@ catch (...) {
                 return ok;
             };
 
+            // YouTube OAuth (interactive) endpoints
+            // Provides /auth/youtube/start and /auth/youtube/callback so you can authorize YouTube Data API access.
+            opt.youtube_auth_build_authorize_url = [&](const std::string& redirect_uri, std::string* out_error) -> std::string {
+                std::string err;
+                const std::string url = youtubeAuth.BuildAuthorizeUrl(redirect_uri, &err);
+                if (url.empty()) {
+                    if (out_error) *out_error = err;
+                    LogLine(ToW(std::string("YTAUTH: BuildAuthorizeUrl failed: ") + err));
+                }
+                return url;
+            };
+
+            opt.youtube_auth_handle_callback = [&](const std::string& code,
+                                                   const std::string& state,
+                                                   const std::string& redirect_uri,
+                                                   std::string* out_error) -> bool {
+                std::string err;
+                const bool ok = youtubeAuth.HandleOAuthCallback(code, state, redirect_uri, &err);
+                if (!ok) {
+                    if (out_error) *out_error = err;
+                    LogLine(ToW(std::string("YTAUTH: OAuth callback failed: ") + err));
+                }
+                return ok;
+            };
+
+            // YouTube access token provider (used by /api/youtube/vod/* endpoints)
+            opt.youtube_get_access_token = []() -> std::optional<std::string> {
+                return youtubeAuth.GetAccessToken();
+            };
+
+            // YouTube OAuth status (read-only): used by the UI to show "connected" vs "not connected".
+            // IMPORTANT: Do not return tokens here; only booleans + non-sensitive metadata.
+            opt.youtube_auth_info_json = []() {
+                nlohmann::json j;
+                j["ok"] = true;
+                j["start_url"] = "/auth/youtube/start";
+                j["oauth_routes_wired"] = true;
+
+                const auto snap = youtubeAuth.GetTokenSnapshot();
+                j["has_refresh_token"] = snap.has_value() && !snap->refresh_token.empty();
+                j["has_access_token"]  = snap.has_value() && !snap->access_token.empty();
+                j["expires_at_unix"]   = snap.has_value() ? snap->expires_at_unix : 0;
+                j["scope"]             = snap.has_value() ? snap->scope_joined : "";
+                j["channel_id"]        = youtubeAuth.GetChannelId().value_or("");
+
+                // Keep existing fields for callers that display scopes (and for debug).
+                j["scopes_readable"] = std::string(YouTubeAuth::RequiredScopeReadable());
+                j["scopes_encoded"] = std::string(YouTubeAuth::RequiredScopeEncoded());
+                return j.dump(2);
+            };
+
 
             gHttp = std::make_unique<HttpServer>(state, chat, euroscope, config, opt,
                 [](const std::wstring& s) { LogLine(s); });
@@ -2055,7 +2108,14 @@ catch (...) {
             }
             });
 
-        LogLine(L"TWITCH: starting Helix poller thread");
+        
+            if (!youtubeAuth.Start()) {
+                LogLine(L"YOUTUBE: OAuth token refresh/start failed (check config: youtube.client_id / youtube.client_secret / youtube.refresh_token)");
+            } else {
+                LogLine(L"YOUTUBE: OAuth token refresh/start OK");
+            }
+
+LogLine(L"TWITCH: starting Helix poller thread");
 
         // Bind the poller to the current config.twitch_login.
         RestartTwitchHelixPoller("init");

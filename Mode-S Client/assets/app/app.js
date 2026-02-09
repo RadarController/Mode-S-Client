@@ -24,8 +24,8 @@ async function apiPost(url, body){
     body: body ? JSON.stringify(body) : ""
   });
   if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-  const text = await r.text();
-  try { return JSON.parse(text); } catch { return { ok:true, raw:text }; }
+    const t = await r.text().catch(() => "");
+    throw new Error(`${r.status} ${r.statusText}${t ? `: ${t}` : ""}`);
 }
 
 async function loadSettings(){
@@ -345,6 +345,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   wireSmartBackButtons();
   wireSettingsHubPage();
   wireTwitchStreamInfoPage();
+  wireYouTubeAuthStatus();
+  loadYouTubeVodDraft();
   wireTwitchOAuthPage();
   wireOverlayTitlePage();
   wireActions();
@@ -534,6 +536,37 @@ function wireTwitchStreamInfoPage(){
   load();
 }
 
+function wireYouTubeAuthStatus() {
+  // stream_details.html renders YouTube connection status in two places using the same id.
+  // We update all matching nodes so the page stays consistent.
+  const nodes = document.querySelectorAll("#ytAuthStatusText");
+  if (!nodes || nodes.length === 0) return;
+
+  const setAll = (text) => nodes.forEach(n => { n.textContent = text; });
+
+  // Default while loading
+  setAll("Checking YouTube connection…");
+
+  fetch("/api/youtube/auth/info", { cache: "no-store" })
+    .then(r => r.ok ? r.json() : Promise.reject(new Error("http " + r.status)))
+    .then(data => {
+      if (!data || !data.ok || !data.has_refresh_token) {
+        setAll("Not connected");
+      const t=document.getElementById("youtubeVodTitle"); const d=document.getElementById("youtubeVodDescription");
+      if (t) t.readOnly = true; if (d) d.readOnly = true;
+      const b=document.getElementById("btnApplyYouTubeVod"); if (b) b.disabled = true;
+        return;
+      }
+      // Keep it simple for now; we can add channel/expiry later.
+      setAll("Connected");
+      const t=document.getElementById("youtubeVodTitle"); const d=document.getElementById("youtubeVodDescription");
+      if (t) t.readOnly = false; if (d) d.readOnly = false;
+      const b=document.getElementById("btnApplyYouTubeVod"); if (b) b.disabled = false;
+    })
+    .catch(() => setAll("Status unavailable"));
+}
+
+
 
 function wireTwitchOAuthPage(){
   const root = document.getElementById("twitchOAuthPage");
@@ -692,4 +725,69 @@ function wireTwitchCategoryLookup(){
 // Call it on DOMContentLoaded (safe)
 document.addEventListener("DOMContentLoaded", () => {
   wireTwitchCategoryLookup();
+});
+
+async function loadYouTubeVodDraft() {
+  const t = document.getElementById("youtubeVodTitle");
+  const d = document.getElementById("youtubeVodDescription");
+  if (!t || !d) return;
+
+  try {
+    const res = await fetch("/api/youtube/vod/draft", { cache: "no-store" });
+    if (!res.ok) return;
+    const j = await res.json();
+    if (!j || !j.ok) return;
+
+    // Only populate if empty or readonly (don't stomp user edits)
+    if (!t.value) t.value = j.title || "";
+    if (!d.value) d.value = j.description || "";
+  } catch {}
+}
+
+async function saveYouTubeVodDraft() {
+  const t = document.getElementById("youtubeVodTitle");
+  const d = document.getElementById("youtubeVodDescription");
+  if (!t || !d) return;
+
+  const payload = { title: t.value || "", description: d.value || "" };
+  try {
+    await fetch("/api/youtube/vod/draft", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+  } catch {}
+}
+
+async function applyYouTubeVod() {
+  const btn = document.getElementById("btnApplyYouTubeVod");
+  const nodes = document.querySelectorAll("#ytAuthStatusText");
+  const setStatus = (txt) => nodes.forEach(n => n.textContent = txt);
+
+  if (btn) btn.disabled = true;
+  setStatus("Applying…");
+
+  try {
+    const res = await fetch("/api/youtube/vod/apply", { method: "POST" });
+    const j = await res.json().catch(() => ({}));
+    if (res.ok && j && j.ok) {
+      setStatus("Connected");
+    } else {
+      setStatus("Apply failed");
+      console.log("YouTube VOD apply failed", j);
+    }
+  } catch (e) {
+    setStatus("Apply failed");
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  const t = document.getElementById("youtubeVodTitle");
+  const d = document.getElementById("youtubeVodDescription");
+  const b = document.getElementById("btnApplyYouTubeVod");
+  if (t) t.addEventListener("blur", saveYouTubeVodDraft);
+  if (d) d.addEventListener("blur", saveYouTubeVodDraft);
+  if (b) b.addEventListener("click", (e) => { e.preventDefault(); applyYouTubeVod(); });
 });

@@ -1,6 +1,7 @@
 #pragma once
 #include <memory>
 #include <string>
+#include <optional>
 #include <thread>
 #include <filesystem>
 #include <functional>
@@ -17,6 +18,7 @@ struct AppConfig;
 class HttpServer {
 public:
     struct Options {
+        std::function<std::string()> youtube_auth_info_json;
         std::string bind_host = "127.0.0.1";
         int port = 17845;
         std::filesystem::path overlay_root; // typically <exe_dir>/assets/overlay
@@ -37,6 +39,18 @@ public:
                            const std::string& state,
                            const std::string& redirect_uri,
                            std::string* out_error)> twitch_auth_handle_callback;
+
+        // YouTube OAuth (interactive) endpoints (optional)
+        // /auth/youtube/start will call youtube_auth_build_authorize_url(redirect_uri)
+        // /auth/youtube/callback will call youtube_auth_handle_callback(code, state, redirect_uri)
+        std::function<std::string(const std::string& redirect_uri, std::string* out_error)> youtube_auth_build_authorize_url;
+        std::function<bool(const std::string& code,
+                           const std::string& state,
+                           const std::string& redirect_uri,
+                           std::string* out_error)> youtube_auth_handle_callback;
+
+        // YouTube API access token (non-interactive). Used by /api/youtube/vod/* endpoints.
+        std::function<std::optional<std::string>()> youtube_get_access_token;
     };
 
     using LogFn = std::function<void(const std::wstring&)>;
