@@ -445,9 +445,20 @@
                 txt.appendChild(p);
             }
 
-            const userSpan = document.createElement('span');
-            userSpan.className = 'user';
-            userSpan.textContent = n.user || '';
+            const userSpan = document.createElement("span");
+            userSpan.className = "user";
+
+            const name = String(n.user || "").trim();
+            userSpan.textContent = name;
+
+            // Prefer platform/native colour if provided (Twitch IRC), otherwise fall back
+            const userColor = String(n.color || n.user_color || "").trim();
+            if (userColor && userColor.startsWith("#")) {
+                userSpan.style.color = userColor;
+            } else if (name) {
+                userSpan.style.color = colorFromName(name);
+            }
+
             txt.appendChild(userSpan);
 
             // message
