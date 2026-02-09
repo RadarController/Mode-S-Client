@@ -447,9 +447,7 @@
 
             const userSpan = document.createElement('span');
             userSpan.className = 'user';
-
-            const name = String(n.user || '').trim();
-            userSpan.textContent = name;
+            userSpan.textContent = n.user || '';
             txt.appendChild(userSpan);
 
             // Username colour:

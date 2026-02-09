@@ -47,6 +47,10 @@ public:
     // Forces immediate refresh attempt (useful for debug endpoints).
     bool RefreshNow(std::string* out_error = nullptr);
 
+    // True when there's no usable refresh token and the user must re-authorise.
+    // (e.g. Google returns invalid_grant: "Token has been expired or revoked.")
+    bool NeedsReauth() const;
+
     // ---- Interactive OAuth (one-time login to obtain/replace refresh token) ----
     // Build the URL for the user to open in a browser.
     // If redirect_uri is empty, defaults to:
