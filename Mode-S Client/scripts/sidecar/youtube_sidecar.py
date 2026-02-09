@@ -22,6 +22,12 @@ import urllib.request
 import urllib.error
 import http.cookiejar
 
+# When shipped, dependencies live next to the sidecar in .\site-packages
+_here = Path(__file__).resolve().parent
+_bundled = _here / "site-packages"
+if _bundled.exists():
+    sys.path.insert(0, str(_bundled))
+
 POLL_INTERVAL = 15  # seconds (stats refresh)
 
 SOCS_COOKIE = "SOCS=CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyOBg"

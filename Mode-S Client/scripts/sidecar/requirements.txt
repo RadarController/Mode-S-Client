@@ -1,0 +1,2 @@
+TikTokLive==6.6.5
+# add youtube deps later if needed
