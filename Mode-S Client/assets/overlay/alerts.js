@@ -212,36 +212,23 @@
         let kind = 'EVENT';
         let message = '';
 
-
-        // If true, we won't override the mapped message with the raw payload text.
-        // (Useful when the raw payload is a noisy human-readable string, like resubs.)
-        let lockMessage = false;
         if (platform === 'twitch' && type === 'channel.follow') {
             kind = 'HOLDING';
             message = 'Enter the hold, delay undetermined.';
         } else if (platform === 'twitch' && type === 'channel.subscribe') {
             kind = 'HOLDING CANCELLED';
             message = 'Your hold is cancelled, expect vectors!';
-        }
-         else if (platform === 'twitch' && type === 'channel.subscription.message') {
-            kind = 'HOLDING CANCELLED';
-
-            // Prefer structured fields from the server (added for resubs); fall back to parsing.
-            const txt = (e.resub_text || '').toString().trim();
-            if (txt) {
-                message = txt;
-                lockMessage = true;
+        } else if (platform === 'twitch' && type === 'channel.subscription.message') {
+            kind = 'RESUB';
+            const months = Number(e.cumulative_months || e.months || 0);
+            const txt = String(e.resub_message || '').trim();
+            if (months > 0) {
+                message = `resubbed for ${months} months in a row!`;
             } else {
-                // Legacy fallback: the server may send a human string like "resubscribed (x months): <text>"
-                // Try to extract the part after ":"
-                const raw = (e.message || '').toString();
-                const i = raw.indexOf(':');
-                const tail = (i >= 0) ? raw.slice(i + 1).trim() : '';
-                message = tail || 'Your hold is cancelled, expect vectors!';
-                lockMessage = true;
+                message = 'resubbed!';
             }
-        }
-         else if (platform === 'twitch' && (type === 'channel.subscription.gift' || type === 'channel.subscription.gifted' || type.includes('gift'))) {
+            if (txt) message += ` ${txt}`;
+        } else if (platform === 'twitch' && (type === 'channel.subscription.gift' || type === 'channel.subscription.gifted' || type.includes('gift'))) {
             kind = 'HOLD EMPTIED';
             message = 'No delay, expect vectors!';
         }
@@ -269,14 +256,11 @@
         }
 
         // Keep generic “followed/subscribed” out of the cinematic line; it reads better as the ATC phrase.
-        // Also: don't override messages we intentionally set (e.g., resub text extracted from structured fields).
-        if (!lockMessage) {
-            const rawMsg = String(e.message || '').trim();
-            if (rawMsg) {
-                const low = rawMsg.toLowerCase();
-                if (low !== 'followed' && low !== 'subscribed' && message !== rawMsg) {
-                    message = rawMsg;
-                }
+        const rawMsg = String(e.message || '').trim();
+        if (rawMsg && !(platform === 'twitch' && type === 'channel.subscription.message')) {
+            const low = rawMsg.toLowerCase();
+            if (low !== 'followed' && low !== 'subscribed' && message !== rawMsg) {
+                message = rawMsg;
             }
         }
 
@@ -285,14 +269,6 @@
             kind,
             callsign: callsignFromUser(e.user),
             user: String(e.user || ''),
-            // Resub tenure (months) – present on our injected events, and on real EventSub resubs as cumulative_months.
-            months: Number(
-                e.months ??
-                e.cumulative_months ??
-                e.total_months ??
-                e.streak_months ??
-                0
-            ),
             message: message || '',
             ts_ms: Number(e.ts_ms || 0),
         };
@@ -374,12 +350,7 @@
         setPlatformIcon(a.platform);
 
         elCallsign.textContent = a.callsign || 'UNKNOWN';
-        // Show a tiny tenure hint under the callsign when provided (e.g. resub months).
-        const months = Number(a.months || 0);
-        const monthsSuffix = (Number.isFinite(months) && months > 0)
-            ? ` (${months} months)`
-            : '';
-        elUser.textContent = (a.user || 'UNKNOWN') + monthsSuffix;
+        elUser.textContent = a.user || 'UNKNOWN';
         elType.textContent = a.kind || 'EVENT';
         elMsg.textContent = a.message || '';
         elTime.textContent = shortTime(a.ts_ms) || '';
