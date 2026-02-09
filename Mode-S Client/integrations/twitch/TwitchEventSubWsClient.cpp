@@ -1078,6 +1078,25 @@ std::string TwitchEventSubWsClient::BuildHumanReadableMessage(const std::string&
         return "🎁 " + user + " gifted " + std::to_string(total) + (total == 1 ? " sub" : " subs");
     }
 
+    // Resub messages: ev["message"] is an object (not a string), so handle it explicitly.
+    // If we fall through to the generic fallback below, nlohmann::json will throw a type_error
+    // when trying to read "message" as a string, which can crash the app.
+    if (subType == "channel.subscription.message")
+    {
+        const std::string user = ev.value("user_name", ev.value("user_login", "someone"));
+        const int months = ev.value("cumulative_months", 0);
+
+        std::string text;
+        if (ev.contains("message") && ev["message"].is_object()) {
+            text = ev["message"].value("text", "");
+        }
+
+        std::string out = "🔁 " + user + " resubscribed";
+        if (months > 0) out += " (" + std::to_string(months) + " months)";
+        if (!text.empty()) out += ": " + text;
+        return out;
+    }
+
     if (subType == "channel.cheer")
     {
         const std::string user = ev.value("user_name", ev.value("user_login", "someone"));
@@ -1100,8 +1119,10 @@ std::string TwitchEventSubWsClient::BuildHumanReadableMessage(const std::string&
     }
 
     // Fallback: use any message field if present.
-    const std::string msg = ev.value("message", "");
-    if (!msg.empty()) return "📣 " + msg;
+    if (ev.contains("message") && ev["message"].is_string()) {
+        const std::string msg = ev["message"].get<std::string>();
+        if (!msg.empty()) return "📣 " + msg;
+    }
     return "📣 Twitch event";
 }
 
