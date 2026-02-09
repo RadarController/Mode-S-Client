@@ -23,7 +23,6 @@
         endpoints: [
             { url: '/api/twitch/eventsub/events' },
             { url: '/api/tiktok/events' },
-            { url: '/api/TikTok/events', optional: true },
             // Optional until YouTube events are fully stable.
             { url: '/api/youtube/events', optional: true },
         ],
@@ -396,6 +395,20 @@
     }
 
     function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+    // Debug-only test hook: inject a fake event from DevTools via window.__alertsTest(...)
+    if (isDebug) {
+        window.__alertsTest = (e) => {
+            // Bypass timestamp gating so you can test repeatedly
+            const key = eventKey(e) || `manual:${nowMs()}`;
+            if (!seen.has(key)) seen.set(key, nowMs());
+            enqueue(e);
+            if (!playing) playNext();
+            updateDebug();
+            console.debug('[alerts] injected test event', e);
+        };
+    }
+
 
     // Kick off
     setInterval(pollOnce, CONFIG.pollMs);
