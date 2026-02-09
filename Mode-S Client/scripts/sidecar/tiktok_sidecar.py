@@ -12,6 +12,16 @@
 #   - We try to post it into TikTok LIVE chat (if supported by installed TikTokLive build)
 #   - We emit tiktok.send_result {ok:true/false} so C++ can log/debug
 
+# --- ensure bundled deps are importable when shipped with embedded python ---
+import os
+import sys
+from pathlib import Path as _Path
+
+_here = _Path(__file__).resolve().parent
+_bundled = _here / "site-packages"
+if _bundled.exists():
+    sys.path.insert(0, str(_bundled))
+
 import asyncio
 import json
 import sys
@@ -20,7 +30,6 @@ import traceback
 import inspect
 from pathlib import Path
 from typing import Any, Dict, Optional, Callable, Tuple
-
 
 # ---------------- stdout pipe safety (Windows) ----------------
 def emit(obj: Dict[str, Any]) -> None:
