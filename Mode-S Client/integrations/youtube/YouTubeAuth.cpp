@@ -183,6 +183,11 @@ bool YouTubeAuth::RefreshNow(std::string* out_error) {
     return RefreshWithGoogle(out_error);
 }
 
+bool YouTubeAuth::NeedsReauth() const {
+    std::lock_guard<std::mutex> lock(mu_);
+    return tokens_.refresh_token.empty();
+}
+
 bool YouTubeAuth::NeedsRefresh(std::int64_t now_unix) const {
     // Refresh if:
     // - no access token but we have refresh token
@@ -356,6 +361,40 @@ bool YouTubeAuth::RefreshWithGoogle(std::string* out_error) {
     std::string resp = HttpPostForm("https://oauth2.googleapis.com/token", body,
         { {"Content-Type", "application/x-www-form-urlencoded"} },
         &status, &err);
+
+    // If Google says the refresh token is dead (revoked/expired), there is no recovery
+    // other than forcing a full OAuth flow again. Clear stored tokens so the UI can
+    // guide the user to re-authorise instead of hammering refresh forever.
+    if (status == 400 && !resp.empty()) {
+        try {
+            json ej = json::parse(resp);
+            const std::string e = ej.value("error", "");
+            if (e == "invalid_grant") {
+                std::string desc = ej.value("error_description", "");
+                {
+                    std::lock_guard<std::mutex> lock(mu_);
+                    tokens_.access_token.clear();
+                    tokens_.refresh_token.clear();
+                    tokens_.expires_at_unix = 0;
+                    tokens_.token_type.clear();
+                    tokens_.scope_joined.clear();
+                    channel_id_.clear();
+                }
+                // Persist the cleared state so we don't keep failing on restart.
+                std::string save_err;
+                (void)SaveToConfig(tokens_, &save_err);
+
+                const std::string msg = "refresh token invalid_grant (expired or revoked)" +
+                    (desc.empty() ? std::string() : (": " + desc)) +
+                    "; cleared stored YouTube tokens - re-authorisation required.";
+                DebugLog("YTAUTH: " + msg);
+                if (out_error) *out_error = msg;
+                return false;
+            }
+        } catch (...) {
+            // fall through to generic error handling below
+        }
+    }
 
     if (resp.empty() || status < 200 || status >= 300) {
         if (out_error) *out_error = err.empty() ? ("refresh failed http=" + std::to_string(status)) : err;
