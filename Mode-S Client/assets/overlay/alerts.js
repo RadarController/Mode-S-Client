@@ -23,7 +23,6 @@
         endpoints: [
             { url: '/api/twitch/eventsub/events' },
             { url: '/api/tiktok/events' },
-            { url: '/api/TikTok/events', optional: true },
             // Optional until YouTube events are fully stable.
             { url: '/api/youtube/events', optional: true },
         ],
@@ -59,53 +58,6 @@
     // We persist a per-platform "last seen ts_ms" so page refreshes don't replay historical API buffers.
     const LAST_TS_KEY = 'atc_alerts_last_ts_v1';
     const BOOT_MS = nowMs(); // local boot time, used to initialize cutoffs on first run
-
-    // --- anti-throttle timing helpers ---
-    const clockNow = () => performance.now();
-
-    // If we were paused/throttled for longer than this, don't "catch up" by dumping the queue.
-    const THROTTLE_GAP_MS = 2000;
-
-    let lastTick = clockNow();
-    let paused = (document.visibilityState !== 'visible');
-
-    document.addEventListener('visibilitychange', () => {
-        paused = (document.visibilityState !== 'visible');
-
-        // If the overlay isn't "visible", hide the card to avoid stale UI.
-        if (paused) {
-            playing = false;
-            card.hidden = true;
-        } else {
-            // kick the loop when we come back
-            lastTick = clockNow();
-            if (!playing) playNext();
-        }
-    });
-
-    function sleepExact(ms) {
-        return new Promise(r => setTimeout(r, ms));
-    }
-
-    async function sleepSafe(ms) {
-        // Wait in small chunks so we can detect throttling gaps and pause state.
-        const deadline = clockNow() + ms;
-        while (true) {
-            if (paused) return false;
-
-            const now = clockNow();
-            const gap = now - lastTick;
-            lastTick = now;
-
-            // If we've been throttled/paused hard, stop this alert (prevents burst/catch-up).
-            if (gap > THROTTLE_GAP_MS) return false;
-
-            const remaining = deadline - now;
-            if (remaining <= 0) return true;
-
-            await sleepExact(Math.min(remaining, 120));
-        }
-    }
 
     function loadLastTs() {
         try {
@@ -265,6 +217,16 @@
         } else if (platform === 'twitch' && type === 'channel.subscribe') {
             kind = 'HOLDING CANCELLED';
             message = 'Your hold is cancelled, expect vectors!';
+        } else if (platform === 'twitch' && type === 'channel.subscription.message') {
+            kind = 'RESUB';
+            const months = Number(e.cumulative_months || e.months || 0);
+            const txt = String(e.resub_message || '').trim();
+            if (months > 0) {
+                message = `resubbed for ${months} months in a row!`;
+            } else {
+                message = 'resubbed!';
+            }
+            if (txt) message += ` ${txt}`;
         } else if (platform === 'twitch' && (type === 'channel.subscription.gift' || type === 'channel.subscription.gifted' || type.includes('gift'))) {
             kind = 'HOLD EMPTIED';
             message = 'No delay, expect vectors!';
@@ -294,7 +256,7 @@
 
         // Keep generic “followed/subscribed” out of the cinematic line; it reads better as the ATC phrase.
         const rawMsg = String(e.message || '').trim();
-        if (rawMsg) {
+        if (rawMsg && !(platform === 'twitch' && type === 'channel.subscription.message')) {
             const low = rawMsg.toLowerCase();
             if (low !== 'followed' && low !== 'subscribed' && message !== rawMsg) {
                 message = rawMsg;
@@ -349,11 +311,7 @@
                     ? data.events
                     : (Array.isArray(data?.events?.events) ? data.events.events : []);
 
-                const MAX_ENQUEUE_PER_POLL = 5;
-                let added = 0;
-
                 for (const e of events) {
-                    if (added >= MAX_ENQUEUE_PER_POLL) break;
                     if (!shouldAcceptEvent(e)) continue;
 
                     const key = eventKey(e);
@@ -363,7 +321,6 @@
                     seen.set(key, nowMs());
                     enqueue(e);
                     markAcceptedEvent(e);
-                    added++;
                 }
 
                 pruneSeen();
@@ -386,6 +343,7 @@
         updateDebug();
         if (!playing) playNext();
     }
+
     function renderAlert(a) {
         setPlatformClass(a.platform);
         setPlatformIcon(a.platform);
@@ -413,13 +371,6 @@
             return;
         }
 
-        // If not visible, don't run the player loop.
-        if (paused) {
-            playing = false;
-            card.hidden = true;
-            return;
-        }
-
         playing = true;
         renderAlert(next);
 
@@ -427,37 +378,37 @@
         clearAnimClasses();
         card.classList.add('enter');
 
-        if (!(await sleepSafe(320))) return resetAfterThrottle();
-
+        await sleep(320);
         card.classList.remove('enter');
         card.classList.add('hold');
 
-        if (!(await sleepSafe(CONFIG.holdMs))) return resetAfterThrottle();
-
+        await sleep(CONFIG.holdMs);
         card.classList.remove('hold');
         card.classList.add('exit');
 
-        if (!(await sleepSafe(420))) return resetAfterThrottle();
-
+        await sleep(420);
         card.classList.remove('exit');
         card.hidden = true;
 
-        if (!(await sleepSafe(CONFIG.gapMs))) return resetAfterThrottle();
-
+        await sleep(CONFIG.gapMs);
         playNext();
     }
 
-    function resetAfterThrottle() {
-        // Stop cleanly; do NOT burn through the queue.
-        playing = false;
-        card.hidden = true;
+    function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
-        // Optional: drop very old items so we don't play a backlog after a long stall.
-        const cutoff = Date.now() - 30_000;
-        for (let i = queue.length - 1; i >= 0; i--) {
-            if ((queue[i].ts_ms || 0) > 0 && queue[i].ts_ms < cutoff) queue.splice(i, 1);
-        }
+    // Debug-only test hook: inject a fake event from DevTools via window.__alertsTest(...)
+    if (isDebug) {
+        window.__alertsTest = (e) => {
+            // Bypass timestamp gating so you can test repeatedly
+            const key = eventKey(e) || `manual:${nowMs()}`;
+            if (!seen.has(key)) seen.set(key, nowMs());
+            enqueue(e);
+            if (!playing) playNext();
+            updateDebug();
+            console.debug('[alerts] injected test event', e);
+        };
     }
+
 
     // Kick off
     setInterval(pollOnce, CONFIG.pollMs);

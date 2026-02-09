@@ -950,100 +950,172 @@ okAny |= CreateSubscription(
 
 void TwitchEventSubWsClient::HandleNotification(const void* payloadPtr)
 {
-    const json& payload = *static_cast<const json*>(payloadPtr);
-
-    if (!payload.contains("subscription") || !payload.contains("event"))
-        return;
-
-    const std::string subType = payload["subscription"].value("type", "");
-    const json& ev = payload["event"];
-
-    ChatMessage msg;
-    msg.platform = "twitch";
-
-    std::string user;
-    std::string message;
-
-    // Event payload fields differ slightly between types; prefer user_name if present.
-    if (subType == "channel.follow")
+    // IMPORTANT: Twitch can legally send null / unexpected types for some fields (e.g. months counters).
+    // nlohmann::json will throw on type mismatches, so we parse defensively and never let exceptions escape.
+    try
     {
-        user = ev.value("user_name", ev.value("user_login", ""));
-        message = "followed";
-    }
-    else if (subType == "channel.subscribe")
-    {
-        user = ev.value("user_name", ev.value("user_login", ""));
-        message = "subscribed";
-    }
-    else if (subType == "channel.subscription.gift")
-    {
-        user = ev.value("user_name", ev.value("user_login", ""));
-        int count = ev.value("total", 1);
-        message = "gifted " + std::to_string(count) + " subs";
-    }
-    else if (subType == "channel.subscription.message")
-    {
-        user = ev.value("user_name", ev.value("user_login", ""));
-        int months = ev.value("cumulative_months", 0);
+        const json& payload = *static_cast<const json*>(payloadPtr);
 
-        std::string text;
-        if (ev.contains("message") && ev["message"].is_object()) {
-            text = ev["message"].value("text", "");
+        if (!payload.is_object())
+            return;
+
+        if (!payload.contains("subscription") || !payload.contains("event"))
+            return;
+
+        const json& sub = payload["subscription"];
+        const json& ev = payload["event"];
+
+        if (!sub.is_object() || !ev.is_object())
+            return;
+
+        auto getStr = [](const json& j, const char* key) -> std::string {
+            auto it = j.find(key);
+            if (it == j.end()) return {};
+            if (it->is_string()) return it->get<std::string>();
+            return {};
+        };
+
+        auto getInt = [](const json& j, const char* key, int fallback = 0) -> int {
+            auto it = j.find(key);
+            if (it == j.end() || it->is_null()) return fallback;
+            if (it->is_number_integer()) return it->get<int>();
+            if (it->is_number()) return static_cast<int>(it->get<double>());
+            if (it->is_string()) {
+                try { return std::stoi(it->get<std::string>()); } catch (...) { return fallback; }
+            }
+            return fallback;
+        };
+
+        const std::string subType = getStr(sub, "type");
+
+        ChatMessage msg;
+        msg.platform = "twitch";
+
+        std::string user;
+        std::string message;
+
+        // Event payload fields differ slightly between types; prefer user_name if present.
+        if (subType == "channel.follow")
+        {
+            user = getStr(ev, "user_name");
+            if (user.empty()) user = getStr(ev, "user_login");
+            message = "followed";
+        }
+        else if (subType == "channel.subscribe")
+        {
+            user = getStr(ev, "user_name");
+            if (user.empty()) user = getStr(ev, "user_login");
+            message = "subscribed";
+        }
+        else if (subType == "channel.subscription.gift")
+        {
+            user = getStr(ev, "user_name");
+            if (user.empty()) user = getStr(ev, "user_login");
+            int count = getInt(ev, "total", 1);
+            message = "gifted " + std::to_string(count) + " subs";
+        }
+        else if (subType == "channel.subscription.message")
+        {
+            user = getStr(ev, "user_name");
+            if (user.empty()) user = getStr(ev, "user_login");
+
+            const int months = getInt(ev, "cumulative_months", 0);
+
+            std::string resubText;
+            auto mit = ev.find("message");
+            if (mit != ev.end() && mit->is_object()) {
+                auto tit = mit->find("text");
+                if (tit != mit->end() && tit->is_string()) {
+                    resubText = tit->get<std::string>();
+                }
+            }
+
+            // Keep the server-side "message" human-readable, but also emit structured fields for the overlay.
+            if (months > 0) {
+                message = "resubbed for " + std::to_string(months) + " months in a row!";
+            } else {
+                message = "resubbed!";
+            }
+            if (!resubText.empty()) {
+                message += " " + resubText;
+            }
         }
 
-        message = "resubscribed";
-        if (months > 0) message += " (" + std::to_string(months) + " months)";
-        if (!text.empty()) message += ": " + text;
-    }
-    
-    else if (subType == "channel.cheer")
-    {
-        user = ev.value("user_name", ev.value("user_login", ""));
-        const int bits = ev.value("bits", 0);
+        else if (subType == "channel.cheer")
+        {
+            user = getStr(ev, "user_name");
+            if (user.empty()) user = getStr(ev, "user_login");
+            const int bits = getInt(ev, "bits", 0);
 
-        std::string text;
-        if (ev.contains("message") && ev["message"].is_string()) {
-            text = ev["message"].get<std::string>();
+            std::string text;
+            auto it = ev.find("message");
+            if (it != ev.end() && it->is_string()) {
+                text = it->get<std::string>();
+            }
+
+            message = "added " + std::to_string(bits) + " minutes of delay on approach!";
+            if (!text.empty()) message += ": " + text;
         }
 
-        message = "added " + std::to_string(bits) + " minutes of delay on approach!";
-        if (!text.empty()) message += ": " + text;
-    }
-
-    else if (subType == "channel.raid")
-    {
-        user = ev.value("from_broadcaster_user_name", ev.value("from_broadcaster_user_login", ""));
-        int viewers = ev.value("viewers", 0);
-        message = "raided with " + std::to_string(viewers) + " viewers";
-    }
-    else
-    {
-        return;
-    }
-
-    const auto ts = NowMs();
-
-    if (on_event_) {
-        json evOut;
-        evOut["ts_ms"] = ts;
-        evOut["platform"] = "twitch";
-        evOut["type"] = subType;
-        evOut["user"] = user;
-        evOut["message"] = message;
-        if (subType == "channel.cheer") {
-            evOut["bits"] = ev.value("bits", 0);
+        else if (subType == "channel.raid")
+        {
+            user = getStr(ev, "from_broadcaster_user_name");
+            if (user.empty()) user = getStr(ev, "from_broadcaster_user_login");
+            int viewers = getInt(ev, "viewers", 0);
+            message = "raided with " + std::to_string(viewers) + " viewers";
         }
-        on_event_(evOut);
-    }
+        else
+        {
+            return;
+        }
 
-    // Forward EventSub events into chat as well (human-readable).
-    if (on_chat_event_) {
-        ChatMessage m{};
-        m.platform = "twitch";
-        m.user = user;
-        m.message = BuildHumanReadableMessage(subType, ev);
-        m.ts_ms = ts;
-        on_chat_event_(m);
+        const auto ts = NowMs();
+
+        if (on_event_) {
+            json evOut;
+            evOut["ts_ms"] = ts;
+            evOut["platform"] = "twitch";
+            evOut["type"] = subType;
+            evOut["user"] = user;
+            evOut["message"] = message;
+
+            if (subType == "channel.cheer") {
+                evOut["bits"] = getInt(ev, "bits", 0);
+            }
+            else if (subType == "channel.subscription.message") {
+                evOut["cumulative_months"] = getInt(ev, "cumulative_months", 0);
+
+                std::string resubText;
+                auto mit = ev.find("message");
+                if (mit != ev.end() && mit->is_object()) {
+                    auto tit = mit->find("text");
+                    if (tit != mit->end() && tit->is_string()) {
+                        resubText = tit->get<std::string>();
+                    }
+                }
+                evOut["resub_message"] = resubText;
+            }
+
+            on_event_(evOut);
+        }
+
+        // Forward EventSub events into chat as well (human-readable).
+        if (on_chat_event_) {
+            ChatMessage m{};
+            m.platform = "twitch";
+            m.user = user;
+            m.message = BuildHumanReadableMessage(subType, ev);
+            m.ts_ms = ts;
+            on_chat_event_(m);
+        }
+    }
+    catch (const std::exception& ex)
+    {
+        OutputDebug(std::wstring(L"[TwitchEventSub] HandleNotification exception: ") + Utf8ToWide(ex.what()));
+    }
+    catch (...)
+    {
+        OutputDebug(L"[TwitchEventSub] HandleNotification exception: unknown");
     }
 }
 
