@@ -434,6 +434,8 @@ void HttpServer::RegisterRoutes() {
 
     // POST /api/twitch/streaminfo/apply (apply to Twitch now)
     svr.Post("/api/twitch/streaminfo/apply", [&](const httplib::Request&, httplib::Response& res) {
+        try {
+
         const auto d = state_.twitch_stream_draft_snapshot();
 
         SafeOutputLog(log_,
@@ -458,7 +460,19 @@ void HttpServer::RegisterRoutes() {
         nlohmann::json out = { {"ok", true} };
         res.set_content(out.dump(), "application/json; charset=utf-8");
         res.status = 200;
-    });
+    
+        } catch (const std::exception& e) {
+            nlohmann::json out = { {"ok", false}, {"error", "exception"}, {"what", e.what()} };
+            res.status = 500;
+            res.set_content(out.dump(2), "application/json; charset=utf-8");
+            return;
+        } catch (...) {
+            nlohmann::json out = { {"ok", false}, {"error", "unknown_exception"} };
+            res.status = 500;
+            res.set_content(out.dump(2), "application/json; charset=utf-8");
+            return;
+        }
+});
 
 svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Response& res) {
         auto j = state_.twitch_eventsub_status_json();

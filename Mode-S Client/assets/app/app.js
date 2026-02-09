@@ -24,8 +24,8 @@ async function apiPost(url, body){
     body: body ? JSON.stringify(body) : ""
   });
   if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-  const text = await r.text();
-  try { return JSON.parse(text); } catch { return { ok:true, raw:text }; }
+    const t = await r.text().catch(() => "");
+    throw new Error(`${r.status} ${r.statusText}${t ? `: ${t}` : ""}`);
 }
 
 async function loadSettings(){
