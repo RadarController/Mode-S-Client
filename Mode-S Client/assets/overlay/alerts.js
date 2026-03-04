@@ -1,4 +1,4 @@
-/*
+/* 
   ATC Alerts Overlay (Twitch + TikTok)
 
   Served via: http://localhost:17845/overlay/alerts.html
@@ -372,26 +372,43 @@
         }
 
         playing = true;
-        renderAlert(next);
 
-        card.hidden = false;
-        clearAnimClasses();
-        card.classList.add('enter');
+        try {
+            renderAlert(next);
 
-        await sleep(320);
-        card.classList.remove('enter');
-        card.classList.add('hold');
+            card.hidden = false;
+            clearAnimClasses();
+            card.classList.add('enter');
 
-        await sleep(CONFIG.holdMs);
-        card.classList.remove('hold');
-        card.classList.add('exit');
+            await sleep(320);
+            card.classList.remove('enter');
+            card.classList.add('hold');
 
-        await sleep(420);
-        card.classList.remove('exit');
-        card.hidden = true;
+            await sleep(CONFIG.holdMs);
+            card.classList.remove('hold');
+            card.classList.add('exit');
 
-        await sleep(CONFIG.gapMs);
-        playNext();
+            await sleep(420);
+            card.classList.remove('exit');
+            card.hidden = true;
+
+            await sleep(CONFIG.gapMs);
+        } catch (err) {
+            console.error('[alerts] playNext crashed on event:', next, err);
+            // Recover to a known-good visual state so the overlay can keep going.
+            try {
+                clearAnimClasses();
+                card.hidden = true;
+            } catch {
+                // ignore secondary failures
+            }
+        } finally {
+            // Critical: never let one bad event wedge playback permanently.
+            playing = false;
+        }
+
+        // Continue with the queue.
+        if (queue.length) playNext();
     }
 
     function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
@@ -408,7 +425,6 @@
             console.debug('[alerts] injected test event', e);
         };
     }
-
 
     // Kick off
     setInterval(pollOnce, CONFIG.pollMs);
