@@ -5,9 +5,12 @@
 #include <thread>
 #include <filesystem>
 #include <functional>
+#include <atomic>
+#include <mutex>
 
 #include "httplib.h"
 #include "LogBuffer.h"
+#include "json.hpp"
 
 class AppState;
 class ChatAggregator;
@@ -71,6 +74,10 @@ private:
     void RegisterRoutes();
     void ApplyOverlayTokens(std::string& html);
 
+    // --- SimBrief cache (used by /api/simbrief/flight) ---
+    void StartSimBriefWorker();
+    void StopSimBriefWorker();
+
     AppState& state_;
     ChatAggregator& chat_;
     EuroScopeIngestService& euroscope_;
@@ -80,6 +87,13 @@ private:
 
     // Thread-safe log buffer for the Web UI (/api/log)
     LogBuffer logbuf_;
+
+    std::mutex simbrief_mu_;
+    nlohmann::json simbrief_cache_;
+    std::string simbrief_error_;
+    std::int64_t simbrief_last_refresh_unix_ = 0;
+    std::thread simbrief_thread_;
+    std::atomic<bool> simbrief_stop_{ false };
 
     std::unique_ptr<httplib::Server> svr_;
     std::thread thread_;
