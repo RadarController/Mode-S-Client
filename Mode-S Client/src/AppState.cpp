@@ -21,6 +21,15 @@ std::string AppState::make_alert_history_id_(std::uint64_t seq) {
 }
 
 void AppState::record_alert_history_(const nlohmann::json& payload_in) {
+    // If we were accidentally handed a batch (array), record each element as its own history item.
+    // This prevents later replay logic (which expects an object) from crashing.
+    if (payload_in.is_array()) {
+        for (const auto& el : payload_in) {
+            if (el.is_object()) record_alert_history_(el);
+        }
+        return;
+    }
+
     // Normalize minimal fields used by overlays/UI.
     nlohmann::json payload = payload_in;
     const auto ts = payload.value("ts_ms", (std::int64_t)0);
@@ -99,40 +108,57 @@ bool AppState::resend_alert_history(const std::string& history_id, nlohmann::jso
         return false;
     }
 
+    
     nlohmann::json replay = found.payload;
-    const auto ts = now_ms();
+    if (replay.is_array()) {
+        if (replay.empty() || !replay[0].is_object()) {
+            if (err) *err = "invalid_payload";
+            return false;
+        }
+        replay = replay[0];
+    }
+const auto ts = now_ms();
     replay["ts_ms"] = ts;
     // Force a fresh id so client-side de-dupe won't ignore it.
     replay["id"] = std::string("replay-") + history_id + "-" + std::to_string(ts);
-
     std::string platform = replay.value("platform", "");
     platform = ToLower(platform);
 
-    if (platform == "twitch") {
-        add_twitch_eventsub_event(replay);
-    } else if (platform == "tiktok") {
-        EventItem e;
-        e.platform = "tiktok";
-        e.type = replay.value("type", "");
-        e.user = replay.value("user", replay.value("user_name", ""));
-        e.message = replay.value("message", "");
-        e.ts_ms = replay.value("ts_ms", (std::int64_t)0);
-        push_tiktok_event(e);
-    } else if (platform == "youtube") {
-        EventItem e;
-        e.platform = "youtube";
-        e.type = replay.value("type", "");
-        e.user = replay.value("user", replay.value("user_name", ""));
-        e.message = replay.value("message", "");
-        e.ts_ms = replay.value("ts_ms", (std::int64_t)0);
-        push_youtube_event(e);
-    } else {
-        if (err) *err = "unsupported_platform";
+    try {
+        if (platform == "twitch") {
+            add_twitch_eventsub_event(replay);
+        } else if (platform == "tiktok") {
+            EventItem e;
+            e.platform = "tiktok";
+            e.type = replay.value("type", "");
+            e.user = replay.value("user", replay.value("user_name", ""));
+            e.message = replay.value("message", "");
+            e.ts_ms = replay.value("ts_ms", (std::int64_t)0);
+            push_tiktok_event(e);
+        } else if (platform == "youtube") {
+            EventItem e;
+            e.platform = "youtube";
+            e.type = replay.value("type", "");
+            e.user = replay.value("user", replay.value("user_name", ""));
+            e.message = replay.value("message", "");
+            e.ts_ms = replay.value("ts_ms", (std::int64_t)0);
+            push_youtube_event(e);
+        } else {
+            if (err) *err = "unsupported_platform";
+            return false;
+        }
+
+        // Record the replay too (so it shows up in history with its replay id).
+        record_alert_history_(replay);
+    }
+    catch (const std::exception& ex) {
+        if (err) *err = std::string("exception:") + ex.what();
         return false;
     }
-
-    // Record the replay too (so it shows up in history with its replay id).
-    record_alert_history_(replay);
+    catch (...) {
+        if (err) *err = "exception";
+        return false;
+    }
 
     if (replayed) *replayed = replay;
     return true;

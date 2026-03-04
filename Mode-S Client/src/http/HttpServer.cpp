@@ -1922,6 +1922,8 @@ svr.Get("/auth/twitch/start", [&](const httplib::Request& req, httplib::Response
     // POST /api/alerts/resend  (localhost-only)
     // Body: { "id": "hist-123" } or { "ids": ["hist-123","hist-124"] }
     svr.Post("/api/alerts/resend", [&](const httplib::Request& req, httplib::Response& res) {
+        try {
+
         const std::string ra = req.remote_addr;
         if (!(ra == "127.0.0.1" || ra == "::1" || ra == "localhost")) {
             res.status = 403;
@@ -1968,7 +1970,22 @@ svr.Get("/auth/twitch/start", [&](const httplib::Request& req, httplib::Response
         res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
         res.set_header("Pragma", "no-cache");
         res.set_content(out.dump(2), "application/json; charset=utf-8");
-        });
+        }
+        catch (const std::exception& ex) {
+            res.status = 500;
+            nlohmann::json out;
+            out["ok"] = false;
+            out["error"] = "exception";
+            out["detail"] = ex.what();
+            res.set_content(out.dump(2), "application/json; charset=utf-8");
+            return;
+        }
+        catch (...) {
+            res.status = 500;
+            res.set_content(R"({\"ok\":false,\"error\":\"exception\"})", "application/json; charset=utf-8");
+            return;
+        }
+});
 #else
     svr.Post("/api/alerts/resend", [&](const httplib::Request&, httplib::Response& res) {
         res.status = 404;
