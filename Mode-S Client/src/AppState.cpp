@@ -16,6 +16,156 @@ std::int64_t AppState::now_ms() {
     return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
 }
 
+std::string AppState::make_alert_history_id_(std::uint64_t seq) {
+    return std::string("hist-") + std::to_string(seq);
+}
+
+void AppState::record_alert_history_(const nlohmann::json& payload_in) {
+    // If we were accidentally handed a batch (array), record each element as its own history item.
+    // This prevents later replay logic (which expects an object) from crashing.
+    if (payload_in.is_array()) {
+        for (const auto& el : payload_in) {
+            if (el.is_object()) record_alert_history_(el);
+        }
+        return;
+    }
+
+    // Normalize minimal fields used by overlays/UI.
+    nlohmann::json payload = payload_in;
+    const auto ts = payload.value("ts_ms", (std::int64_t)0);
+    if (!payload.contains("ts_ms") || !payload["ts_ms"].is_number_integer() || ts <= 0) {
+        payload["ts_ms"] = now_ms();
+    }
+
+    std::string platform = payload.value("platform", "");
+    platform = ToLower(platform);
+    if (!platform.empty()) payload["platform"] = platform;
+
+    // Ensure common fields exist where possible (best-effort).
+    if (!payload.contains("type")) payload["type"] = "";
+    if (!payload.contains("user")) {
+        const std::string u = payload.value("user_name", "");
+        if (!u.empty()) payload["user"] = u;
+    }
+    if (!payload.contains("message")) payload["message"] = "";
+
+    AlertHistoryItem item;
+    {
+        std::lock_guard<std::mutex> lk(alerts_history_mu_);
+        item.history_id = make_alert_history_id_(++alerts_history_seq_);
+    }
+    item.payload = payload;
+    item.platform = platform;
+    item.ts_ms = payload.value("ts_ms", (std::int64_t)0);
+
+    {
+        std::lock_guard<std::mutex> lk(alerts_history_mu_);
+        alerts_history_.push_back(std::move(item));
+        while (alerts_history_.size() > kAlertsHistoryMax_) alerts_history_.pop_front();
+    }
+}
+
+nlohmann::json AppState::alerts_history_json(int limit, const std::string& platform_filter) const {
+    int lim = std::max(1, std::min(5000, limit));
+    std::string pf = platform_filter;
+    pf = ToLower(pf);
+
+    nlohmann::json out;
+    out["ok"] = true;
+    out["events"] = nlohmann::json::array();
+
+    std::lock_guard<std::mutex> lk(alerts_history_mu_);
+
+    int added = 0;
+    for (auto it = alerts_history_.rbegin(); it != alerts_history_.rend() && added < lim; ++it) {
+        if (!pf.empty() && it->platform != pf) continue;
+        nlohmann::json e = it->payload;
+        e["history_id"] = it->history_id;
+        out["events"].push_back(std::move(e));
+        added++;
+    }
+    out["count"] = added;
+    return out;
+}
+
+bool AppState::resend_alert_history(const std::string& history_id, nlohmann::json* replayed, std::string* err) {
+    AlertHistoryItem found;
+    bool ok = false;
+
+    {
+        std::lock_guard<std::mutex> lk(alerts_history_mu_);
+        for (const auto& it : alerts_history_) {
+            if (it.history_id == history_id) {
+                found = it;
+                ok = true;
+                break;
+            }
+        }
+    }
+
+    if (!ok) {
+        if (err) *err = "not_found";
+        return false;
+    }
+
+    
+    nlohmann::json replay = found.payload;
+    if (replay.is_array()) {
+        if (replay.empty() || !replay[0].is_object()) {
+            if (err) *err = "invalid_payload";
+            return false;
+        }
+        replay = replay[0];
+    }
+const auto ts = now_ms();
+    replay["ts_ms"] = ts;
+    // Force a fresh id so client-side de-dupe won't ignore it.
+    replay["id"] = std::string("replay-") + history_id + "-" + std::to_string(ts);
+    std::string platform = replay.value("platform", "");
+    platform = ToLower(platform);
+
+    try {
+        if (platform == "twitch") {
+            add_twitch_eventsub_event(replay);
+        } else if (platform == "tiktok") {
+            EventItem e;
+            e.platform = "tiktok";
+            e.type = replay.value("type", "");
+            e.user = replay.value("user", replay.value("user_name", ""));
+            e.message = replay.value("message", "");
+            e.ts_ms = replay.value("ts_ms", (std::int64_t)0);
+            push_tiktok_event(e);
+        } else if (platform == "youtube") {
+            EventItem e;
+            e.platform = "youtube";
+            e.type = replay.value("type", "");
+            e.user = replay.value("user", replay.value("user_name", ""));
+            e.message = replay.value("message", "");
+            e.ts_ms = replay.value("ts_ms", (std::int64_t)0);
+            push_youtube_event(e);
+        } else {
+            if (err) *err = "unsupported_platform";
+            return false;
+        }
+
+        // Record the replay too (so it shows up in history with its replay id).
+        record_alert_history_(replay);
+    }
+    catch (const std::exception& ex) {
+        if (err) *err = std::string("exception:") + ex.what();
+        return false;
+    }
+    catch (...) {
+        if (err) *err = "exception";
+        return false;
+    }
+
+    if (replayed) *replayed = replay;
+    return true;
+}
+
+
+
 void AppState::load_metrics_cache_from_config_unlocked()
 {
     if (metrics_cache_loaded_) return;
@@ -225,6 +375,7 @@ nlohmann::json AppState::twitch_eventsub_status_json() const {
 }
 
 void AppState::add_twitch_eventsub_event(const nlohmann::json& ev) {
+    record_alert_history_(ev);
     std::lock_guard<std::mutex> lk(mtx_);
     twitch_eventsub_events_.push_back(ev);
     // Keep small
@@ -288,6 +439,8 @@ nlohmann::json AppState::twitch_eventsub_errors_json(int limit) const {
 }
 
 void AppState::push_tiktok_event(const EventItem& e) {
+    // Also record into unified alerts history.
+    record_alert_history_(nlohmann::json{{{"platform", e.platform}, {"type", e.type}, {"user", e.user}, {"message", e.message}, {"ts_ms", e.ts_ms}}});
     std::lock_guard<std::mutex> lk(mtx_);
     tiktok_events_.push_back(e);
     while (tiktok_events_.size() > 200) tiktok_events_.pop_front();
@@ -319,6 +472,8 @@ nlohmann::json AppState::tiktok_events_json(size_t limit) const {
 }
 
 void AppState::push_youtube_event(const EventItem& e) {
+    // Also record into unified alerts history.
+    record_alert_history_(nlohmann::json{{{"platform", e.platform}, {"type", e.type}, {"user", e.user}, {"message", e.message}, {"ts_ms", e.ts_ms}}});
     std::lock_guard<std::mutex> lk(mtx_);
     youtube_events_.push_back(e);
     while (youtube_events_.size() > 200) youtube_events_.pop_front();

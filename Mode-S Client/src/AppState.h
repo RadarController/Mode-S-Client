@@ -114,6 +114,16 @@ public:
     void push_youtube_event(const EventItem& e);
     nlohmann::json youtube_events_json(size_t limit = 200) const;
 
+    // --- Unified alerts history (across Twitch/TikTok/YouTube) ---
+    // Returns a rolling in-memory history for "missed alerts" tooling.
+    // Optional platform filter: "twitch" | "tiktok" | "youtube"
+    nlohmann::json alerts_history_json(int limit = 200, const std::string& platform = "") const;
+
+    // Re-inject a stored history item back into the live platform queues (with a fresh id/ts)
+    // so overlays/chat can replay missed alerts.
+    // Returns true on success; on failure, `err` (if provided) is filled.
+    bool resend_alert_history(const std::string& history_id, nlohmann::json* replayed = nullptr, std::string* err = nullptr);
+
     // --- Bot commands (chatbot) ---
     // Storage path should be set once at startup (utf-8 path). If empty, commands are in-memory only.
     void set_bot_commands_storage_path(const std::string& path_utf8);
@@ -217,6 +227,23 @@ private:
     void save_metrics_cache_to_config_unlocked();
 
     static std::int64_t now_ms();
+
+    struct AlertHistoryItem {
+        std::string history_id;   // stable id for history lookup (not the original platform id)
+        nlohmann::json payload;   // original payload (normalized to include platform/type/user/message/ts_ms where possible)
+        std::string platform;     // cached for filtering
+        std::int64_t ts_ms{};     // cached for sorting/display
+    };
+
+    void record_alert_history_(const nlohmann::json& payload);
+
+    static std::string make_alert_history_id_(std::uint64_t seq);
+
+    static constexpr size_t kAlertsHistoryMax_ = 5000;
+    mutable std::mutex alerts_history_mu_;
+    std::deque<AlertHistoryItem> alerts_history_;
+    std::uint64_t alerts_history_seq_ = 0;
+
 
     mutable std::mutex mtx_;
     // Twitch stream info draft (loaded lazily from config.json)

@@ -910,7 +910,7 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
             const std::string type = in.value("type", "");
             if (platform.empty() || type.empty()) {
                 res.status = 400;
-                res.set_content(R"({"ok":false,"error":"expected_platform_twitch_and_type"})", "application/json; charset=utf-8");
+                res.set_content(R"({"ok":false,"error":"expected_platform_and_type"})", "application/json; charset=utf-8");
                 return;
             }
 
@@ -1899,6 +1899,100 @@ svr.Get("/auth/twitch/start", [&](const httplib::Request& req, httplib::Response
         res.set_header("Pragma", "no-cache");
         res.set_content(out.dump(2), "application/json; charset=utf-8");
         });
+
+
+    // --- API: Unified alerts history (missed alerts / replay tooling) ---
+    // GET /api/alerts/history?limit=200&platform=twitch|tiktok|youtube
+    svr.Get("/api/alerts/history", [&](const httplib::Request& req, httplib::Response& res) {
+        int limit = 200;
+        if (req.has_param("limit")) {
+            try { limit = std::max(1, std::min(5000, std::stoi(req.get_param_value("limit")))); }
+            catch (...) {}
+        }
+        std::string platform;
+        if (req.has_param("platform")) platform = req.get_param_value("platform");
+
+        auto j = state_.alerts_history_json(limit, platform);
+        res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+        res.set_header("Pragma", "no-cache");
+        res.set_content(j.dump(2), "application/json; charset=utf-8");
+        });
+
+#ifndef NDEBUG
+    // POST /api/alerts/resend  (localhost-only)
+    // Body: { "id": "hist-123" } or { "ids": ["hist-123","hist-124"] }
+    svr.Post("/api/alerts/resend", [&](const httplib::Request& req, httplib::Response& res) {
+        try {
+
+        const std::string ra = req.remote_addr;
+        if (!(ra == "127.0.0.1" || ra == "::1" || ra == "localhost")) {
+            res.status = 403;
+            res.set_content(R"({"ok":false,"error":"forbidden"})", "application/json; charset=utf-8");
+            return;
+        }
+
+        json in;
+        try { in = json::parse(req.body); }
+        catch (...) {
+            res.status = 400;
+            res.set_content(R"({"ok":false,"error":"invalid_json"})", "application/json; charset=utf-8");
+            return;
+        }
+
+        std::vector<std::string> ids;
+        if (in.contains("id") && in["id"].is_string()) {
+            ids.push_back(in["id"].get<std::string>());
+        } else if (in.contains("ids") && in["ids"].is_array()) {
+            for (auto& v : in["ids"]) if (v.is_string()) ids.push_back(v.get<std::string>());
+        }
+
+        if (ids.empty()) {
+            res.status = 400;
+            res.set_content(R"({"ok":false,"error":"missing_id"})", "application/json; charset=utf-8");
+            return;
+        }
+
+        json out;
+        out["ok"] = true;
+        out["replayed"] = json::array();
+        out["failed"] = json::array();
+
+        for (const auto& id : ids) {
+            json replayed;
+            std::string err;
+            if (state_.resend_alert_history(id, &replayed, &err)) {
+                out["replayed"].push_back(replayed);
+            } else {
+                out["failed"].push_back(json{{"id", id}, {"error", err}});
+            }
+        }
+
+        res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+        res.set_header("Pragma", "no-cache");
+        res.set_content(out.dump(2), "application/json; charset=utf-8");
+        }
+        catch (const std::exception& ex) {
+            res.status = 500;
+            nlohmann::json out;
+            out["ok"] = false;
+            out["error"] = "exception";
+            out["detail"] = ex.what();
+            res.set_content(out.dump(2), "application/json; charset=utf-8");
+            return;
+        }
+        catch (...) {
+            res.status = 500;
+            res.set_content(R"({\"ok\":false,\"error\":\"exception\"})", "application/json; charset=utf-8");
+            return;
+        }
+});
+#else
+    svr.Post("/api/alerts/resend", [&](const httplib::Request&, httplib::Response& res) {
+        res.status = 404;
+        res.set_content(R"({"ok":false,"error":"not_found"})", "application/json; charset=utf-8");
+        });
+#endif
+
 
     // --- Overlay: special chat.html injection ---
     svr.Get("/overlay/chat.html", [&](const httplib::Request&, httplib::Response& res) {
