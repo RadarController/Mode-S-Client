@@ -143,12 +143,13 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_WINDOWS;%(PreprocessorDefinitions);CPPHTTPLIB_OPENSSL_SUPPORT</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)external;$(ProjectDir)src;$(ProjectDir)integrations;$(ProjectDir)assets;$(ProjectDir)generated;$(ProjectDir)ui</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)external;$(ProjectDir)src;$(ProjectDir)integrations;$(ProjectDir)assets;$(ProjectDir)generated;$(ProjectDir)ui;G:\MSFS 2024 SDK\SimConnect SDK\include</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>G:\MSFS 2024 SDK\SimConnect SDK\lib</AdditionalLibraryDirectories>
     </Link>
     <ResourceCompile>
       <AdditionalIncludeDirectories>$(ProjectDir)assets;$(SolutionDir)generated</AdditionalIncludeDirectories>
@@ -165,12 +166,13 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_WINDOWS;%(PreprocessorDefinitions);CPPHTTPLIB_OPENSSL_SUPPORT</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)external;$(ProjectDir)src;$(ProjectDir)integrations;$(ProjectDir)assets;$(ProjectDir)generated;$(ProjectDir)ui</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)external;$(ProjectDir)src;$(ProjectDir)integrations;$(ProjectDir)assets;$(ProjectDir)generated;$(ProjectDir)ui;G:\MSFS 2024 SDK\SimConnect SDK\include</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>G:\MSFS 2024 SDK\SimConnect SDK\lib</AdditionalLibraryDirectories>
     </Link>
     <ResourceCompile>
       <AdditionalIncludeDirectories>$(ProjectDir)assets;$(SolutionDir)generated</AdditionalIncludeDirectories>
@@ -210,6 +212,7 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="integrations\euroscope\EuroScopeIngestService.cpp" />
+    <ClCompile Include="integrations\simconnect\SimConnectWorker.cpp" />
     <ClCompile Include="integrations\obs\ObsWsClient.cpp" />
     <ClCompile Include="integrations\tiktok\TikTokFollowersService.cpp" />
     <ClCompile Include="integrations\tiktok\TikTokSidecar.cpp" />

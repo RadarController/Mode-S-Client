@@ -15,6 +15,7 @@
 #include "../../integrations/twitch/TwitchHelixService.h"
 #include "../../integrations/twitch/TwitchAuth.h"
 #include "../../integrations/youtube/YouTubeAuth.h"
+#include "../../integrations/simconnect/SimConnectWorker.h"
 #include "../AppConfig.h"
 
 namespace {
@@ -27,6 +28,89 @@ namespace {
             // Never allow logging to break server threads
         }
     }
+
+    static std::int64_t NowUnixSeconds() {
+        using namespace std::chrono;
+        return (std::int64_t)duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
+    }
+
+    static std::string JsonGetStringPath(const nlohmann::json& j, std::initializer_list<const char*> path) {
+        const nlohmann::json* cur = &j;
+        for (const char* key : path) {
+            if (!cur->is_object()) return "";
+            auto it = cur->find(key);
+            if (it == cur->end()) return "";
+            cur = &(*it);
+        }
+        if (cur->is_string()) return cur->get<std::string>();
+        if (cur->is_number_integer()) return std::to_string(cur->get<long long>());
+        if (cur->is_number_float()) return std::to_string(cur->get<double>());
+        return "";
+    }
+
+    static bool SimBriefFetchLatestJson(int pilot_id, long* out_status, std::string* out_body, std::string* out_error) {
+        if (out_status) *out_status = 0;
+        if (out_body) out_body->clear();
+        if (out_error) out_error->clear();
+
+        const std::string path = "/api/xml.fetcher.php?userid=" + std::to_string(pilot_id) + "&json=1";
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+        httplib::SSLClient cli("www.simbrief.com", 443);
+#else
+        // Fallback (no TLS). This may fail if SimBrief enforces HTTPS.
+        httplib::Client cli("www.simbrief.com", 80);
+#endif
+
+        cli.set_follow_location(true);
+        cli.set_connection_timeout(5);
+        cli.set_read_timeout(10);
+        cli.set_write_timeout(10);
+
+        auto res = cli.Get(path.c_str());
+        if (!res) {
+#ifndef CPPHTTPLIB_OPENSSL_SUPPORT
+            if (out_error) *out_error = "openssl_not_enabled";
+#else
+            if (out_error) *out_error = "request_failed";
+#endif
+            return false;
+        }
+
+        if (out_status) *out_status = res->status;
+        if (out_body) *out_body = res->body;
+        if (res->status != 200) {
+            if (out_error) *out_error = "http_" + std::to_string(res->status);
+            return false;
+        }
+
+        return true;
+    }
+}
+
+
+static double JsonGetDoublePath(const nlohmann::json& j, std::initializer_list<const char*> path, double fallback = 0.0, bool* out_ok = nullptr) {
+    const nlohmann::json* cur = &j;
+    for (auto* k : path) {
+        if (!cur->is_object()) { if (out_ok) *out_ok = false; return fallback; }
+        auto it = cur->find(k);
+        if (it == cur->end()) { if (out_ok) *out_ok = false; return fallback; }
+        cur = &(*it);
+    }
+    try {
+        if (cur->is_number_float() || cur->is_number_integer()) {
+            if (out_ok) *out_ok = true;
+            return cur->get<double>();
+        }
+        if (cur->is_string()) {
+            const std::string s = cur->get<std::string>();
+            if (s.empty()) { if (out_ok) *out_ok = false; return fallback; }
+            if (out_ok) *out_ok = true;
+            return std::stod(s);
+        }
+    } catch (...) {}
+    if (out_ok) *out_ok = false;
+    return fallback;
 }
 
 // --------------------------------------------------------------------------------------
@@ -198,6 +282,12 @@ void HttpServer::Start() {
     svr_ = std::make_unique<httplib::Server>();
     RegisterRoutes();
 
+    // Start SimBrief cache worker (safe even if it fails; endpoint will still respond).
+    StartSimBriefWorker();
+
+    // Start SimConnect worker (safe even if MSFS isn't running; it will keep retrying).
+    StartSimConnectWorker();
+
     thread_ = std::thread([this]() {
         try {
             SafeOutputLog(log_, L"HTTP: listening on http://127.0.0.1:" + std::to_wstring(opt_.port));
@@ -211,6 +301,9 @@ void HttpServer::Start() {
 
 void HttpServer::Stop() {
     if (!svr_) return;
+
+    StopSimBriefWorker();
+    StopSimConnectWorker();
     try {
         svr_->stop();
     }
@@ -229,6 +322,161 @@ void HttpServer::Stop() {
     }
 
     svr_.reset();
+}
+
+void HttpServer::StartSimBriefWorker() {
+    // Avoid double-start.
+    if (simbrief_thread_.joinable()) return;
+
+    simbrief_stop_.store(false);
+
+    // Hard-coded initial pilot ID (Option B). Can be made configurable later.
+    constexpr int kPilotId = 11686;
+    constexpr int kRefreshSeconds = 10 * 60;
+
+    // Seed cache with an empty object.
+    {
+        std::lock_guard<std::mutex> lk(simbrief_mu_);
+        simbrief_cache_ = nlohmann::json::object();
+        simbrief_error_.clear();
+        simbrief_last_refresh_unix_ = 0;
+    }
+
+    simbrief_thread_ = std::thread([this]() {
+        constexpr int kPilotId = 11686;
+        constexpr int kRefreshSeconds = 10 * 60;
+
+        auto do_refresh = [&]() {
+            long status = 0;
+            std::string body;
+            std::string err;
+
+            if (!SimBriefFetchLatestJson(kPilotId, &status, &body, &err)) {
+                std::lock_guard<std::mutex> lk(simbrief_mu_);
+                simbrief_error_ = err.empty() ? "fetch_failed" : err;
+                simbrief_last_refresh_unix_ = NowUnixSeconds();
+                return;
+            }
+
+            nlohmann::json raw;
+            try {
+                raw = nlohmann::json::parse(body);
+            }
+            catch (...) {
+                std::lock_guard<std::mutex> lk(simbrief_mu_);
+                simbrief_error_ = "invalid_json";
+                simbrief_last_refresh_unix_ = NowUnixSeconds();
+                return;
+            }
+
+            // Extract the fields we care about, with tolerant fallbacks.
+            std::string callsign = JsonGetStringPath(raw, { "atc", "callsign" });
+            if (callsign.empty()) callsign = JsonGetStringPath(raw, { "general", "callsign" });
+
+            std::string dep = JsonGetStringPath(raw, { "origin", "icao_code" });
+            if (dep.empty()) dep = JsonGetStringPath(raw, { "atc", "orig" });
+
+            std::string dest = JsonGetStringPath(raw, { "destination", "icao_code" });
+
+            // Optional: coordinates + distance (used for progress calculations when we also have live position).
+            bool ok1=false, ok2=false, ok3=false, ok4=false, okd=false;
+            double origin_lat2 = JsonGetDoublePath(raw, { "origin", "pos_lat" }, 0.0, &ok1);
+            double origin_lon2 = JsonGetDoublePath(raw, { "origin", "pos_long" }, 0.0, &ok2);
+            double dest_lat2   = JsonGetDoublePath(raw, { "destination", "pos_lat" }, 0.0, &ok3);
+            double dest_lon2   = JsonGetDoublePath(raw, { "destination", "pos_long" }, 0.0, &ok4);
+
+            // Some exports use lat/lon keys (be tolerant).
+            if (!(ok1 && ok2)) {
+                origin_lat2 = JsonGetDoublePath(raw, { "origin", "lat" }, origin_lat2, &ok1);
+                origin_lon2 = JsonGetDoublePath(raw, { "origin", "lon" }, origin_lon2, &ok2);
+            }
+            if (!(ok3 && ok4)) {
+                dest_lat2 = JsonGetDoublePath(raw, { "destination", "lat" }, dest_lat2, &ok3);
+                dest_lon2 = JsonGetDoublePath(raw, { "destination", "lon" }, dest_lon2, &ok4);
+            }
+
+            // Planned route distance (nm) if present.
+            const double route_nm = JsonGetDoublePath(raw, { "general", "route_distance" }, 0.0, &okd);
+
+            if (dest.empty()) dest = JsonGetStringPath(raw, { "atc", "dest" });
+
+            std::string ofp_id = JsonGetStringPath(raw, { "general", "ofp_id" });
+            if (ofp_id.empty()) ofp_id = JsonGetStringPath(raw, { "general", "flight_id" });
+
+            std::int64_t generated_unix = 0;
+            {
+                const std::string gen = JsonGetStringPath(raw, { "general", "time_generated" });
+                if (!gen.empty()) {
+                    try { generated_unix = std::stoll(gen); } catch (...) {}
+                }
+            }
+
+            const std::int64_t now = NowUnixSeconds();
+
+            nlohmann::json slim = {
+                {"ok", true},
+                {"source", "simbrief"},
+                {"pilot_id", kPilotId},
+                {"callsign", callsign},
+                {"departure", dep},
+                {"destination", dest},
+                {"ofp_id", ofp_id},
+                {"generated_at_unix", generated_unix},
+                {"origin_lat_deg", (ok1 && ok2) ? origin_lat2 : 0.0},
+                {"origin_lon_deg", (ok1 && ok2) ? origin_lon2 : 0.0},
+                {"dest_lat_deg",   (ok3 && ok4) ? dest_lat2   : 0.0},
+                {"dest_lon_deg",   (ok3 && ok4) ? dest_lon2   : 0.0},
+                {"route_distance_nm", okd ? route_nm : 0.0},
+                {"last_refresh_unix", now},
+                {"age_seconds", 0},
+                {"error", ""}
+            };
+
+            {
+                std::lock_guard<std::mutex> lk(simbrief_mu_);
+                simbrief_cache_ = std::move(slim);
+                simbrief_error_.clear();
+                simbrief_last_refresh_unix_ = now;
+            }
+        };
+
+        // First refresh immediately.
+        do_refresh();
+
+        // Then refresh every 10 minutes, but allow quick shutdown.
+        while (!simbrief_stop_.load()) {
+            for (int i = 0; i < kRefreshSeconds && !simbrief_stop_.load(); ++i) {
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+            }
+            if (simbrief_stop_.load()) break;
+            do_refresh();
+        }
+    });
+}
+
+void HttpServer::StopSimBriefWorker() {
+    simbrief_stop_.store(true);
+    if (simbrief_thread_.joinable()) {
+        if (std::this_thread::get_id() == simbrief_thread_.get_id()) {
+            simbrief_thread_.detach();
+        }
+        else {
+            simbrief_thread_.join();
+        }
+    }
+}
+
+
+void HttpServer::StartSimConnectWorker() {
+    if (simconnect_) return;
+    simconnect_ = std::make_unique<simconnect::SimConnectWorker>();
+    simconnect_->Start();
+}
+
+void HttpServer::StopSimConnectWorker() {
+    if (!simconnect_) return;
+    simconnect_->Stop();
+    simconnect_.reset();
 }
 
 // Inserts `insert` right after the first occurrence of `needle`.
@@ -357,6 +605,140 @@ void HttpServer::RegisterRoutes() {
 
         res.set_content(j.dump(2), "application/json; charset=utf-8");
         });
+
+    // --- API: SimBrief flight plan summary (for MSFS overlays) ---
+    // GET /api/simbrief/flight
+    // Cached; refreshes automatically every 10 minutes in a background worker.
+    svr.Get("/api/simbrief/flight", [&](const httplib::Request&, httplib::Response& res) {
+        nlohmann::json out;
+        std::string err;
+        std::int64_t last = 0;
+
+        {
+            std::lock_guard<std::mutex> lk(simbrief_mu_);
+            out = simbrief_cache_;
+            err = simbrief_error_;
+            last = simbrief_last_refresh_unix_;
+        }
+
+        if (!out.is_object()) out = nlohmann::json::object();
+
+        const std::int64_t now = NowUnixSeconds();
+        const std::int64_t age = (last > 0 && now >= last) ? (now - last) : 0;
+
+        // If we have an error, report it, but still return any cached values.
+        if (!err.empty()) {
+            out["ok"] = false;
+            out["error"] = err;
+        }
+
+        out["last_refresh_unix"] = last;
+        out["age_seconds"] = age;
+
+        // Ensure these keys always exist so overlays can be dumb.
+        if (!out.contains("callsign")) out["callsign"] = "";
+        if (!out.contains("departure")) out["departure"] = "";
+        if (!out.contains("destination")) out["destination"] = "";
+        if (!out.contains("pilot_id")) out["pilot_id"] = 11686;
+        if (!out.contains("source")) out["source"] = "simbrief";
+        if (!out.contains("altitude_ft")) out["altitude_ft"] = 0.0;
+        if (!out.contains("speed_kts")) out["speed_kts"] = 0.0;
+        if (!out.contains("progress")) out["progress"] = 0.0;
+        if (!out.contains("progress_pct")) out["progress_pct"] = 0.0;
+
+        // --- Live sim fields (SimConnect) ---
+        if (simconnect_) {
+            const auto s = simconnect_->GetSnapshot();
+            out["sim_connected"] = s.connected;
+            if (s.has_altitude) out["altitude_ft"] = s.altitude_ft;
+            if (s.has_gs) out["speed_kts"] = s.ground_speed_kts; // overlay uses SPD
+            if (s.has_position) {
+                out["lat_deg"] = s.lat_deg;
+                out["lon_deg"] = s.lon_deg;
+            }
+
+            // Distance-based progress when we have origin/dest coords + live position.
+            const double oLat = out.value("origin_lat_deg", 0.0);
+            const double oLon = out.value("origin_lon_deg", 0.0);
+            const double dLat = out.value("dest_lat_deg", 0.0);
+            const double dLon = out.value("dest_lon_deg", 0.0);
+
+            auto haversine_nm = [](double lat1, double lon1, double lat2, double lon2) -> double {
+                constexpr double R_km = 6371.0;
+                auto deg2rad = [](double x) { return x * 3.14159265358979323846 / 180.0; };
+                const double p1 = deg2rad(lat1);
+                const double p2 = deg2rad(lat2);
+                const double dp = deg2rad(lat2 - lat1);
+                const double dl = deg2rad(lon2 - lon1);
+                const double a = std::sin(dp / 2) * std::sin(dp / 2) +
+                                 std::cos(p1) * std::cos(p2) *
+                                 std::sin(dl / 2) * std::sin(dl / 2);
+                const double c = 2.0 * std::atan2(std::sqrt(a), std::sqrt(1.0 - a));
+                const double km = R_km * c;
+                return km * 0.539956803; // km -> nm
+            };
+
+            double progress = 0.0;
+            if (s.has_position && (oLat != 0.0 || oLon != 0.0) && (dLat != 0.0 || dLon != 0.0)) {
+                const double total_nm = haversine_nm(oLat, oLon, dLat, dLon);
+                const double rem_nm   = haversine_nm(s.lat_deg, s.lon_deg, dLat, dLon);
+                if (total_nm > 1.0) {
+                    progress = 1.0 - (rem_nm / total_nm);
+                    if (progress < 0.0) progress = 0.0;
+                    if (progress > 1.0) progress = 1.0;
+                }
+            }
+
+            out["progress"] = progress;           // 0..1 (overlay supports this)
+            out["progress_pct"] = progress * 100.0;
+        } else {
+            out["sim_connected"] = false;
+        }
+
+
+        res.status = 200;
+        res.set_content(out.dump(2), "application/json; charset=utf-8");
+    });
+
+    svr_->Get("/api/simconnect/state", [&](const httplib::Request&, httplib::Response& res) {
+        nlohmann::json out = nlohmann::json::object();
+
+        if (simconnect_) {
+            const auto s = simconnect_->GetSnapshot();
+            out["ok"] = true;
+            out["connected"] = s.connected;
+            out["ts_unix_ms"] = s.ts_unix_ms;
+
+            out["lat_deg"] = s.has_position ? s.lat_deg : 0.0;
+            out["lon_deg"] = s.has_position ? s.lon_deg : 0.0;
+
+            out["altitude_ft"] = s.has_altitude ? s.altitude_ft : 0.0;
+            out["ground_speed_kts"] = s.has_gs ? s.ground_speed_kts : 0.0;
+            out["indicated_airspeed_kts"] = s.has_ias ? s.indicated_airspeed_kts : 0.0;
+
+            out["has_position"] = s.has_position;
+            out["has_altitude"] = s.has_altitude;
+            out["has_gs"] = s.has_gs;
+            out["has_ias"] = s.has_ias;
+        } else {
+            out["ok"] = true;
+            out["connected"] = false;
+            out["ts_unix_ms"] = NowUnixSeconds() * 1000;
+            out["has_position"] = false;
+            out["has_altitude"] = false;
+            out["has_gs"] = false;
+            out["has_ias"] = false;
+            out["lat_deg"] = 0.0;
+            out["lon_deg"] = 0.0;
+            out["altitude_ft"] = 0.0;
+            out["ground_speed_kts"] = 0.0;
+            out["indicated_airspeed_kts"] = 0.0;
+        }
+
+        res.status = 200;
+        res.set_content(out.dump(2), "application/json; charset=utf-8");
+    });
+
 
     // --- API: Twitch EventSub diagnostics ---
     
