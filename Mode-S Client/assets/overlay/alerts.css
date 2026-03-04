@@ -204,6 +204,10 @@ body {
 .alert.tiktok { --accent: #00F2EA; --edge: rgba(0,242,234,0.42); }
 .alert.tiktok::before { background: linear-gradient(180deg, rgba(0,242,234,0.92), rgba(0,242,234,0.25)); box-shadow: 0 0 18px rgba(0,242,234,0.22); }
 
+
+.alert.youtube { --accent: #FF0033; --edge: rgba(255,0,51,0.40); }
+.alert.youtube::before { background: linear-gradient(180deg, rgba(255,0,51,0.92), rgba(255,0,51,0.25)); box-shadow: 0 0 18px rgba(255,0,51,0.22); }
+
 /* Animation states */
 .alert.enter {
   animation: enter 320ms cubic-bezier(.2,.9,.2,1) forwards;
