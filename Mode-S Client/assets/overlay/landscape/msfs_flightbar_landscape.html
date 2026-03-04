@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>MSFS Flight Bar (SimBrief)</title>
+  <style>
+    :root{
+      --blue:#1e6dff;
+      --panel: rgba(18,22,28,.72);
+      --stroke: rgba(255,255,255,.12);
+      --text: rgba(233,238,247,.92);
+      --muted: rgba(233,238,247,.70);
+
+      --pad: 16px;
+      --top-offset: 64px;
+      --right-reserve: 420px;
+      --radius: 18px;
+      --h: 64px;
+    }
+    html,body{width:100%;height:100%;margin:0;background:transparent;font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif;overflow:hidden;}
+    .bar{
+position:absolute; top:var(--top-offset); left:var(--pad); right:calc(var(--pad) + var(--right-reserve));
+      height:var(--h);
+      display:grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items:center;
+      column-gap: 12px;
+      padding:10px 12px; box-sizing:border-box;
+      border-radius:var(--radius); background:var(--panel); border:1px solid var(--stroke);
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      box-shadow: 0 18px 48px rgba(0,0,0,.35);
+      pointer-events:none; overflow:hidden;
+    }
+    
+
+    /* Progress bar (0–100%) */
+    .progWrap{
+      position:absolute;
+      left: 12px;
+      right: 12px;
+      bottom: 8px;
+      height: 4px;
+      border-radius: 999px;
+      overflow:hidden;
+      pointer-events:none;
+    }
+    .progTrack{
+      width:100%;
+      height:100%;
+      background: rgba(255,255,255,.08);
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: 999px;
+      box-sizing:border-box;
+    }
+    .progFill{
+      height:100%;
+      width:0%;
+      background: rgba(30,109,255,.95);
+      border-radius: 999px;
+      transform-origin: left center;
+      transition: width .45s ease;
+    }
+    .progLabel{
+      display:none; /* keep clean; can be enabled later */
+    }
+
+.kicker{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      flex:0 0 auto;
+      min-width: 0;
+    }
+    .badge{width:8px;height:8px;border-radius:50%;background:rgba(30,109,255,.95);box-shadow:0 0 0 3px rgba(30,109,255,.18);flex:0 0 auto;}
+    .label{font-weight:650;letter-spacing:.10em;text-transform:uppercase;font-size:11px;color:var(--muted);white-space:nowrap;}
+
+    
+
+    .leftWrap{
+      display:flex;
+      align-items:center;
+      gap: 12px;
+      min-width: 0;
+    }
+.left{
+      display:flex;
+      align-items:center;
+      gap: 10px;
+      min-width: 0;
+    }
+    .callsign{font-size:22px;font-weight:850;letter-spacing:.3px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;line-height:1;}
+    .pill{
+      align-self:center;display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;border:1px solid rgba(131,174,252,.28);background:rgba(131,174,252,.08);color:rgba(131,174,252,.95);font-size:10px;font-weight:800;letter-spacing:.10em;text-transform:uppercase;white-space:nowrap;flex:0 0 auto;}
+
+    .mid{
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      gap: 10px;
+      min-width: 0;
+      justify-self: center;
+    }
+    .icao{display:inline-flex;align-items:center;justify-content:center;padding:7px 11px;border-radius:14px;background:rgba(10,14,18,.35);border:1px solid rgba(255,255,255,.12);font-weight:900;letter-spacing:.16em;text-transform:uppercase;color:var(--text);min-width:70px;}
+    .arrow{color:var(--muted);font-weight:900;letter-spacing:.12em;}
+
+    .right{
+      display:flex;
+      align-items:center;
+      justify-content:flex-end;
+      gap: 10px;
+      min-width: 0;
+      justify-self: end;
+    }
+    .mini{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:14px;background:rgba(10,14,18,.28);border:1px solid rgba(255,255,255,.10);white-space:nowrap;}
+    .mini .k{color:var(--muted);font-weight:800;letter-spacing:.10em;text-transform:uppercase;font-size:10px;}
+    .mini .v{color:var(--text);font-weight:900;font-size:13px;letter-spacing:.2px;}
+    .status{color:var(--muted);font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px;}
+
+    .liveDot{width:7px;height:7px;border-radius:50%;background:rgba(30,109,255,.95);box-shadow:0 0 0 0 rgba(30,109,255,.45);animation:pulse 1.35s ease-out infinite;flex:0 0 auto;}
+    @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(30,109,255,.45);transform:scale(1)}60%{box-shadow:0 0 0 8px rgba(30,109,255,0);transform:scale(1.05)}100%{box-shadow:0 0 0 0 rgba(30,109,255,0);transform:scale(1)}}
+
+    .bump{animation:bump .22s ease-out;}
+    @keyframes bump{0%{transform:translateY(0)}45%{transform:translateY(-1px)}100%{transform:translateY(0)}}
+
+    @media (max-width:1100px){:root{--right-reserve:340px}.status{display:none}}
+    @media (max-width:860px){:root{--right-reserve:0px;--top-offset:16px}.kicker .label{display:none}}
+    @media (max-width:620px){.mid{display:none}.callsign{font-size:20px}}
+  </style>
+</head>
+<body>
+  <div class="bar" role="img" aria-label="MSFS flight bar">
+    <div class="leftWrap">
+      <div class="kicker"><span class="badge"></span><span class="label">VATSIM</span></div>
+
+      <div class="left">
+      <div class="callsign" id="callsign">—</div>
+    </div>
+      <div class="pill" id="pill">PLAN</div>
+    </div>
+
+    <div class="mid" aria-label="route">
+      <div class="icao" id="dep">----</div>
+      <div class="arrow">→</div>
+      <div class="icao" id="dest">----</div>
+    </div>
+
+    <div class="right">
+      <div class="mini"><span class="k">ALT</span><span class="v" id="alt">—</span></div>
+      <div class="mini"><span class="k">SPD</span><span class="v" id="spd">—</span></div>
+      <div class="status" id="status">Waiting for SimBrief…</div>
+    </div>
+      <div class="progWrap" aria-hidden="true">
+      <div class="progTrack"><div class="progFill" id="progFill"></div></div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  const ENDPOINT = "/api/simbrief/flight";
+  const POLL_MS  = 2500;
+
+  const elCallsign = document.getElementById("callsign");
+  const elDep      = document.getElementById("dep");
+  const elDest     = document.getElementById("dest");
+  const elStatus   = document.getElementById("status");
+  const elPill     = document.getElementById("pill");
+  const elAlt      = document.getElementById("alt");
+  const elSpd      = document.getElementById("spd");
+
+
+  const elProg    = document.getElementById("progFill");
+  let smoothPct = 0;
+
+  function clamp(n, a, b){ return Math.max(a, Math.min(b, n)); }
+
+  let last = { callsign:"", dep:"", dest:"" };
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  function bump(el){ el.classList.remove("bump"); void el.offsetWidth; el.classList.add("bump"); }
+
+  function safeIcao(s){
+    const t = (typeof s === "string") ? s.trim().toUpperCase() : "";
+    return t && /^[A-Z0-9]{3,5}$/.test(t) ? t : "----";
+  }
+  function niceAge(seconds){
+    if (!(seconds >= 0)) return "";
+    if (seconds < 60) return `${Math.round(seconds)}s`;
+    const m = Math.round(seconds/60);
+    return `${m}m`;
+  }
+
+  async function poll(){
+    while(true){
+      try{
+        const r = await fetch(ENDPOINT, { cache: "no-store" });
+        if(!r.ok) throw new Error(`HTTP ${r.status}`);
+        const j = await r.json();
+
+        const ok  = j && j.ok === true;
+        const cs  = (j && typeof j.callsign === "string") ? j.callsign.trim() : "";
+        const dep = safeIcao(j && j.departure);
+        const dst = safeIcao(j && j.destination);
+        const err = (j && typeof j.error === "string") ? j.error : "";
+
+        const age = (j && typeof j.age_seconds === "number") ? j.age_seconds : null;
+        const ageTxt = age != null ? ` • age ${niceAge(age)}` : "";
+
+        if (ok){
+          elPill.textContent = "PLAN";
+          elStatus.textContent = `SimBrief loaded${ageTxt}`;
+        }else{
+          elPill.textContent = "STALE";
+          elStatus.textContent = err ? `SimBrief error: ${err}` : "SimBrief unavailable";
+        }
+
+        if (cs){
+          if (cs !== last.callsign){ elCallsign.textContent = cs; bump(elCallsign); last.callsign = cs; }
+        }else if (!last.callsign){
+          elCallsign.textContent = "—";
+        }
+
+        if (dep !== last.dep){ elDep.textContent = dep; bump(elDep); last.dep = dep; }
+        if (dst !== last.dest){ elDest.textContent = dst; bump(elDest); last.dest = dst; }
+
+        if (j && typeof j.altitude_ft === "number" && isFinite(j.altitude_ft)){
+          const a = Math.round(j.altitude_ft).toLocaleString() + "ft";
+          if (elAlt.textContent !== a){ elAlt.textContent = a; bump(elAlt); }
+        }else elAlt.textContent = "—";
+
+        if (j && typeof j.speed_kts === "number" && isFinite(j.speed_kts)){
+          const s = Math.round(j.speed_kts).toLocaleString() + "kt";
+          if (elSpd.textContent !== s){ elSpd.textContent = s; bump(elSpd); }
+        }else elSpd.textContent = "—";
+
+        // Progress bar (optional): backend can provide progress as 0..1 or progress_pct as 0..100
+        if (elProg){
+          let pct = null;
+          if (j && typeof j.progress === "number" && isFinite(j.progress)) pct = j.progress * 100.0;
+          else if (j && typeof j.progress_pct === "number" && isFinite(j.progress_pct)) pct = j.progress_pct;
+
+          if (pct == null){
+            // No progress available yet: keep at 0 but don't look "broken"
+            pct = 0;
+          }
+
+          pct = clamp(pct, 0, 100);
+
+          // simple smoothing so it glides instead of jittering
+          smoothPct = smoothPct + (pct - smoothPct) * 0.25;
+          elProg.style.width = smoothPct.toFixed(1) + "%";
+        }
+
+      }catch(e){
+        elStatus.textContent = "Waiting for SimBrief…";
+      }
+      await sleep(POLL_MS);
+    }
+  }
+  poll();
+})();
+</script>
+</body>
+</html>

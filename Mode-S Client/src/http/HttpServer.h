@@ -15,6 +15,8 @@
 class AppState;
 class ChatAggregator;
 class EuroScopeIngestService;
+
+namespace simconnect { class SimConnectWorker; }
 struct AppConfig;
 
 // Simple embedded HTTP server that hosts API routes and overlay static files.
@@ -78,6 +80,10 @@ private:
     void StartSimBriefWorker();
     void StopSimBriefWorker();
 
+    // --- SimConnect (live sim data) ---
+    void StartSimConnectWorker();
+    void StopSimConnectWorker();
+
     AppState& state_;
     ChatAggregator& chat_;
     EuroScopeIngestService& euroscope_;
@@ -94,6 +100,8 @@ private:
     std::int64_t simbrief_last_refresh_unix_ = 0;
     std::thread simbrief_thread_;
     std::atomic<bool> simbrief_stop_{ false };
+
+    std::unique_ptr<simconnect::SimConnectWorker> simconnect_;
 
     std::unique_ptr<httplib::Server> svr_;
     std::thread thread_;
