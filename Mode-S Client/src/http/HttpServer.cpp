@@ -905,10 +905,10 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
                 return;
             }
 
-            // Require Twitch-shaped payloads for this endpoint.
+            // No longer require Twitch-shaped payloads for this endpoint.
             const std::string platform = in.value("platform", "");
             const std::string type = in.value("type", "");
-            if (platform != "twitch" || type.empty()) {
+            if (platform.empty() || type.empty()) {
                 res.status = 400;
                 res.set_content(R"({"ok":false,"error":"expected_platform_twitch_and_type"})", "application/json; charset=utf-8");
                 return;
