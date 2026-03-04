@@ -111,10 +111,11 @@ body {
   height: 44px;
   border-radius: 14px;
   background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.08);
+  border: 1px solid var(--edge);
   display: grid;
   place-items: center;
-  box-shadow: 0 0 0 1px rgba(0,0,0,0.20) inset;
+    color: var(--accent);
+box-shadow: 0 0 0 1px rgba(0,0,0,0.20) inset;
 }
 
 .icon svg {
@@ -140,7 +141,7 @@ body {
     font-size: 12px;
     letter-spacing: 0.18em;
     text-transform: uppercase;
-    color: rgba(131,174,252,0.95);
+    color: var(--accent);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -181,9 +182,9 @@ body {
     text-transform: uppercase;
     padding: 6px 10px;
     border-radius: 999px;
-    border: 1px solid rgba(131,174,252,0.28);
-    background: rgba(131,174,252,0.08);
-    color: rgba(131,174,252,0.95);
+    border: 1px solid var(--edge);
+    background: rgba(255,255,255,0.06);
+    color: var(--accent);
     white-space: nowrap;
 }
 
@@ -205,7 +206,7 @@ body {
 .alert.tiktok::before { background: linear-gradient(180deg, rgba(0,242,234,0.92), rgba(0,242,234,0.25)); box-shadow: 0 0 18px rgba(0,242,234,0.22); }
 
 
-.alert.youtube { --accent: #FF0033; --edge: rgba(255,0,51,0.40); }
+.alert.youtube { --accent: #ff2d2d; --edge: rgba(255,0,51,0.40); }
 .alert.youtube::before { background: linear-gradient(180deg, rgba(255,0,51,0.92), rgba(255,0,51,0.25)); box-shadow: 0 0 18px rgba(255,0,51,0.22); }
 
 /* Animation states */
