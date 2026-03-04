@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>VATSIM Flight Bar</title>
+  <title>VATSIM Flight Bar (Portrait)</title>
 
   <style>
     :root{
@@ -13,12 +13,15 @@
       --text: rgba(233,238,247,.92);
       --muted: rgba(233,238,247,.70);
 
+      /* Placement (portrait) */
       --pad: 16px;
-      --top-offset: 64px;
-      --right-reserve: 420px;
+      --top-offset: 64px;    /* sits under your top bar */
+      --bottom-safe: 0px;
 
-      --h: 52px;
-      --radius: 16px;
+      /* Sizing */
+      --radius: 18px;
+      --h: 72px;            /* two-row bar */
+      --max-w: 980px;       /* keeps it from going comically wide on tall canvases */
     }
 
     html,body{
@@ -34,14 +37,17 @@
       position:absolute;
       top: var(--top-offset);
       left: var(--pad);
-      right: calc(var(--pad) + var(--right-reserve));
+      right: var(--pad);
       height: var(--h);
+      max-width: var(--max-w);
+      margin: 0 auto;
 
       display:grid;
-      grid-template-columns: auto 1fr auto;
-      align-items:center;
+      grid-template-rows: 1fr 1fr;
+      row-gap: 8px;
+      align-content:center;
 
-      padding: 0 12px;
+      padding: 10px 12px;
       box-sizing:border-box;
 
       border-radius: var(--radius);
@@ -56,20 +62,35 @@
       overflow:hidden;
     }
 
+    .row1{
+      display:grid;
+      grid-template-columns: 1fr auto;
+      column-gap: 10px;
+      align-items:center;
+      min-width:0;
+    }
+
+    .row2{
+      display:grid;
+      grid-template-columns: auto 1fr;
+      column-gap: 10px;
+      align-items:center;
+      min-width:0;
+    }
+
+    /* Left: VATSIM + CALLSIGN + PLAN */
     .left{
       display:flex;
       align-items:center;
       gap: 10px;
       min-width: 0;
     }
-
     .dot{
       width:8px;height:8px;border-radius:50%;
       background: rgba(30,109,255,.95);
       box-shadow: 0 0 0 3px rgba(30,109,255,.18);
       flex:0 0 auto;
     }
-
     .tag{
       font-size: 11px;
       font-weight: 750;
@@ -78,7 +99,6 @@
       color: var(--muted);
       white-space: nowrap;
     }
-
     .callsign{
       font-size: 20px;
       font-weight: 900;
@@ -87,10 +107,9 @@
       white-space: nowrap;
       overflow:hidden;
       text-overflow: ellipsis;
-      max-width: 240px;
+      max-width: 320px;
       line-height: 1;
     }
-
     .pill{
       display:inline-flex;
       align-items:center;
@@ -106,14 +125,14 @@
       white-space: nowrap;
     }
 
-    .center{
-      justify-self:center;
+    /* Route (compact, always visible) */
+    .route{
       display:flex;
       align-items:center;
       gap: 10px;
-      min-width: 0;
+      justify-content:flex-end;
+      min-width:0;
     }
-
     .icao{
       display:inline-flex;
       align-items:center;
@@ -126,10 +145,9 @@
       font-weight: 900;
       letter-spacing: .16em;
       text-transform: uppercase;
-      min-width: 76px;
+      min-width: 74px;
       line-height: 1;
     }
-
     .arrow{
       color: var(--muted);
       font-weight: 900;
@@ -138,14 +156,7 @@
       line-height: 1;
     }
 
-    .right{
-      justify-self:end;
-      display:flex;
-      align-items:center;
-      gap: 10px;
-      min-width: 0;
-    }
-
+    /* Telemetry */
     .kv{
       display:flex;
       align-items:center;
@@ -156,7 +167,6 @@
       border: 1px solid rgba(255,255,255,.10);
       white-space: nowrap;
     }
-
     .k{
       color: var(--muted);
       font-weight: 850;
@@ -165,7 +175,6 @@
       font-size: 10px;
       line-height: 1;
     }
-
     .v{
       color: var(--text);
       font-weight: 900;
@@ -173,18 +182,25 @@
       letter-spacing: .2px;
       line-height: 1;
     }
-
+    .telemetry{
+      display:flex;
+      align-items:center;
+      gap: 10px;
+      min-width:0;
+    }
     .status{
       color: var(--muted);
       font-size: 10px;
       white-space: nowrap;
       overflow:hidden;
       text-overflow: ellipsis;
-      max-width: 220px;
       line-height: 1.1;
+      min-width: 0;
+      justify-self:end;
+      text-align:right;
     }
 
-    /* Border progress */
+    /* Border progress (mirrored + edges) */
     .borderProg{
       position:absolute;
       inset:0;
@@ -213,40 +229,38 @@
     .bump{ animation: bump .20s ease-out; }
     @keyframes bump{ 0%{transform:translateY(0)} 45%{transform:translateY(-1px)} 100%{transform:translateY(0)} }
 
-    @media (max-width: 1100px){
-      :root{ --right-reserve: 340px; }
-      .status{ display:none; }
-    }
-    @media (max-width: 860px){
-      :root{ --right-reserve: 0px; --top-offset: 16px; }
+    /* Very narrow: hide VATSIM tag first */
+    @media (max-width: 420px){
       .tag{ display:none; }
-    }
-    @media (max-width: 680px){
-      .center{ display:none; }
-      .callsign{ max-width: 180px; }
+      .callsign{ max-width: 220px; }
+      .icao{ min-width: 64px; padding: 6px 10px; }
     }
   </style>
 </head>
 
 <body>
-  <div class="bar" role="img" aria-label="VATSIM flight bar">
-    <div class="left">
-      <span class="dot" aria-hidden="true"></span>
-      <span class="tag">VATSIM</span>
-      <span class="callsign" id="callsign">—</span>
-      <span class="pill" id="pill">PLAN</span>
+  <div class="bar" role="img" aria-label="VATSIM flight bar portrait">
+    <div class="row1">
+      <div class="left">
+        <span class="dot" aria-hidden="true"></span>
+        <span class="tag">VATSIM</span>
+        <span class="callsign" id="callsign">—</span>
+        <span class="pill" id="pill">PLAN</span>
+      </div>
+
+      <div class="route" aria-label="route">
+        <span class="icao" id="dep">----</span>
+        <span class="arrow">→</span>
+        <span class="icao" id="dest">----</span>
+      </div>
     </div>
 
-    <div class="center" aria-label="route">
-      <span class="icao" id="dep">----</span>
-      <span class="arrow">→</span>
-      <span class="icao" id="dest">----</span>
-    </div>
-
-    <div class="right">
-      <span class="kv"><span class="k">ALT</span><span class="v" id="alt">—</span></span>
-      <span class="kv"><span class="k">SPD</span><span class="v" id="spd">—</span></span>
-      <span class="status" id="status">Waiting for data…</span>
+    <div class="row2">
+      <div class="telemetry">
+        <span class="kv"><span class="k">ALT</span><span class="v" id="alt">—</span></span>
+        <span class="kv"><span class="k">SPD</span><span class="v" id="spd">—</span></span>
+      </div>
+      <div class="status" id="status">Waiting for data…</div>
     </div>
 
     <div class="borderProg" aria-hidden="true">
