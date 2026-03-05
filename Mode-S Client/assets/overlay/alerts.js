@@ -204,41 +204,121 @@
         else elIcon.innerHTML = svgTwitch;
     }
 
+    function pick(arr) {
+        return arr[Math.floor(Math.random() * arr.length)];
+    }
+
+    function formatMinutes(n) {
+        return `${n} minute${n === 1 ? '' : 's'}`;
+    }
+    function creditsToMinutes(credits) {
+        const mins = Math.round(Math.sqrt(Math.max(0, credits)));
+        return Math.max(1, mins);
+    }
+    function viewersToMinutes(viewers) {
+        const v = Math.max(0, Number(viewers) || 0);
+        const mins = Math.round(Math.sqrt(v) * 1.2);
+        return Math.max(1, mins);
+    }
+
+    const HOLDING_PHRASES = [
+        "Enter the hold, delay to be advised.",
+        "Hold as published, expect further clearance.",
+        "Remain in the hold, sequencing in progress.",
+        "Continue holding, traffic ahead.",
+        "Hold present position, expect further instructions.",
+        "Hold at DELAYNE, delay not yet determined."
+    ];
+
+    const DELAY_REDUCED_PHRASES = [
+        "Expected delay reduced by {m}.",
+        "Holding time reduced by {m}.",
+        "Revised sequencing — delay reduced by {m}.",
+        "Reduced delay, standby for vectors. ({m} saved)",
+        "Updated sequence — delay reduced by {m}."
+    ];
+
+    const RAID_PHRASES = {
+        "INBOUND TRAFFIC": [
+            "{v} aircraft joining the frequency — expect +{m} delay.",
+            "{v} arrivals joining frequency — delay +{m}.",
+            "Inbound traffic building — delay +{m}. ({v} inbound)"
+        ],
+        "TRAFFIC SURGE": [
+            "Traffic surge: {v} inbound — delay increased by {m}.",
+            "Sequencing required — +{m} delay. ({v} inbound)",
+            "Stack forming — expect +{m} delay. ({v} inbound)"
+        ],
+        "MASS ARRIVAL": [
+            "Mass arrival: {v} inbound — hold expected, +{m}.",
+            "Holding likely — delay now +{m}. ({v} inbound)",
+            "Approach saturated — expect +{m} delay. ({v} inbound)"
+        ],
+        "SECTOR OVERLOAD": [
+            "Sector overload: {v} inbound — significant delay, +{m}.",
+            "Frequency saturated — hold mandatory, +{m}. ({v} inbound)",
+            "Sector at capacity — delay +{m}, standby. ({v} inbound)"
+        ]
+    };
+
+    const HOLD_CANCELLED_PHRASES = [
+        "Hold cancelled, expect vectors.",
+        "Cleared from the hold, expect vectors.",
+        "Leaving the hold, vectoring for the approach.",
+        "Priority handling approved, expect vectors.",
+        "Hold cancelled — sequencing priority applied."
+    ];
+
+    const NO_DELAY_PHRASES = [
+        "No delay expected, continue inbound.",
+        "Sequence clear — no delay, expect vectors.",
+        "Holding not required, expect vectors.",
+        "No delay, continue as cleared.",
+        "Traffic removed from sequence — no delay expected."
+    ];
+
+    function raidPhrase(kind, viewers, minutesAdded) {
+        const pool = RAID_PHRASES[kind] || RAID_PHRASES["INBOUND TRAFFIC"];
+        return pick(pool)
+            .replace("{v}", String(viewers))
+            .replace("{m}", formatMinutes(minutesAdded));
+    }
+    function delayPhrase(minutes) {
+        return pick(DELAY_REDUCED_PHRASES).replace("{m}", formatMinutes(minutes));
+    }
+
     function mapEvent(e) {
         const platform = normalizePlatform(e.platform);
         const type = String(e.type || '').toLowerCase();
 
+        const isTwitch = platform === 'twitch';
+        const isTikTok = platform === 'tiktok';
+        const isYouTube = platform === 'youtube';
+
         let kind = 'EVENT';
         let message = '';
 
-        if (platform === 'twitch' && type === 'channel.follow') {
+        // ------------------------------------------------------------
+        // 1) FOLLOWS / (FREE) SUBSCRIBES (attention -> holding)
+        // ------------------------------------------------------------
+        if (
+            (isTwitch && type === 'channel.follow') ||
+            (isTikTok && type === 'follow') ||
+            (isYouTube && type === 'subscribe')
+        ) {
             kind = 'HOLDING';
-            message = 'Enter the hold, delay undetermined.';
-        } else if (platform === 'twitch' && type === 'channel.subscribe') {
-            kind = 'HOLDING CANCELLED';
-            message = 'Your hold is cancelled, expect vectors!';
-        } else if (platform === 'twitch' && type === 'channel.subscription.message') {
-            kind = 'RESUB';
-            const months = Number(e.cumulative_months || e.months || 0);
-            const txt = String(e.resub_message || '').trim();
-            if (months > 0) {
-                message = `resubbed for ${months} months in a row!`;
-            } else {
-                message = 'resubbed!';
-            }
-            if (txt) message += ` ${txt}`;
-        } else if (platform === 'twitch' && (type === 'channel.subscription.gift' || type === 'channel.subscription.gifted' || type.includes('gift'))) {
-            kind = 'HOLD EMPTIED';
-            message = 'No delay, expect vectors!';
-        }
-        else if (platform === 'twitch' && type === 'channel.raid') {
-            // Raids are a sudden workload spike: scale the ATC phrasing with size.
-            // (Small = just a few aircraft; Huge = sector getting spicy.)
-            // Prefer a structured field if the server provides it.
+            message = pick(HOLDING_PHRASES);
+
+        // ------------------------------------------------------------
+        // 2) RAIDS (attention spike -> delay increases)
+        // ------------------------------------------------------------
+        } else if (isTwitch && type === 'channel.raid') {
+
             let viewers = Number(e.viewers || 0);
+
             if (!viewers) {
-                // Fallback: attempt to extract a number from the server message (e.g. "raided with 42 viewers").
-                const m = String(e.message || '').match(/\b(\d{1,6})\b/);
+                // Fallback: attempt to extract a number from the server message
+                const m = String(e.message || '').match(/(\d{1,6})\s+viewers?\b/i);
                 if (m) viewers = Number(m[1] || 0);
             }
 
@@ -253,33 +333,80 @@
             }
 
             if (viewers > 0) {
-                // "aircraft" keeps the metaphor consistent across platforms.
-                if (kind === 'INBOUND TRAFFIC') message = `${viewers} aircraft joining the frequency.`;
-                else if (kind === 'TRAFFIC SURGE') message = `${viewers} aircraft entering the sector.`;
-                else message = `${viewers} aircraft inbound.`;
+                const minsAdded = viewersToMinutes(viewers);
+                message = raidPhrase(kind, viewers, minsAdded);
             } else {
-                // No count available (older history / malformed event) – still render safely.
-                message = 'Inbound traffic entering the sector.';
+                message = 'Inbound traffic entering the sector — sequencing required.';
             }
-        }
-        else if (platform === 'twitch' && type === 'channel.cheer') {
-            const bits = Number(e.bits || e.total_bits || 0);
-            kind = 'DELAY';
-            message = bits > 0
-                ? `${bits} minutes of delay added.`
-                : 'The delay has increased.';
-        } else if (platform === 'tiktok' && type === 'follow') {
-            kind = 'HOLDING';
-            message = 'Enter the hold, delay undetermined.';
-        } else if (platform === 'tiktok' && type === 'gift') {
-            kind = 'DESCEND';
-            message = 'Expected delay has been reduced.';
-        } else if (platform === 'youtube' && type === 'subscribe') {
-            kind = 'HOLDING';
-            message = 'Enter the hold, delay undetermined.';
-        } else if (platform === 'youtube' && type === 'membership') {
+
+        // ------------------------------------------------------------
+        // 3) BITS / GIFTS (money -> delay reduced)
+        // ------------------------------------------------------------
+        } else if (isTwitch && type === 'channel.cheer') {
+
+            const credits = Number(e.bits || e.total_bits || 0);
+            const mins = creditsToMinutes(credits);
+            kind = 'DELAY REDUCED';
+            message = delayPhrase(mins);
+
+        } else if (isTikTok && type === 'gift') {
+
+            const credits = Number(e.credits || e.value || 1);
+            const mins = creditsToMinutes(credits);
+            kind = 'DELAY REDUCED';
+            message = delayPhrase(mins);
+
+        // ------------------------------------------------------------
+        // 4) SUBS / MEMBERSHIPS (money -> hold cancelled / priority outcomes)
+        // ------------------------------------------------------------
+        } else if (isTwitch && type === 'channel.subscribe') {
+
             kind = 'HOLDING CANCELLED';
-            message = 'Your hold is cancelled, expect vectors!';
+            message = pick(HOLD_CANCELLED_PHRASES);
+
+        } else if (isYouTube && type === 'membership') {
+
+            kind = 'HOLDING CANCELLED';
+            message = pick(HOLD_CANCELLED_PHRASES);
+
+        } else if (isTwitch && type === 'channel.subscription.message') {
+
+            kind = 'RESUB';
+            const months = Number(e.cumulative_months || e.months || 0);
+            const txt = String(e.resub_message || '').trim();
+
+            if (months > 0) message = `resubbed for ${months} months in a row!`;
+            else message = 'resubbed!';
+
+            if (txt) message += ` ${txt}`;
+
+        } else if (
+            isTwitch &&
+            (type === 'channel.subscription.gift' || type === 'channel.subscription.gifted' || type.includes('gift'))
+        ) {
+
+            kind = 'HOLD EMPTIED';
+            kind = 'HOLD EMPTIED';
+
+            const gifts = Number(
+                e.total ||
+                e.total_gifted ||
+                e.quantity ||
+                e.count ||
+                1
+            );
+
+            message = pick(NO_DELAY_PHRASES);
+
+            if (gifts > 1) {
+                message += ` (${gifts} gifted subs)`;
+            } else {
+                message += ` (1 gifted sub)`;
+            }
+
+        // ------------------------------------------------------------
+        // Fallback
+        // ------------------------------------------------------------
         } else {
             kind = (e.type || 'EVENT').toString();
             message = (e.message || '').toString();
@@ -287,8 +414,17 @@
 
         // Keep generic “followed/subscribed” out of the cinematic line; it reads better as the ATC phrase.
         const rawMsg = String(e.message || '').trim();
+
         // Don't clobber our custom cinematic lines for certain event types.
-        if (rawMsg && !(platform === 'twitch' && (type === 'channel.subscription.message' || type === 'channel.raid'))) {
+        if (
+            rawMsg &&
+            !(isTwitch && (
+                type === 'channel.subscription.message' ||
+                type === 'channel.raid' ||
+                type === 'channel.subscription.gift' ||
+                type === 'channel.subscription.gifted'
+            ))
+        ) {
             const low = rawMsg.toLowerCase();
             if (low !== 'followed' && low !== 'subscribed' && message !== rawMsg) {
                 message = rawMsg;
@@ -304,12 +440,39 @@
             ts_ms: Number(e.ts_ms || 0),
         };
     }
+    function eventPriority(a) {
+        // higher = more important
+        switch (a.kind) {
+            case 'HOLDING CANCELLED': return 400; // subs + memberships
+            case 'HOLD EMPTIED': return 350; // gifted subs
+            case 'RESUB': return 325; // resub message (viewer text)
+            case 'DELAY REDUCED': return 300; // bits/gifts
+            case 'SECTOR OVERLOAD': return 220; // raids (large)
+            case 'MASS ARRIVAL': return 210;
+            case 'TRAFFIC SURGE': return 200;
+            case 'INBOUND TRAFFIC': return 190;
+            case 'HOLDING': return 100; // follows / YT subscribe
+            default: return 150; // unknown event types
+        }
+    }
 
     function enqueue(rawEvent) {
         const a = mapEvent(rawEvent);
         if (!a.user && !a.callsign) return;
-        queue.push(a);
-        while (queue.length > CONFIG.queueMax) queue.shift();
+
+        const p = eventPriority(a);
+        a._prio = p; // cache priority for faster queue insertion
+
+        // Insert into queue by priority (higher first).
+        // For equal priority, keep order by arrival (stable).
+        let i = 0;
+        while (i < queue.length && (queue[i]._prio ?? eventPriority(queue[i])) >= p) i++;
+        queue.splice(i, 0, a);
+
+        // Enforce max size by dropping the *lowest-priority* items first (from the end).
+        while (queue.length > CONFIG.queueMax) {
+            queue.pop();
+        }
     }
 
     async function fetchJson(url) {
