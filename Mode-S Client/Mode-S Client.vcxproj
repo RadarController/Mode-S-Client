@@ -202,6 +202,7 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClInclude Include="src\AppState.h" />
     <ClInclude Include="src\bot\BotReplyRouter.h" />
     <ClInclude Include="src\chat\ChatAggregator.h" />
+    <ClInclude Include="src\core\StringUtil.h" />
     <ClInclude Include="src\floating\FloatingChat.h" />
     <ClInclude Include="src\http\LogBuffer.h" />
     <ClInclude Include="src\Mode-S Client.h" />
@@ -225,6 +226,7 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClCompile Include="integrations\youtube\YouTubeSidecar.cpp" />
     <ClCompile Include="src\AppState.cpp" />
     <ClCompile Include="src\chat\ChatAggregator.cpp" />
+    <ClCompile Include="src\core\StringUtil.cpp" />
     <ClCompile Include="src\floating\FloatingChat.cpp" />
     <ClCompile Include="src\http\LogBuffer.cpp" />
     <ClCompile Include="src\Mode-S Client.cpp" />
