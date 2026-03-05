@@ -314,7 +314,19 @@
             const platform = String(pick(e, ["platform"], "twitch")).toLowerCase() || "twitch";
             const type = String(pick(e, ["type"], "event"));
             const user = String(pick(e, ["user", "username", "display_name", "name"], ""));
-            const msg = String(pick(e, ["message", "text"], type));
+            // Prefer explicit message/text when present
+            let msgVal = pick(e, ["message", "text"], null);
+
+            // Special-case: Twitch raids sometimes arrive without a message.
+            // For the combined chat feed we still want the viewer count.
+            if ((msgVal === null || msgVal === undefined || String(msgVal).trim().length === 0) && type === "channel.raid") {
+                const viewers = pick(e, ["viewers", "viewer_count", "view_count"], null);
+                if (viewers !== null && viewers !== undefined && String(viewers).trim().length) {
+                    msgVal = `raided with ${viewers} viewers`;
+                }
+            }
+
+            const msg = String(msgVal !== null && msgVal !== undefined ? msgVal : type);
             const ts = pick(e, ["ts_ms", "timestamp", "ts", "time", "created_at"], Date.now());
             const id = "event|" + platform + "|" + type + "|" + user + "|" + ts + "|" + msg;
             return { platform, user, text: msg, ts, id, color: "", raw: e, is_event: true, event_type: type };
