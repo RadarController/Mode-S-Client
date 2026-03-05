@@ -96,9 +96,6 @@
     <ClInclude Include="integrations\youtube\YouTubeSidecar.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="src\http\LogBuffer.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="src\platform\PlatformControl.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -112,6 +109,15 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="integrations\youtube\YouTubeAuth.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\StringUtil.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\http\LocalApiClient.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\log\UiLog.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
@@ -155,9 +161,6 @@
     <ClCompile Include="integrations\youtube\YouTubeSidecar.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="src\http\LogBuffer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="src\platform\PlatformControl.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -171,6 +174,15 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="integrations\simconnect\SimConnectWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\StringUtil.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\http\LocalApiClient.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\log\UiLog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

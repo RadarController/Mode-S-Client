@@ -32,6 +32,8 @@ bld/
 [Oo]bj/
 [Oo]ut/
 [Ll]og/
+!src/log/
+!src/log/**
 [Ll]ogs/
 0_debug/
 0_release/

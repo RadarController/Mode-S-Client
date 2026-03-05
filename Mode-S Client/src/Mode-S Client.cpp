@@ -25,6 +25,7 @@
 #include "version.h"
 #include "AppConfig.h"
 #include "AppState.h"
+#include "log/UiLog.h"
 #include "http/LocalApiClient.h"
 #include "http/HttpServer.h"
 #include "chat/ChatAggregator.h"
@@ -41,16 +42,6 @@
 #include "floating/FloatingChat.h"
 #include "platform/PlatformControl.h"
 
-// Web UI log capture: LogLine() will also push into AppState so /api/log can display it.
-static AppState* gStateForWebLog = nullptr;
-
-static std::string ToUtf8(const std::wstring& w) {
-    if (w.empty()) return "";
-    int len = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-    std::string s(len, '\0');
-    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), s.data(), len, nullptr, nullptr);
-    return s;
-}
 
 // --------------------------- WebView2 (Modern UI host) ----------------------
 #if !defined(HAVE_WEBVIEW2)
@@ -109,7 +100,6 @@ static HFONT  gFontUi = nullptr;
 
 // --------------------------- Globals (UI handles) ---------------------------
 static HWND gLog = nullptr;
-static std::mutex gLogMutex;
 static HWND gMainWnd = nullptr;
 static DWORD gUiThreadId = 0;
 static constexpr UINT WM_APP_LOG = WM_APP + 100;
@@ -201,51 +191,16 @@ static std::string ReadTwitchUserAccessToken()
     return try_path(std::filesystem::path("config.json"));
 }
 
-static void AppendLogOnUiThread(const std::wstring& s)
-{
-    if (!gLog && !gSplashLog) return;
 
-    // Make each log call atomic across threads and avoid double newlines.
-    std::lock_guard<std::mutex> _lk(gLogMutex);
-
-    std::wstring clean = s;
-
-    // Trim trailing CR/LF
-    while (!clean.empty() && (clean.back() == L'\r' || clean.back() == L'\n'))
-        clean.pop_back();
-
-    int len = GetWindowTextLengthW(gLog);
-    SendMessageW(gLog, EM_SETSEL, (WPARAM)len, (LPARAM)len);
-    SendMessageW(gLog, EM_REPLACESEL, FALSE, (LPARAM)clean.c_str());
-    SendMessageW(gLog, EM_REPLACESEL, FALSE, (LPARAM)L"\r\n");
-
-    if (gSplashLog) {
-        int slen = GetWindowTextLengthW(gSplashLog);
-        SendMessageW(gSplashLog, EM_SETSEL, (WPARAM)slen, (LPARAM)slen);
-        SendMessageW(gSplashLog, EM_REPLACESEL, FALSE, (LPARAM)clean.c_str());
-        SendMessageW(gSplashLog, EM_REPLACESEL, FALSE, (LPARAM)L"\r\n");
-    }
+static std::string ToUtf8(const std::wstring& w) {
+    if (w.empty()) return "";
+    int len = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
+    std::string s(len, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), s.data(), len, nullptr, nullptr);
+    return s;
 }
 
-static void LogLine(const std::wstring& s)
-{
-    // Also feed the Web UI log buffer (served via /api/log)
-    if (gStateForWebLog) {
-        gStateForWebLog->push_log_utf8(ToUtf8(s));
-    }
-    // If called from a worker thread, marshal to the UI thread to avoid deadlocks/freezes.
-    if (gUiThreadId != 0 && GetCurrentThreadId() != gUiThreadId) {
-        if (gMainWnd) {
-            auto* heap = new std::wstring(s);
-            if (!PostMessageW(gMainWnd, WM_APP_LOG, 0, (LPARAM)heap)) {
-                delete heap; // fallback if posting fails
-            }
-        }
-        return;
-    }
 
-    AppendLogOnUiThread(s);
-}
 
 static void JoinWithTimeout(std::thread& t, DWORD timeoutMs, const wchar_t* name)
 {
@@ -498,6 +453,7 @@ static LRESULT CALLBACK SplashWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
             WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_READONLY | WS_VSCROLL,
             pad, pad + 58, 520, 220, hwnd, nullptr, nullptr, nullptr);
 
+    UiLog_SetSplashHwnd(gSplashLog);
         if (hTitle) SendMessageW(hTitle, WM_SETFONT, (WPARAM)hFontTitle, TRUE);
         if (hVer)   SendMessageW(hVer, WM_SETFONT, (WPARAM)hFontBody, TRUE);
         if (gSplashLog) SendMessageW(gSplashLog, WM_SETFONT, (WPARAM)hFontBody, TRUE);
@@ -1428,7 +1384,8 @@ catch (...) {
 }
 
         // Allow LogLine() to feed the Web UI (/api/log)
-        gStateForWebLog = &state;
+        UiLog_SetWebLogState(&state);
+        UiLog_SetUiContext(hwnd, gUiThreadId, WM_APP_LOG);
 
         // -----------------------------------------------------------------
         // Bot command handler (injects into ChatAggregator)
@@ -1584,6 +1541,7 @@ catch (...) {
             gLog = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
                 WS_CHILD | ES_MULTILINE | ES_READONLY | WS_VSCROLL, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
 
+            UiLog_SetLogHwnd(gLog);
             if (!gFloatingChat) gFloatingChat = std::make_unique<FloatingChat>();
 
             // Init WebView2 (controller + view). Navigation happens once the HTTP server is running.
@@ -1750,6 +1708,7 @@ catch (...) {
         // Log + tools
         gLog = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
             WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_READONLY | WS_VSCROLL, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
+            UiLog_SetLogHwnd(gLog);
         LogLine(L"APP: UI log initialized");
 
         hClearLogBtn = CreateWindowW(L"BUTTON", L"Clear", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_CLEAR_LOG, nullptr, nullptr);
@@ -2106,11 +2065,7 @@ LogLine(L"TIKTOK: starting followers poller thread");
 
     case WM_APP_LOG:
     {
-        auto* heap = reinterpret_cast<std::wstring*>(lParam);
-        if (heap) {
-            AppendLogOnUiThread(*heap);
-            delete heap;
-        }
+        UiLog_HandleAppLogMessage(lParam);
         return 0;
     }
 
