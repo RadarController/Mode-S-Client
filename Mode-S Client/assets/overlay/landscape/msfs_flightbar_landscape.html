@@ -399,7 +399,18 @@
 
   function setDash(el, len, pct){
     if (!el || !len) return;
+
+    // Prevent "tiny blue dot" artifacts caused by round linecaps when draw length ~0.
+    pct = clamp(pct, 0, 100);
     const draw = len * (pct / 100.0);
+
+    if (draw < 0.75){ // < ~1px: hide completely
+      el.style.strokeDasharray = `0 ${len}`;
+      el.style.opacity = "0";
+      return;
+    }
+
+    el.style.opacity = "1";
     el.style.strokeDasharray = `${draw} ${Math.max(0, len - draw)}`;
   }
 
