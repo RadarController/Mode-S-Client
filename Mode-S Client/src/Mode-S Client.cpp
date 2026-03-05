@@ -106,7 +106,6 @@ static constexpr UINT WM_APP_LOG = WM_APP + 100;
 // Splash screen
 static HWND gSplashWnd = nullptr;
 static HWND gSplashLog = nullptr;
-    UiLog_SetSplashHwnd(nullptr);
 static constexpr UINT WM_APP_SPLASH_READY = WM_APP + 201;
 static constexpr UINT_PTR SPLASH_CLOSE_TIMER_ID = 1001;
 static constexpr UINT SPLASH_CLOSE_DELAY_MS = 1 * 1000; // test: keep splash for 1s after ready
@@ -190,6 +189,15 @@ static std::string ReadTwitchUserAccessToken()
 
     // Fallback: current working directory
     return try_path(std::filesystem::path("config.json"));
+}
+
+
+static std::string ToUtf8(const std::wstring& w) {
+    if (w.empty()) return "";
+    int len = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
+    std::string s(len, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), s.data(), len, nullptr, nullptr);
+    return s;
 }
 
 
@@ -520,7 +528,6 @@ static LRESULT CALLBACK SplashWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         if (auto h = (HFONT)GetPropW(hwnd, L"splash_font_title")) { DeleteObject(h); RemovePropW(hwnd, L"splash_font_title"); }
         if (auto h = (HFONT)GetPropW(hwnd, L"splash_font_body")) { DeleteObject(h); RemovePropW(hwnd, L"splash_font_body"); }
         gSplashLog = nullptr;
-    UiLog_SetSplashHwnd(nullptr);
 
         // If splash is closing and main window isn't alive, exit.
         if (!gMainWnd || !IsWindow(gMainWnd)) {
@@ -586,7 +593,6 @@ static void DestroySplashWindow()
     }
     gSplashWnd = nullptr;
     gSplashLog = nullptr;
-    UiLog_SetSplashHwnd(nullptr);
 }
 
 
@@ -1379,6 +1385,7 @@ catch (...) {
 
         // Allow LogLine() to feed the Web UI (/api/log)
         UiLog_SetWebLogState(&state);
+        UiLog_SetUiContext(hwnd, gUiThreadId, WM_APP_LOG);
 
         // -----------------------------------------------------------------
         // Bot command handler (injects into ChatAggregator)
@@ -2343,7 +2350,6 @@ case WM_CLOSE:
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
     gUiThreadId = GetCurrentThreadId();
 
-    UiLog_SetUiContext(gMainWnd, gUiThreadId, WM_APP_LOG);
     const wchar_t CLASS_NAME[] = L"StreamHubWindow";
 
     WNDCLASSW wc{};
