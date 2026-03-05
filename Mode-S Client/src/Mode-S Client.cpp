@@ -25,6 +25,7 @@
 #include "version.h"
 #include "AppConfig.h"
 #include "AppState.h"
+#include "core/StringUtil.h"
 #include "log/UiLog.h"
 #include "http/LocalApiClient.h"
 #include "http/HttpServer.h"
@@ -228,20 +229,6 @@ static std::wstring ToW(const std::string& s) {
     return w;
 }
 
-static std::string UrlEncode(const std::string& s)
-{
-    static const char* hex = "0123456789ABCDEF";
-    std::string out;
-    for (unsigned char c : s) {
-        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~') out.push_back((char)c);
-        else {
-            out.push_back('%');
-            out.push_back(hex[(c >> 4) & 0xF]);
-            out.push_back(hex[c & 0xF]);
-        }
-    }
-    return out;
-}
 
 static std::wstring GetWindowTextWString(HWND h) {
     int len = GetWindowTextLengthW(h);
@@ -253,41 +240,6 @@ static std::wstring GetWindowTextWString(HWND h) {
     if (copied < 0) return L"";
     w.resize(copied);
     return w;
-}
-
-static std::string Trim(const std::string& s)
-{
-    size_t a = 0;
-    while (a < s.size() && (s[a] == ' ' || s[a] == '\t' || s[a] == '\r' || s[a] == '\n')) a++;
-    size_t b = s.size();
-    while (b > a && (s[b - 1] == ' ' || s[b - 1] == '\t' || s[b - 1] == '\r' || s[b - 1] == '\n')) b--;
-    return s.substr(a, b - a);
-}
-
-static std::string SanitizeTikTok(const std::string& input)
-{
-    std::string s = Trim(input);
-    s.erase(std::remove(s.begin(), s.end(), '@'), s.end());
-    return Trim(s);
-}
-
-
-static std::string SanitizeYouTubeHandle(const std::string& input)
-{
-    std::string s = Trim(input);
-    // YouTube handles are typically entered as "@handle" - strip leading @
-    s.erase(std::remove(s.begin(), s.end(), '@'), s.end());
-    // remove spaces (handles cannot contain spaces)
-    s.erase(std::remove_if(s.begin(), s.end(), [](unsigned char c){ return std::isspace(c) != 0; }), s.end());
-    return Trim(s);
-}
-
-static std::string SanitizeTwitchLogin(std::string s)
-{
-    s = Trim(s);
-    if (!s.empty() && s[0] == '#') s.erase(s.begin());
-    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return (char)std::tolower(c); });
-    return s;
 }
 
 static void UpdateTikTokButtons(HWND hTikTokEdit, HWND hStartBtn, HWND hRestartBtn)
@@ -369,17 +321,6 @@ static std::string ReadFileUtf8(const std::wstring& path) {
     if (sz > 0) fread(data.data(), 1, (size_t)sz, f);
     fclose(f);
     return data;
-}
-
-//Chat overlay helpers
-static void ReplaceAll(std::string& s, const std::string& from, const std::string& to)
-{
-    if (from.empty()) return;
-    size_t pos = 0;
-    while ((pos = s.find(from, pos)) != std::string::npos) {
-        s.replace(pos, from.size(), to);
-        pos += to.size();
-    }
 }
 
 static std::string UrlEncodeGoogleFontFamily(std::string family)
