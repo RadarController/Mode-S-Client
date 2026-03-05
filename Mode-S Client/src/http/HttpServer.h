@@ -9,7 +9,6 @@
 #include <mutex>
 
 #include "httplib.h"
-#include "LogBuffer.h"
 #include "json.hpp"
 
 class AppState;
@@ -90,9 +89,6 @@ private:
     AppConfig& config_;
     Options opt_;
     LogFn log_;
-
-    // Thread-safe log buffer for the Web UI (/api/log)
-    LogBuffer logbuf_;
 
     std::mutex simbrief_mu_;
     nlohmann::json simbrief_cache_;
