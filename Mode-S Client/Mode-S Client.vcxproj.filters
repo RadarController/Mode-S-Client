@@ -170,6 +170,9 @@
     <ClCompile Include="integrations\youtube\YouTubeAuth.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="integrations\simconnect\SimConnectWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="ui\Mode-S Client.rc">
@@ -252,6 +255,12 @@
     </None>
     <None Include="assets\overlay\alerts.js">
       <Filter>assets\overlay</Filter>
+    </None>
+    <None Include="assets\overlay\portrait\msfs_flightbar_portrait.html">
+      <Filter>assets\overlay\portrait</Filter>
+    </None>
+    <None Include="assets\overlay\landscape\msfs_flightbar_landscape.html">
+      <Filter>assets\overlay\landscape</Filter>
     </None>
   </ItemGroup>
 </Project>

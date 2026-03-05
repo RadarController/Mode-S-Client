@@ -182,6 +182,7 @@
       text-overflow: ellipsis;
       max-width: 220px;
       line-height: 1.1;
+      display: none !important;
     }
 
     /* Border progress */
@@ -397,23 +398,42 @@
     return t * t * (3 - 2 * t);
   }
 
-  function setDash(el, len, pct){
-    if (!el || !len) return;
-    const draw = len * (pct / 100.0);
-    el.style.strokeDasharray = `${draw} ${Math.max(0, len - draw)}`;
-  }
+    function setDash(el, len, pct) {
+        if (!el || !len) return;
 
-  function setProgressPct(pct){
-    pct = clamp(pct, 0, 100);
+        // Prevent tiny blue line/dot caused by round linecaps when the dash length is ~0
+        pct = clamp(pct, 0, 100);
+        const draw = len * (pct / 100.0);
 
-    setDash(elBpFillTop, pathLenTop, pct);
-    setDash(elBpFillBot, pathLenBot, pct);
+        // If the drawn length is effectively zero, hide the stroke entirely
+        // so the rounded linecap cannot appear.
+        if (draw < 0.75) {   // roughly < 1px
+            el.style.strokeDasharray = `0 ${len}`;
+            el.style.opacity = "0";
+            return;
+        }
 
-    setDash(elBpFillLeft, pathLenLeft, pct);
+        el.style.opacity = "1";
+        el.style.strokeDasharray = `${draw} ${Math.max(0, len - draw)}`;
+    }
 
-    const rightPct = easeInOut((pct - 70) / 30) * 100;
-    setDash(elBpFillRight, pathLenRight, rightPct);
-  }
+    function setProgressPct(pct) {
+        pct = clamp(pct, 0, 100);
+
+        setDash(elBpFillTop, pathLenTop, pct);
+        setDash(elBpFillBot, pathLenBot, pct);
+
+        setDash(elBpFillLeft, pathLenLeft, pct);
+
+        // Only draw the finish edge in the last 2% of the flight
+        const start = 98;
+        const span = 2;
+
+        const t = clamp((pct - start) / span, 0, 1);
+        const rightPct = easeInOut(t) * 100;
+
+        setDash(elBpFillRight, pathLenRight, rightPct);
+    }
 
   // Build border path + keep it in sync
   setSvgPath();
