@@ -43,6 +43,7 @@
 #include "floating/FloatingChat.h"
 #include "platform/PlatformControl.h"
 
+// === Logging ===
 // Web UI log capture: LogLine() will also push into AppState so /api/log can display it.
 static AppState* gStateForWebLog = nullptr;
 
@@ -54,6 +55,8 @@ static std::string ToUtf8(const std::wstring& w) {
     return s;
 }
 
+
+// === WebView2 Host ===
 // --------------------------- WebView2 (Modern UI host) ----------------------
 #if !defined(HAVE_WEBVIEW2)
 #  if defined(__has_include)
@@ -80,6 +83,8 @@ static bool gUseModernUi = true;
 static std::atomic<bool> gHttpReady{ false };
 static const wchar_t* kModernUiUrl = L"http://127.0.0.1:17845/app";
 
+
+// === Legacy UI ===
 
 // --------------------------- Control IDs ------------------------------------
 #define IDC_TIKTOK_EDIT        1001
@@ -167,6 +172,8 @@ static int  gTikTokFollowerCount = 0, gTwitchFollowerCount = 0, gYouTubeFollower
 static void LayoutControls(HWND hwnd);
 static HWND CreateSplashWindow(HINSTANCE hInstance);
 static void DestroySplashWindow();
+
+// === Utility Functions ===
 
 // --------------------------- Helpers ----------------------------------------
 static std::wstring GetExeDir()
@@ -1321,6 +1328,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     static EuroScopeIngestService euroscope;
     static ObsWsClient obs;
 
+    // === Shutdown ===
+
     // Centralised shutdown routine (idempotent).
    // Lives inside WndProc so it can see the static service/thread instances above.
     auto BeginShutdown = [&](HWND hwndToDestroy)
@@ -1681,6 +1690,8 @@ catch (...) {
         
         // If enabled, host the new modern UI (HTML/CSS) directly inside the main window via WebView2.
         // This keeps all existing backend threads + HTTP API intact, but replaces the legacy Win32 control layout.
+        // === WebView2 Host ===
+
 #if HAVE_WEBVIEW2
         if (gUseModernUi) {
             // Create a hidden log control so existing LogLine() plumbing still works (optional).
@@ -1790,6 +1801,8 @@ catch (...) {
             PostMessageW(hwnd, WM_APP + 1, 0, 0);
             return 0;
 #endif
+
+        // === Legacy UI ===
 
         // Group boxes
         hGroupTikTok = CreateWindowW(L"BUTTON", L"TikTok", WS_CHILD | WS_VISIBLE | BS_GROUPBOX, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
@@ -1916,6 +1929,8 @@ catch (...) {
 
         return 0;
     }
+    // === Backend Startup ===
+
     case WM_APP + 1:
     {
         // Start HTTP server in background thread
@@ -2207,6 +2222,8 @@ LogLine(L"TIKTOK: starting followers poller thread");
     }
     return 0;
 
+    // === Logging ===
+
     case WM_APP_LOG:
     {
         auto* heap = reinterpret_cast<std::wstring*>(lParam);
@@ -2415,6 +2432,8 @@ config.youtube_handle = ToUtf8(GetWindowTextWString(hYouTube));
             break;
         }
     }
+
+    // === Shutdown ===
 
 case WM_CLOSE:
     BeginShutdown(hwnd);
