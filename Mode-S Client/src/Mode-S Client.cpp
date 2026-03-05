@@ -5,12 +5,8 @@
 #include <ws2tcpip.h>
 #include <windows.h>
 #include <wininet.h>
-#include <winhttp.h>
-#pragma comment(lib, "winhttp.lib")
-
 #include <string>
 #include <thread>
-#include <exception>
 #include <atomic>
 #include <filesystem>
 #include <sstream>
@@ -29,7 +25,6 @@
 #include "version.h"
 #include "AppConfig.h"
 #include "AppState.h"
-#include "core/StringUtil.h"
 #include "http/LocalApiClient.h"
 #include "http/HttpServer.h"
 #include "chat/ChatAggregator.h"
@@ -46,7 +41,6 @@
 #include "floating/FloatingChat.h"
 #include "platform/PlatformControl.h"
 
-// === Logging ===
 // Web UI log capture: LogLine() will also push into AppState so /api/log can display it.
 static AppState* gStateForWebLog = nullptr;
 
@@ -58,8 +52,6 @@ static std::string ToUtf8(const std::wstring& w) {
     return s;
 }
 
-
-// === WebView2 Host ===
 // --------------------------- WebView2 (Modern UI host) ----------------------
 #if !defined(HAVE_WEBVIEW2)
 #  if defined(__has_include)
@@ -86,8 +78,6 @@ static bool gUseModernUi = true;
 static std::atomic<bool> gHttpReady{ false };
 static const wchar_t* kModernUiUrl = L"http://127.0.0.1:17845/app";
 
-
-// === Legacy UI ===
 
 // --------------------------- Control IDs ------------------------------------
 #define IDC_TIKTOK_EDIT        1001
@@ -175,8 +165,6 @@ static int  gTikTokFollowerCount = 0, gTwitchFollowerCount = 0, gYouTubeFollower
 static void LayoutControls(HWND hwnd);
 static HWND CreateSplashWindow(HINSTANCE hInstance);
 static void DestroySplashWindow();
-
-// === Utility Functions ===
 
 // --------------------------- Helpers ----------------------------------------
 static std::wstring GetExeDir()
@@ -285,6 +273,21 @@ static std::wstring ToW(const std::string& s) {
     return w;
 }
 
+static std::string UrlEncode(const std::string& s)
+{
+    static const char* hex = "0123456789ABCDEF";
+    std::string out;
+    for (unsigned char c : s) {
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~') out.push_back((char)c);
+        else {
+            out.push_back('%');
+            out.push_back(hex[(c >> 4) & 0xF]);
+            out.push_back(hex[c & 0xF]);
+        }
+    }
+    return out;
+}
+
 static std::wstring GetWindowTextWString(HWND h) {
     int len = GetWindowTextLengthW(h);
     if (len <= 0) return L"";
@@ -295,6 +298,41 @@ static std::wstring GetWindowTextWString(HWND h) {
     if (copied < 0) return L"";
     w.resize(copied);
     return w;
+}
+
+static std::string Trim(const std::string& s)
+{
+    size_t a = 0;
+    while (a < s.size() && (s[a] == ' ' || s[a] == '\t' || s[a] == '\r' || s[a] == '\n')) a++;
+    size_t b = s.size();
+    while (b > a && (s[b - 1] == ' ' || s[b - 1] == '\t' || s[b - 1] == '\r' || s[b - 1] == '\n')) b--;
+    return s.substr(a, b - a);
+}
+
+static std::string SanitizeTikTok(const std::string& input)
+{
+    std::string s = Trim(input);
+    s.erase(std::remove(s.begin(), s.end(), '@'), s.end());
+    return Trim(s);
+}
+
+
+static std::string SanitizeYouTubeHandle(const std::string& input)
+{
+    std::string s = Trim(input);
+    // YouTube handles are typically entered as "@handle" - strip leading @
+    s.erase(std::remove(s.begin(), s.end(), '@'), s.end());
+    // remove spaces (handles cannot contain spaces)
+    s.erase(std::remove_if(s.begin(), s.end(), [](unsigned char c){ return std::isspace(c) != 0; }), s.end());
+    return Trim(s);
+}
+
+static std::string SanitizeTwitchLogin(std::string s)
+{
+    s = Trim(s);
+    if (!s.empty() && s[0] == '#') s.erase(s.begin());
+    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return (char)std::tolower(c); });
+    return s;
 }
 
 static void UpdateTikTokButtons(HWND hTikTokEdit, HWND hStartBtn, HWND hRestartBtn)
@@ -363,6 +401,7 @@ static void UpdatePlatformStatusUI(const Metrics& m)
     set(gYouTubeFollowers, L"Followers: " + std::to_wstring(gYouTubeFollowerCount));
 }
 
+// Pull metrics through the local HTTP endpoint so the UI reflects exactly what overlays/OBS see.
 static std::string ReadFileUtf8(const std::wstring& path) {
     FILE* f = nullptr;
     _wfopen_s(&f, path.c_str(), L"rb");
@@ -378,6 +417,15 @@ static std::string ReadFileUtf8(const std::wstring& path) {
 }
 
 //Chat overlay helpers
+static void ReplaceAll(std::string& s, const std::string& from, const std::string& to)
+{
+    if (from.empty()) return;
+    size_t pos = 0;
+    while ((pos = s.find(from, pos)) != std::string::npos) {
+        s.replace(pos, from.size(), to);
+        pos += to.size();
+    }
+}
 
 static std::string UrlEncodeGoogleFontFamily(std::string family)
 {
@@ -1170,8 +1218,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     static EuroScopeIngestService euroscope;
     static ObsWsClient obs;
 
-    // === Shutdown ===
-
     // Centralised shutdown routine (idempotent).
    // Lives inside WndProc so it can see the static service/thread instances above.
     auto BeginShutdown = [&](HWND hwndToDestroy)
@@ -1189,11 +1235,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             // 2) Stop HTTP early
             if (gHttp) {
                 OutputDebugStringW(L"SHUTDOWN: stopping HTTP\n");
-                try {
-                    gHttp->Stop();
-                } catch (...) {
-                    OutputDebugStringW(L"SHUTDOWN: HTTP stop threw; continuing shutdown\n");
-                }
+                gHttp->Stop();
                 gHttp.reset();
                 OutputDebugStringW(L"SHUTDOWN: HTTP stopped\n");
             }
@@ -1536,8 +1578,6 @@ catch (...) {
         
         // If enabled, host the new modern UI (HTML/CSS) directly inside the main window via WebView2.
         // This keeps all existing backend threads + HTTP API intact, but replaces the legacy Win32 control layout.
-        // === WebView2 Host ===
-
 #if HAVE_WEBVIEW2
         if (gUseModernUi) {
             // Create a hidden log control so existing LogLine() plumbing still works (optional).
@@ -1647,8 +1687,6 @@ catch (...) {
             PostMessageW(hwnd, WM_APP + 1, 0, 0);
             return 0;
 #endif
-
-        // === Legacy UI ===
 
         // Group boxes
         hGroupTikTok = CreateWindowW(L"BUTTON", L"TikTok", WS_CHILD | WS_VISIBLE | BS_GROUPBOX, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
@@ -1775,8 +1813,6 @@ catch (...) {
 
         return 0;
     }
-    // === Backend Startup ===
-
     case WM_APP + 1:
     {
         // Start HTTP server in background thread
@@ -2068,8 +2104,6 @@ LogLine(L"TIKTOK: starting followers poller thread");
     }
     return 0;
 
-    // === Logging ===
-
     case WM_APP_LOG:
     {
         auto* heap = reinterpret_cast<std::wstring*>(lParam);
@@ -2279,8 +2313,6 @@ config.youtube_handle = ToUtf8(GetWindowTextWString(hYouTube));
         }
     }
 
-    // === Shutdown ===
-
 case WM_CLOSE:
     BeginShutdown(hwnd);
     return 0;
@@ -2361,19 +2393,6 @@ case WM_CLOSE:
 }
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
-    // --- Refactor safety net ---
-    // If std::terminate is triggered during shutdown (commonly a joinable std::thread destructor),
-    // break into the debugger with a useful breadcrumb.
-    std::set_terminate([]() {
-        OutputDebugStringW(L"FATAL: std::terminate called (likely joinable std::thread during teardown)\\n");
-    #if defined(_MSC_VER)
-        __debugbreak();
-    #endif
-        std::abort();
-    });
-    // ----------------------------
-
-
     gUiThreadId = GetCurrentThreadId();
 
     const wchar_t CLASS_NAME[] = L"StreamHubWindow";

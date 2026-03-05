@@ -1,9 +1,8 @@
 #pragma once
-
-// Local API client helpers (calling our own HttpServer endpoints).
-// Extracted from Mode-S Client.cpp as part of refactor Issue 1.2.
+#include <string>
 
 struct Metrics;
 
-// Pull metrics through the local HTTP endpoint so the UI reflects exactly what overlays/OBS see.
+// Fetches /api/metrics from the local Mode-S Client API and parses into Metrics.
+// Returns true on success.
 bool TryFetchMetricsFromApi(Metrics& out);

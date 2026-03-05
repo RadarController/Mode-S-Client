@@ -1,23 +1,22 @@
-#include "http/LocalApiClient.h"
+#include "LocalApiClient.h"
 
-#define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
-#include <windows.h>
+#include <Windows.h>
 #include <winhttp.h>
 #pragma comment(lib, "winhttp.lib")
 
 #include <string>
+#include <vector>
 
-#include "json.hpp"
 #include "AppState.h"
-
-namespace {
+#include "json.hpp"
 
 struct HttpResult {
     int status = 0;
     DWORD winerr = 0;
     std::string body;
 };
+
+
 
 static HttpResult WinHttpRequest(const std::wstring& method,
     const std::wstring& host,
@@ -88,7 +87,7 @@ done:
     return r;
 }
 
-} // namespace
+
 
 bool TryFetchMetricsFromApi(Metrics& out)
 {
@@ -116,3 +115,4 @@ bool TryFetchMetricsFromApi(Metrics& out)
         return false;
     }
 }
+
