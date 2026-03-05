@@ -231,6 +231,23 @@
             kind = 'HOLD EMPTIED';
             message = 'No delay, expect vectors!';
         }
+        else if (platform === 'twitch' && type === 'channel.raid') {
+            kind = 'INBOUND RAID';
+
+            // Prefer a structured field if the server provides it.
+            let viewers = Number(e.viewers || 0);
+            if (!viewers) {
+                // Fallback: attempt to extract a number from the server message (e.g. "raided with 42 viewers").
+                const m = String(e.message || '').match(/\b(\d{1,6})\b/);
+                if (m) viewers = Number(m[1] || 0);
+            }
+
+            if (viewers > 0) {
+                message = `${viewers} inbound joining the frequency.`;
+            } else {
+                message = 'Inbound traffic joining the frequency.';
+            }
+        }
         else if (platform === 'twitch' && type === 'channel.cheer') {
             const bits = Number(e.bits || e.total_bits || 0);
             kind = 'DELAY';
@@ -256,7 +273,8 @@
 
         // Keep generic “followed/subscribed” out of the cinematic line; it reads better as the ATC phrase.
         const rawMsg = String(e.message || '').trim();
-        if (rawMsg && !(platform === 'twitch' && type === 'channel.subscription.message')) {
+        // Don't clobber our custom cinematic lines for certain event types.
+        if (rawMsg && !(platform === 'twitch' && (type === 'channel.subscription.message' || type === 'channel.raid'))) {
             const low = rawMsg.toLowerCase();
             if (low !== 'followed' && low !== 'subscribed' && message !== rawMsg) {
                 message = rawMsg;

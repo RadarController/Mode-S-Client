@@ -1082,6 +1082,10 @@ void TwitchEventSubWsClient::HandleNotification(const void* payloadPtr)
             if (subType == "channel.cheer") {
                 evOut["bits"] = getInt(ev, "bits", 0);
             }
+            else if (subType == "channel.raid") {
+                // Useful for overlays that want to render the raid size as a number.
+                evOut["viewers"] = getInt(ev, "viewers", 0);
+            }
             else if (subType == "channel.subscription.message") {
                 evOut["cumulative_months"] = getInt(ev, "cumulative_months", 0);
 
