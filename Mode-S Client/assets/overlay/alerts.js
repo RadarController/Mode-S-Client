@@ -232,8 +232,8 @@
             message = 'No delay, expect vectors!';
         }
         else if (platform === 'twitch' && type === 'channel.raid') {
-            kind = 'INBOUND RAID';
-
+            // Raids are a sudden workload spike: scale the ATC phrasing with size.
+            // (Small = just a few aircraft; Huge = sector getting spicy.)
             // Prefer a structured field if the server provides it.
             let viewers = Number(e.viewers || 0);
             if (!viewers) {
@@ -242,10 +242,24 @@
                 if (m) viewers = Number(m[1] || 0);
             }
 
-            if (viewers > 0) {
-                message = `${viewers} inbound joining the frequency.`;
+            if (viewers >= 100) {
+                kind = 'SECTOR OVERLOAD';
+            } else if (viewers >= 41) {
+                kind = 'MASS ARRIVAL';
+            } else if (viewers >= 11) {
+                kind = 'TRAFFIC SURGE';
             } else {
-                message = 'Inbound traffic joining the frequency.';
+                kind = 'INBOUND TRAFFIC';
+            }
+
+            if (viewers > 0) {
+                // "aircraft" keeps the metaphor consistent across platforms.
+                if (kind === 'INBOUND TRAFFIC') message = `${viewers} aircraft joining the frequency.`;
+                else if (kind === 'TRAFFIC SURGE') message = `${viewers} aircraft entering the sector.`;
+                else message = `${viewers} aircraft inbound.`;
+            } else {
+                // No count available (older history / malformed event) – still render safely.
+                message = 'Inbound traffic entering the sector.';
             }
         }
         else if (platform === 'twitch' && type === 'channel.cheer') {
