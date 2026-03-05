@@ -16,7 +16,7 @@
 
         body {
             font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
-            color: #000;
+            color: #fff;
         }
         /* Make the log take full viewport width and be scrollable vertically. Hide scrollbars visually but keep scrolling. */
         #log {
@@ -143,6 +143,7 @@
                 opacity: 0.22; /* keep this low to avoid tacky */
                 mix-blend-mode: screen;
             }
+
         .line.event.platform-twitch::before {
             background: radial-gradient(120% 140% at 0% 50%, rgba(145,70,255,0.55), rgba(145,70,255,0.00) 60%);
         }
@@ -207,10 +208,10 @@
             if (!DEBUG_ENABLED || !DIAG) return;
             DIAG.textContent =
                 `recv=${dbg.received}  rend=${dbg.rendered}
-                            skip_empty=${dbg.skip_empty}  skip_dupe=${dbg.skip_dupe}  skip_other=${dbg.skip_other}
-                            warn_no_icon=${dbg.appended_without_icon}  warn_no_text=${dbg.appended_without_text}
-                            lastSkip=${dbg.lastSkip}
-                            lastWarn=${dbg.lastAppendWarn}`;
+                                skip_empty=${dbg.skip_empty}  skip_dupe=${dbg.skip_dupe}  skip_other=${dbg.skip_other}
+                                warn_no_icon=${dbg.appended_without_icon}  warn_no_text=${dbg.appended_without_text}
+                                lastSkip=${dbg.lastSkip}
+                                lastWarn=${dbg.lastAppendWarn}`;
         }
 
         function extractGateText(n) {
@@ -313,7 +314,19 @@
             const platform = String(pick(e, ["platform"], "twitch")).toLowerCase() || "twitch";
             const type = String(pick(e, ["type"], "event"));
             const user = String(pick(e, ["user", "username", "display_name", "name"], ""));
-            const msg = String(pick(e, ["message", "text"], type));
+            // Prefer explicit message/text when present
+            let msgVal = pick(e, ["message", "text"], null);
+
+            // Special-case: Twitch raids sometimes arrive without a message.
+            // For the combined chat feed we still want the viewer count.
+            if ((msgVal === null || msgVal === undefined || String(msgVal).trim().length === 0) && type === "channel.raid") {
+                const viewers = pick(e, ["viewers", "viewer_count", "view_count"], null);
+                if (viewers !== null && viewers !== undefined && String(viewers).trim().length) {
+                    msgVal = `raided with ${viewers} viewers`;
+                }
+            }
+
+            const msg = String(msgVal !== null && msgVal !== undefined ? msgVal : type);
             const ts = pick(e, ["ts_ms", "timestamp", "ts", "time", "created_at"], Date.now());
             const id = "event|" + platform + "|" + type + "|" + user + "|" + ts + "|" + msg;
             return { platform, user, text: msg, ts, id, color: "", raw: e, is_event: true, event_type: type };
@@ -449,6 +462,17 @@
             userSpan.textContent = n.user || '';
             txt.appendChild(userSpan);
 
+            // Username colour:
+            // - Twitch: prefer IRC-provided colour when present (n.color)
+            // - TikTok/YouTube (and any others): stable per-user colour derived from platform+name
+            const userColor = String(n.color || n.user_color || '').trim();
+            if (userColor && userColor.startsWith('#')) {
+                userSpan.style.color = userColor;
+            } else if (name) {
+                const key = `${String(n.platform || '').trim()}:${name}`;
+                userSpan.style.color = colorFromName(key);
+            }
+
             // message
             const msgSpan = document.createElement('span');
 
@@ -567,7 +591,7 @@
                 intervalMs: 1000,
                 maxItems: 200,
                 dedupeWindowMs: 5000,
-                includeEvents: false,
+                includeEvents: true,
 
                 // Chat fetch returns the JSON used by this page.
                 fetchChat: async () => {
