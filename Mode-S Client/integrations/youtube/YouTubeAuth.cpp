@@ -16,8 +16,11 @@ static void DebugLog(const std::string& msg);
 
 YouTubeAuth::UiLogFn YouTubeAuth::ui_log_ = nullptr;
 
+YouTubeAuth::~YouTubeAuth()
+{
+    Stop();
+}
 void YouTubeAuth::SetUiLogger(UiLogFn fn) { ui_log_ = fn; }
-
 
 // ---- helpers ----
 static std::wstring ToW(const std::string& s) {
@@ -28,11 +31,7 @@ static std::wstring ToW(const std::string& s) {
     return w;
 }
 
-
 namespace {
-
-
-
 
 // config path: CWD first, then exe dir (same approach as TwitchAuth)
 std::filesystem::path FindConfigPath() {
@@ -144,9 +143,21 @@ bool YouTubeAuth::Start() {
     return true;
 }
 
-void YouTubeAuth::Stop() {
+void YouTubeAuth::Stop()
+{
     running_.store(false);
-    if (bg_.joinable()) bg_.join();
+
+    if (bg_.joinable())
+    {
+        try
+        {
+            bg_.join();
+        }
+        catch (...)
+        {
+            // join() normally doesn't throw, but keep Stop() noexcept-safe
+        }
+    }
 }
 
 std::optional<std::string> YouTubeAuth::GetAccessToken() const {

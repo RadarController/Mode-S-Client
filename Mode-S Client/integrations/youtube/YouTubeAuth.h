@@ -17,6 +17,7 @@
 // liveBroadcasts.update, etc.) should be implemented elsewhere once auth is in place.
 class YouTubeAuth {
 public:
+    ~YouTubeAuth();
     using UiLogFn = void(*)(const std::wstring&);
 
     static void SetUiLogger(UiLogFn fn);

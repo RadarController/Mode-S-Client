@@ -10,6 +10,7 @@
 
 #include <string>
 #include <thread>
+#include <exception>
 #include <atomic>
 #include <filesystem>
 #include <sstream>
@@ -1347,7 +1348,11 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             // 2) Stop HTTP early
             if (gHttp) {
                 OutputDebugStringW(L"SHUTDOWN: stopping HTTP\n");
-                gHttp->Stop();
+                try {
+                    gHttp->Stop();
+                } catch (...) {
+                    OutputDebugStringW(L"SHUTDOWN: HTTP stop threw; continuing shutdown\n");
+                }
                 gHttp.reset();
                 OutputDebugStringW(L"SHUTDOWN: HTTP stopped\n");
             }
@@ -2515,6 +2520,19 @@ case WM_CLOSE:
 }
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
+    // --- Refactor safety net ---
+    // If std::terminate is triggered during shutdown (commonly a joinable std::thread destructor),
+    // break into the debugger with a useful breadcrumb.
+    std::set_terminate([]() {
+        OutputDebugStringW(L"FATAL: std::terminate called (likely joinable std::thread during teardown)\\n");
+    #if defined(_MSC_VER)
+        __debugbreak();
+    #endif
+        std::abort();
+    });
+    // ----------------------------
+
+
     gUiThreadId = GetCurrentThreadId();
 
     const wchar_t CLASS_NAME[] = L"StreamHubWindow";
