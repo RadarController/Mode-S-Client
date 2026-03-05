@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>VATSIM Flight Bar (Portrait)</title>
+  <title>VATSIM Flight Bar</title>
 
   <style>
     :root{
@@ -13,15 +13,12 @@
       --text: rgba(233,238,247,.92);
       --muted: rgba(233,238,247,.70);
 
-      /* Placement (portrait) */
       --pad: 16px;
-      --top-offset: 64px;    /* sits under your top bar */
-      --bottom-safe: 0px;
+      --top-offset: 64px;
+      --right-reserve: 420px;
 
-      /* Sizing */
-      --radius: 18px;
-      --h: 72px;            /* two-row bar */
-      --max-w: 980px;       /* keeps it from going comically wide on tall canvases */
+      --h: 104px;
+      --radius: 16px;
     }
 
     html,body{
@@ -39,15 +36,12 @@
       left: var(--pad);
       right: var(--pad);
       height: var(--h);
-      max-width: var(--max-w);
-      margin: 0 auto;
 
       display:grid;
-      grid-template-rows: 1fr 1fr;
-      row-gap: 8px;
-      align-content:center;
+      grid-template-columns: auto 1fr auto;
+      align-items:center;
 
-      padding: 10px 12px;
+      padding: 0 12px;
       box-sizing:border-box;
 
       border-radius: var(--radius);
@@ -62,54 +56,41 @@
       overflow:hidden;
     }
 
-    .row1{
-      display:grid;
-      grid-template-columns: 1fr auto;
-      column-gap: 10px;
-      align-items:center;
-      min-width:0;
-    }
-
-    .row2{
-      display:grid;
-      grid-template-columns: auto 1fr;
-      column-gap: 10px;
-      align-items:center;
-      min-width:0;
-    }
-
-    /* Left: VATSIM + CALLSIGN + PLAN */
     .left{
       display:flex;
       align-items:center;
       gap: 10px;
       min-width: 0;
     }
+
     .dot{
-      width:8px;height:8px;border-radius:50%;
+      width:12px;height:12px;border-radius:50%;
       background: rgba(30,109,255,.95);
       box-shadow: 0 0 0 3px rgba(30,109,255,.18);
       flex:0 0 auto;
     }
+
     .tag{
-      font-size: 11px;
+      font-size: 18px;
       font-weight: 750;
       letter-spacing: .12em;
       text-transform: uppercase;
       color: var(--muted);
       white-space: nowrap;
     }
+
     .callsign{
-      font-size: 20px;
+      font-size: 30px;
       font-weight: 900;
       letter-spacing: .3px;
       color: var(--text);
       white-space: nowrap;
       overflow:hidden;
       text-overflow: ellipsis;
-      max-width: 320px;
+      max-width: 240px;
       line-height: 1;
     }
+
     .pill{
       display:inline-flex;
       align-items:center;
@@ -118,21 +99,21 @@
       border: 1px solid rgba(131,174,252,.28);
       background: rgba(131,174,252,.08);
       color: rgba(131,174,252,.95);
-      font-size: 10px;
+      font-size: 12px;
       font-weight: 850;
       letter-spacing: .10em;
       text-transform: uppercase;
       white-space: nowrap;
     }
 
-    /* Route (compact, always visible) */
-    .route{
+    .center{
+      justify-self:center;
       display:flex;
       align-items:center;
       gap: 10px;
-      justify-content:flex-end;
-      min-width:0;
+      min-width: 0;
     }
+
     .icao{
       display:inline-flex;
       align-items:center;
@@ -143,20 +124,29 @@
       border: 1px solid rgba(255,255,255,.12);
       color: var(--text);
       font-weight: 900;
+      font-size:20px;
       letter-spacing: .16em;
       text-transform: uppercase;
-      min-width: 74px;
+      min-width: 76px;
       line-height: 1;
     }
+
     .arrow{
       color: var(--muted);
       font-weight: 900;
       letter-spacing: .12em;
-      font-size: 12px;
+      font-size: 20px;
       line-height: 1;
     }
 
-    /* Telemetry */
+    .right{
+      justify-self:end;
+      display:flex;
+      align-items:center;
+      gap: 10px;
+      min-width: 0;
+    }
+
     .kv{
       display:flex;
       align-items:center;
@@ -167,40 +157,36 @@
       border: 1px solid rgba(255,255,255,.10);
       white-space: nowrap;
     }
+
     .k{
       color: var(--muted);
       font-weight: 850;
       letter-spacing: .10em;
       text-transform: uppercase;
-      font-size: 10px;
+      font-size: 18px;
       line-height: 1;
     }
+
     .v{
       color: var(--text);
       font-weight: 900;
-      font-size: 13px;
+      font-size: 18px;
       letter-spacing: .2px;
       line-height: 1;
     }
-    .telemetry{
-      display:flex;
-      align-items:center;
-      gap: 10px;
-      min-width:0;
-    }
+
     .status{
       color: var(--muted);
-      font-size: 10px;
+      font-size: 12px;
       white-space: nowrap;
       overflow:hidden;
       text-overflow: ellipsis;
+      max-width: 220px;
       line-height: 1.1;
-      min-width: 0;
-      justify-self:end;
-      text-align:right;
+      display: none !important;
     }
 
-    /* Border progress (mirrored + edges) */
+    /* Border progress */
     .borderProg{
       position:absolute;
       inset:0;
@@ -229,38 +215,110 @@
     .bump{ animation: bump .20s ease-out; }
     @keyframes bump{ 0%{transform:translateY(0)} 45%{transform:translateY(-1px)} 100%{transform:translateY(0)} }
 
-    /* Very narrow: hide VATSIM tag first */
-    @media (max-width: 420px){
-      .tag{ display:none; }
-      .callsign{ max-width: 220px; }
-      .icao{ min-width: 64px; padding: 6px 10px; }
+    @media (max-width: 1100px){
+      :root{ --right-reserve: 340px; }
+      .status{ display:none; }
     }
+    @media (max-width: 860px){
+      :root{ --right-reserve: 0px; --top-offset: 16px; }
+      .tag{ display:none; }
+    }
+    @media (max-width: 680px){
+      .center{ display:none; }
+      .callsign{ max-width: 180px; }
+    }
+  
+    /* Portrait layout (no transform scaling): keep the same design, just make it bigger & stack */
+    @media (orientation: portrait){
+      :root{
+        --right-reserve: 0px;
+        --top-offset: 64px;
+      }
+
+      .bar{
+        right: var(--pad);
+        max-width: 980px;
+        width: 98vw;
+        left: 50%;
+        transform: translateX(-50%);
+        transform-origin: top center;
+
+        height: auto;
+        padding: 20px 24px;          /* ~2x */
+        display: grid;
+        grid-template-columns: 1fr;
+        grid-template-rows: auto auto;
+        row-gap: 18px;               /* ~2x */
+        align-items: stretch;
+      }
+
+      /* Row 1: left + route */
+      .left{
+        grid-row: 1;
+        gap: 18px;                   /* ~2x */
+      }
+
+      .center{
+        grid-row: 1;
+        justify-self: end;
+        gap: 18px;                   /* ~2x */
+      }
+
+      /* Row 2: telemetry */
+      .right{
+        grid-row: 2;
+        justify-self: stretch;
+        width: 100%;
+        display: flex;
+        justify-content: space-between;
+        gap: 18px;                   /* ~2x */
+      }
+
+      .status{
+        max-width: none;
+        margin-left: auto;
+        font-size: 12px;             /* slightly bigger */
+      }
+
+      /* Subtle “2x” readability bumps (no redesign) */
+      .dot{ width: 12px; height: 12px; box-shadow: 0 0 0 5px rgba(30,109,255,.18); }
+      .tag{ font-size: 12px; }
+      .callsign{ font-size: 40px; max-width: 55vw; }
+      .pill{ padding: 10px 14px; font-size: 12px; }
+
+      .icao{ min-width: 120px; padding: 12px 18px; }
+      .arrow{ font-size: 14px; }
+
+      .kv{ padding: 12px 16px; gap: 10px; }
+      .k{ font-size: 11px; }
+      .v{ font-size: 18px; }
+
+      /* Keep border progress stroke consistent */
+      .borderTrack, .borderFill{ stroke-width: 2; }
+    }
+
   </style>
 </head>
 
 <body>
-  <div class="bar" role="img" aria-label="VATSIM flight bar portrait">
-    <div class="row1">
-      <div class="left">
-        <span class="dot" aria-hidden="true"></span>
-        <span class="tag">VATSIM</span>
-        <span class="callsign" id="callsign">—</span>
-        <span class="pill" id="pill">PLAN</span>
-      </div>
-
-      <div class="route" aria-label="route">
-        <span class="icao" id="dep">----</span>
-        <span class="arrow">→</span>
-        <span class="icao" id="dest">----</span>
-      </div>
+  <div class="bar" role="img" aria-label="VATSIM flight bar">
+    <div class="left">
+      <span class="dot" aria-hidden="true"></span>
+      <span class="tag">VATSIM</span>
+      <span class="callsign" id="callsign">—</span>
+      <span class="pill" id="pill">PLAN</span>
     </div>
 
-    <div class="row2">
-      <div class="telemetry">
-        <span class="kv"><span class="k">ALT</span><span class="v" id="alt">—</span></span>
-        <span class="kv"><span class="k">SPD</span><span class="v" id="spd">—</span></span>
-      </div>
-      <div class="status" id="status">Waiting for data…</div>
+    <div class="center" aria-label="route">
+      <span class="icao" id="dep">----</span>
+      <span class="arrow">→</span>
+      <span class="icao" id="dest">----</span>
+    </div>
+
+    <div class="right">
+      <span class="kv"><span class="k">ALT</span><span class="v" id="alt">—</span></span>
+      <span class="kv"><span class="k">SPD</span><span class="v" id="spd">—</span></span>
+      <span class="status" id="status">Waiting for data…</span>
     </div>
 
     <div class="borderProg" aria-hidden="true">
@@ -411,23 +469,42 @@
     return t * t * (3 - 2 * t);
   }
 
-  function setDash(el, len, pct){
-    if (!el || !len) return;
-    const draw = len * (pct / 100.0);
-    el.style.strokeDasharray = `${draw} ${Math.max(0, len - draw)}`;
-  }
+    function setDash(el, len, pct) {
+        if (!el || !len) return;
 
-  function setProgressPct(pct){
-    pct = clamp(pct, 0, 100);
+        // Prevent tiny blue line/dot caused by round linecaps when the dash length is ~0
+        pct = clamp(pct, 0, 100);
+        const draw = len * (pct / 100.0);
 
-    setDash(elBpFillTop, pathLenTop, pct);
-    setDash(elBpFillBot, pathLenBot, pct);
+        // If the drawn length is effectively zero, hide the stroke entirely
+        // so the rounded linecap cannot appear.
+        if (draw < 0.75) {   // roughly < 1px
+            el.style.strokeDasharray = `0 ${len}`;
+            el.style.opacity = "0";
+            return;
+        }
 
-    setDash(elBpFillLeft, pathLenLeft, pct);
+        el.style.opacity = "1";
+        el.style.strokeDasharray = `${draw} ${Math.max(0, len - draw)}`;
+    }
 
-    const rightPct = easeInOut((pct - 70) / 30) * 100;
-    setDash(elBpFillRight, pathLenRight, rightPct);
-  }
+    function setProgressPct(pct) {
+        pct = clamp(pct, 0, 100);
+
+        setDash(elBpFillTop, pathLenTop, pct);
+        setDash(elBpFillBot, pathLenBot, pct);
+
+        setDash(elBpFillLeft, pathLenLeft, pct);
+
+        // Only draw the finish edge in the last 2% of the flight
+        const start = 98;
+        const span = 2;
+
+        const t = clamp((pct - start) / span, 0, 1);
+        const rightPct = easeInOut(t) * 100;
+
+        setDash(elBpFillRight, pathLenRight, rightPct);
+    }
 
   // Build border path + keep it in sync
   setSvgPath();
