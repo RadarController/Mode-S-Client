@@ -30,6 +30,7 @@
 #include "AppConfig.h"
 #include "AppState.h"
 #include "core/StringUtil.h"
+#include "http/LocalApiClient.h"
 #include "http/HttpServer.h"
 #include "chat/ChatAggregator.h"
 #include "twitch/TwitchHelixService.h"
@@ -284,81 +285,6 @@ static std::wstring ToW(const std::string& s) {
     return w;
 }
 
-struct HttpResult {
-    int status = 0;
-    DWORD winerr = 0;
-    std::string body;
-};
-
-static HttpResult WinHttpRequest(const std::wstring& method,
-    const std::wstring& host,
-    INTERNET_PORT port,
-    const std::wstring& path,
-    const std::wstring& headers,
-    const std::string& body,
-    bool secure)
-{
-    HttpResult r;
-    DWORD status = 0; DWORD statusSize = sizeof(status);
-    std::string out;
-    HINTERNET hSession = WinHttpOpen(L"Mode-S Client/1.0",
-        WINHTTP_ACCESS_TYPE_NO_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
-    if (!hSession) { r.winerr = GetLastError(); return r; }
-
-// --------------------------- Twitch EventSub (WebSocket) --------------------
-// Receives on-stream events (follow, sub, gift sub) and forwards them into ChatAggregator
-// as synthetic chat messages so the overlay can render them interleaved with chat.
-
-
-    HINTERNET hConnect = WinHttpConnect(hSession, host.c_str(), port, 0);
-    if (!hConnect) { r.winerr = GetLastError(); WinHttpCloseHandle(hSession); return r; }
-
-    DWORD flags = secure ? WINHTTP_FLAG_SECURE : 0;
-    HINTERNET hRequest = WinHttpOpenRequest(hConnect, method.c_str(), path.c_str(),
-        nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, flags);
-    if (!hRequest) { r.winerr = GetLastError(); WinHttpCloseHandle(hConnect); WinHttpCloseHandle(hSession); return r; }
-
-    if (!headers.empty()) {
-        WinHttpAddRequestHeaders(hRequest, headers.c_str(), (ULONG)-1L, WINHTTP_ADDREQ_FLAG_ADD);
-    }
-
-    BOOL ok = WinHttpSendRequest(
-        hRequest,
-        WINHTTP_NO_ADDITIONAL_HEADERS, 0,
-        body.empty() ? WINHTTP_NO_REQUEST_DATA : (LPVOID)body.data(),
-        (DWORD)body.size(),
-        (DWORD)body.size(),
-        0);
-
-    if (!ok) { r.winerr = GetLastError(); goto done; }
-
-    ok = WinHttpReceiveResponse(hRequest, nullptr);
-    if (!ok) { r.winerr = GetLastError(); goto done; }
-    if (WinHttpQueryHeaders(hRequest,
-        WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
-        WINHTTP_HEADER_NAME_BY_INDEX, &status, &statusSize, WINHTTP_NO_HEADER_INDEX))
-    {
-        r.status = (int)status;
-    }
-    for (;;) {
-        DWORD avail = 0;
-        if (!WinHttpQueryDataAvailable(hRequest, &avail)) { r.winerr = GetLastError(); break; }
-        if (avail == 0) break;
-        size_t cur = out.size();
-        out.resize(cur + avail);
-        DWORD read = 0;
-        if (!WinHttpReadData(hRequest, out.data() + cur, avail, &read)) { r.winerr = GetLastError(); break; }
-        out.resize(cur + read);
-    }
-    r.body = std::move(out);
-
-done:
-    WinHttpCloseHandle(hRequest);
-    WinHttpCloseHandle(hConnect);
-    WinHttpCloseHandle(hSession);
-    return r;
-}
-
 static std::wstring GetWindowTextWString(HWND h) {
     int len = GetWindowTextLengthW(h);
     if (len <= 0) return L"";
@@ -437,33 +363,6 @@ static void UpdatePlatformStatusUI(const Metrics& m)
     set(gYouTubeFollowers, L"Followers: " + std::to_wstring(gYouTubeFollowerCount));
 }
 
-// Pull metrics through the local HTTP endpoint so the UI reflects exactly what overlays/OBS see.
-static bool TryFetchMetricsFromApi(Metrics& out)
-{
-    HttpResult r = WinHttpRequest(L"GET", L"127.0.0.1", 17845, L"/api/metrics", L"", "", false);
-    if (r.status != 200 || r.body.empty()) return false;
-
-    try {
-        auto j = nlohmann::json::parse(r.body);
-
-        out.ts_ms = j.value("ts_ms", 0LL);
-        out.twitch_viewers = j.value("twitch_viewers", 0);
-        out.youtube_viewers = j.value("youtube_viewers", 0);
-        out.tiktok_viewers = j.value("tiktok_viewers", 0);
-
-        out.twitch_followers = j.value("twitch_followers", 0);
-        out.youtube_followers = j.value("youtube_followers", 0);
-        out.tiktok_followers = j.value("tiktok_followers", 0);
-
-        out.twitch_live = j.value("twitch_live", false);
-        out.youtube_live = j.value("youtube_live", false);
-        out.tiktok_live = j.value("tiktok_live", false);
-        return true;
-    }
-    catch (...) {
-        return false;
-    }
-}
 static std::string ReadFileUtf8(const std::wstring& path) {
     FILE* f = nullptr;
     _wfopen_s(&f, path.c_str(), L"rb");
