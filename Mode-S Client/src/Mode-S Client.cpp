@@ -574,9 +574,6 @@ static void DestroySplashWindow()
     gSplashLog = nullptr;
 }
 
-
-
-
 // --------------------------- TikTok cookie modal ----------------------------
 struct TikTokCookiesDraft {
     std::wstring sessionid;
@@ -866,77 +863,6 @@ static bool EditTwitchSettingsModal(HWND parent, TwitchSettingsDraft& draft)
     return draft.accepted;
 }
 
-// --------------------------- Platform start helpers -------------------------
-static bool StartOrRestartTikTokSidecar(TikTokSidecar& tiktok,
-    AppState& state,
-    ChatAggregator& chat,
-    HWND hwndMain,
-    HWND hwndLog,
-    HWND hTikTokEdit)
-{
-    std::string raw = ToUtf8(GetWindowTextWString(hTikTokEdit));
-    std::string cleaned = SanitizeTikTok(raw);
-    SetWindowTextW(hTikTokEdit, ToW(cleaned).c_str());
-
-    return PlatformControl::StartOrRestartTikTokSidecar(
-        tiktok, state, chat,
-        GetExeDir(),
-        cleaned,
-        hwndMain,
-        [](const std::wstring& s) { LogLine(s); });
-}
-
-
-static bool StartOrRestartYouTubeSidecar(TikTokSidecar& youtube,
-    AppState& state,
-    ChatAggregator& chat,
-    HWND hwndMain,
-    HWND hwndLog,
-    HWND hYouTubeEdit)
-{
-    std::string raw = ToUtf8(GetWindowTextWString(hYouTubeEdit));
-    std::string cleaned = SanitizeYouTubeHandle(raw);
-    SetWindowTextW(hYouTubeEdit, ToW(cleaned).c_str());
-
-    return PlatformControl::StartOrRestartYouTubeSidecar(
-        youtube, state, chat,
-        GetExeDir(),
-        cleaned,
-        hwndMain,
-        [](const std::wstring& s) { LogLine(s); });
-}
-
-// --------------------------- Clipboard helper -------------------------------
-static void CopyLogToClipboard(HWND hwndOwner)
-{
-    if (!gLog) return;
-    int len = GetWindowTextLengthW(gLog);
-    if (len <= 0) return;
-
-    std::wstring text;
-    text.resize((size_t)len);
-    GetWindowTextW(gLog, text.data(), len + 1);
-
-    if (!OpenClipboard(hwndOwner)) return;
-    EmptyClipboard();
-
-    size_t bytes = (text.size() + 1) * sizeof(wchar_t);
-    HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, bytes);
-    if (hMem) {
-        void* p = GlobalLock(hMem);
-        if (p) {
-            memcpy(p, text.c_str(), bytes);
-            GlobalUnlock(hMem);
-            SetClipboardData(CF_UNICODETEXT, hMem);
-        }
-        else {
-            GlobalFree(hMem);
-        }
-    }
-    CloseClipboard();
-}
-
-
 // --------------------------- Translucent window helper ----------------------
 // Prefer Acrylic blur so the background is translucent but text remains readable.
 // Falls back to layered alpha if unavailable (Windows versions without the API).
@@ -986,151 +912,6 @@ static bool TryEnableAcrylic(HWND hwnd, BYTE bgOpacity /*0..255*/)
     data.cbData = sizeof(policy);
 
     return p(hwnd, &data) != 0;
-}
-
-// --------------------------- Floating Chat Window ---------------------------
-// Floating chat window is now implemented in src/floating/FloatingChat.*
-// --------------------------- Layout -----------------------------------------
-static void LayoutControls(HWND hwnd)
-{
-    RECT rc{};
-    GetClientRect(hwnd, &rc);
-    int W = rc.right - rc.left;
-    int H = rc.bottom - rc.top;
-
-    const int pad = 16;
-    const int gap = 12;
-
-    const int topH = 190;
-    int colW = (W - pad * 2 - gap * 2) / 3;
-    if (colW < 280) colW = 280;
-
-    int x0 = pad;
-    int y0 = pad;
-
-    // Group boxes
-    MoveWindow(hGroupTikTok, x0, y0, colW, topH, TRUE);
-    MoveWindow(hGroupTwitch, x0 + (colW + gap), y0, colW, topH, TRUE);
-    MoveWindow(hGroupYouTube, x0 + 2 * (colW + gap), y0, colW, topH, TRUE);
-
-    const int innerPad = 14;
-    const int labelH = 18;
-    const int editH = 26;
-    const int btnH = 28;
-    const int rowGap = 10;
-
-    // TikTok column
-    {
-        int x = x0 + innerPad;
-        int y = y0 + 28;
-        int w = colW - innerPad * 2;
-
-        MoveWindow(hLblTikTok, x, y, w, labelH, TRUE);
-        y += labelH + 6;
-
-        int editW = w - 32 - 8;
-        MoveWindow(hTikTok, x, y, editW, editH, TRUE);
-        MoveWindow(hTikTokCookies, x + editW + 8, y, 32, editH, TRUE);
-        y += editH + rowGap;
-
-        int bw = (w - gap) / 2;
-        MoveWindow(hStartTikTokBtn, x, y, bw, btnH, TRUE);
-        MoveWindow(hRestartTikTokBtn, x + bw + gap, y, bw, btnH, TRUE);
-        y += btnH + rowGap;
-
-        int infoX = x;
-        int infoY = y;
-        int infoW = w;
-        MoveWindow(gTikTokStatus, infoX, infoY + 0, infoW, 18, TRUE);
-        MoveWindow(gTikTokViewers, infoX, infoY + 20, infoW, 18, TRUE);
-        MoveWindow(gTikTokFollowers, infoX, infoY + 40, infoW, 18, TRUE);
-    }
-
-    // Twitch column
-    {
-        int x = x0 + (colW + gap) + innerPad;
-        int y = y0 + 28;
-        int w = colW - innerPad * 2;
-
-        MoveWindow(hLblTwitch, x, y, w, labelH, TRUE);
-        y += labelH + 6;
-
-        int editW = w - 32 - 8;
-        MoveWindow(hTwitch, x, y, editW, editH, TRUE);
-        MoveWindow(hTwitchSettings, x + editW + 8, y, 32, editH, TRUE);
-        y += editH + rowGap;
-
-        int bw = (w - gap) / 2;
-        MoveWindow(hStartTwitchBtn, x, y, bw, btnH, TRUE);
-        MoveWindow(hRestartTwitchBtn, x + bw + gap, y, bw, btnH, TRUE);
-        y += btnH + rowGap;
-
-        int infoX = x;
-        int infoY = y;
-        int infoW = w;
-        MoveWindow(gTwitchStatus, infoX, infoY + 0, infoW, 18, TRUE);
-        MoveWindow(gTwitchViewers, infoX, infoY + 20, infoW, 18, TRUE);
-        MoveWindow(gTwitchFollowers, infoX, infoY + 40, infoW, 18, TRUE);
-
-    }
-
-    // YouTube column
-    {
-        int x = x0 + 2 * (colW + gap) + innerPad;
-        int y = y0 + 28;
-        int w = colW - innerPad * 2;
-
-        MoveWindow(hLblYouTube, x, y, w, labelH, TRUE);
-        y += labelH + 6;
-
-        MoveWindow(hYouTube, x, y, w, editH, TRUE);
-        y += editH + rowGap;
-
-        int bw = (w - gap) / 2;
-        MoveWindow(hStartYouTubeBtn, x, y, bw, btnH, TRUE);
-        MoveWindow(hRestartYouTubeBtn, x + bw + gap, y, bw, btnH, TRUE);
-        y += btnH + rowGap;
-
-        int infoX = x;
-        int infoY = y;
-        int infoW = w;
-        MoveWindow(gYouTubeStatus, infoX, infoY + 0, infoW, 18, TRUE);
-        MoveWindow(gYouTubeViewers, infoX, infoY + 20, infoW, 18, TRUE);
-        MoveWindow(gYouTubeFollowers, infoX, infoY + 40, infoW, 18, TRUE);
-
-    }
-
-    // Hint line
-    int hintY = y0 + topH + 6;
-    MoveWindow(hHint, pad, hintY, W - pad * 2, 18, TRUE);
-
-    // Settings section (Save button)
-    int settingsTop = hintY + 22;
-    int settingsH = 58;
-    MoveWindow(hGroupSettings, pad, settingsTop, W - pad * 2, settingsH, TRUE);
-
-    // Save button inside settings section
-    int savePad = 12;
-    int saveY = settingsTop + 22;
-    MoveWindow(hSave, pad + savePad, saveY, (W - pad * 2) - savePad * 2, 28, TRUE);
-
-    // Log tools (below Settings block)
-    int toolsY = settingsTop + settingsH + 10;
-
-    int toolH = 28;
-    int toolW = 80;
-    int wideW = 140;
-
-    MoveWindow(hOpenFloatingChatBtn, pad, toolsY, wideW, toolH, TRUE);
-
-    MoveWindow(hClearLogBtn, W - pad - toolW * 2 - gap, toolsY, toolW, toolH, TRUE);
-    MoveWindow(hCopyLogBtn, W - pad - toolW, toolsY, toolW, toolH, TRUE);
-
-    // Log area
-    int logY = toolsY + toolH + 10;
-    int logH = H - logY - pad;
-    if (logH < 140) logH = 140;
-    MoveWindow(gLog, pad, logY, W - pad * 2, logH, TRUE);
 }
 
 // --------------------------- Main Window ------------------------------------
@@ -1261,11 +1042,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         state.set_twitch_viewers(0);
         state.set_twitch_followers(0);
         state.set_twitch_live(false);
-        gTwitchViewerCount = 0;
-        gTwitchFollowerCount = 0;
-        gTwitchLive = false;
-        gTwitchHelixStatus = L"Helix: restarting...";
-        PostMessageW(hwnd, WM_APP + 41, 0, 0);
 
         gTwitchHelixRunning = true;
         gTwitchHelixBoundLogin = login;
@@ -1275,16 +1051,13 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             config,
             state,
             gTwitchHelixRunning,
-            (UINT)(WM_APP + 41),
+            0,
             TwitchHelixUiCallbacks{
                 /*log*/ [](const std::wstring& s) { OutputDebugStringW((s + L"\n").c_str()); },
-                /*set_status*/   [&](const std::wstring& s) {
-                    gTwitchHelixStatus = s;
-                    PostMessageW(hwnd, WM_APP + 41, 0, 0);
-                },
-                /*set_live*/     [&](bool live) { gTwitchLive = live; },
-                /*set_viewers*/  [&](int v) { gTwitchViewerCount = v; },
-                /*set_followers*/[&](int f) { gTwitchFollowerCount = f; }
+                /*set_status*/   [&](const std::wstring& /*s*/) {},
+                /*set_live*/     [&](bool /*live*/) {},
+                /*set_viewers*/  [&](int /*v*/) {},
+                /*set_followers*/[&](int /*f*/) {}
             }
         );
     };
@@ -1293,17 +1066,6 @@ switch (msg) {
 
     case WM_CREATE:
     {
-        if (!gBrushBg)    gBrushBg = CreateSolidBrush(gClrBg);
-        if (!gBrushPanel) gBrushPanel = CreateSolidBrush(gClrPanel);
-        if (!gBrushEdit)  gBrushEdit = CreateSolidBrush(gClrEditBg);
-
-        if (!gFontUi) {
-            LOGFONTW lf{};
-            lf.lfHeight = -16;
-            wcscpy_s(lf.lfFaceName, L"Segoe UI");
-            gFontUi = CreateFontIndirectW(&lf);
-        }
-
         // Load config first (so edits start populated)
         (void)config.Load();
 
@@ -1521,7 +1283,6 @@ catch (...) {
 
             if (!gFloatingChat) gFloatingChat = std::make_unique<FloatingChat>();
 
-            // Init WebView2 (controller + view). Navigation happens once the HTTP server is running.
             HRESULT hr = CreateCoreWebView2EnvironmentWithOptions(
                 nullptr, nullptr, nullptr,
                 Microsoft::WRL::Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
@@ -1540,7 +1301,6 @@ catch (...) {
                                     if (core) {
                                         gMainWebView.Attach(core);
 
-                                        // Allow the /app UI to request native popouts (e.g. chat) via postMessage.
                                         {
                                             EventRegistrationToken tok{};
                                             gMainWebView->add_WebMessageReceived(
@@ -1551,7 +1311,6 @@ catch (...) {
                                                         std::wstring json = jsonRaw ? jsonRaw : L"";
                                                         if (jsonRaw) CoTaskMemFree(jsonRaw);
 
-                                                        // Minimal parsing: look for our command string.
                                                         if (json.find(L"open_chat") != std::wstring::npos) {
                                                             if (gFloatingChat) gFloatingChat->Open(hwnd);
                                                         }
@@ -1560,7 +1319,6 @@ catch (...) {
                                                         &tok);
                                         }
 
-                                        // Fallback: if the UI still calls window.open("/overlay/chat.html"), hijack it.
                                         {
                                             EventRegistrationToken tok{};
                                             gMainWebView->add_NewWindowRequested(
@@ -1573,15 +1331,13 @@ catch (...) {
 
                                                         if (uri.find(L"/overlay/chat.html") != std::wstring::npos) {
                                                             if (gFloatingChat) gFloatingChat->Open(hwnd);
-                                                            args->put_Handled(TRUE); // prevent external popup window
+                                                            args->put_Handled(TRUE);
                                                         }
                                                         return S_OK;
                                                     }).Get(),
                                                         &tok);
                                         }
 
-
-                                        // Tidy defaults
                                         ICoreWebView2Settings* settings = nullptr;
                                         gMainWebView->get_Settings(&settings);
                                         if (settings) {
@@ -1591,19 +1347,16 @@ catch (...) {
                                             settings->Release();
                                         }
 
-                                        // Inject build info for the /app UI (shown bottom-right).
                                         {
-                                            std::wstring build = APP_VERSION_FILE_W; // e.g. 2026.1.25.48417
-                                            // JS: window.__APP_BUILDINFO="..."; set footer on DOMContentLoaded.
+                                            std::wstring build = APP_VERSION_FILE_W;
                                             std::wstring js = L"window.__APP_BUILDINFO='" + build + L"';"
-                                                             L"document.addEventListener('DOMContentLoaded',function(){"
-                                                             L"var el=document.getElementById('buildInfo');"
-                                                             L"if(el){el.textContent=window.__APP_BUILDINFO;}"
-                                                             L"});";
+                                                L"document.addEventListener('DOMContentLoaded',function(){"
+                                                L"var el=document.getElementById('buildInfo');"
+                                                L"if(el){el.textContent=window.__APP_BUILDINFO;}"
+                                                L"});";
                                             gMainWebView->AddScriptToExecuteOnDocumentCreated(js.c_str(), nullptr);
                                         }
 
-                                        // If the HTTP server is already ready, navigate now.
                                         if (gHttpReady.load()) {
                                             gMainWebView->Navigate(kModernUiUrl);
                                         }
@@ -1618,130 +1371,21 @@ catch (...) {
                     }).Get());
             (void)hr;
 
-            // Kick off backend init (HTTP server, pollers, etc.)
+            LogLine(L"Starting Mode-S Client overlay");
+            LogLine(L"Overlay: http://localhost:17845/overlay/chat.html");
+            LogLine(L"Metrics: http://localhost:17845/api/metrics");
+
+            if (config.tiktok_unique_id.empty() && config.twitch_login.empty() && config.youtube_handle.empty()) {
+                LogLine(L"No config.json found yet. Configure your platform details in the Settings page.");
+            }
+            else {
+                LogLine(L"Loaded config.json");
+            }
+
             PostMessageW(hwnd, WM_APP + 1, 0, 0);
             return 0;
-#endif
-
-        // Group boxes
-        hGroupTikTok = CreateWindowW(L"BUTTON", L"TikTok", WS_CHILD | WS_VISIBLE | BS_GROUPBOX, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
-        hGroupTwitch = CreateWindowW(L"BUTTON", L"Twitch", WS_CHILD | WS_VISIBLE | BS_GROUPBOX, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
-        hGroupYouTube = CreateWindowW(L"BUTTON", L"YouTube", WS_CHILD | WS_VISIBLE | BS_GROUPBOX, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
-
-        // Labels + edits
-        hLblTikTok = CreateWindowW(L"STATIC", L"Username (no @)", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
-        hTikTok = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", ToW(config.tiktok_unique_id).c_str(),
-            WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL, 0, 0, 0, 0, hwnd, (HMENU)IDC_TIKTOK_EDIT, nullptr, nullptr);
-        hTikTokCookies = CreateWindowW(L"BUTTON", L"SET", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_TIKTOK_COOKIES, nullptr, nullptr);
-
-        hLblTwitch = CreateWindowW(L"STATIC", L"Channel login", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
-        hTwitch = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", ToW(config.twitch_login).c_str(),
-            WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL, 0, 0, 0, 0, hwnd, (HMENU)IDC_TWITCH_EDIT, nullptr, nullptr);
-        hTwitchSettings = CreateWindowW(L"BUTTON", L"SET", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_TWITCH_SETTINGS, nullptr, nullptr);
-
-        hLblYouTube = CreateWindowW(L"STATIC", L"Handle / Channel", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
-        hYouTube = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", ToW(config.youtube_handle).c_str(),
-            WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL, 0, 0, 0, 0, hwnd, (HMENU)IDC_YOUTUBE_EDIT, nullptr, nullptr);
-
-        // Platform status labels
-        gTikTokStatus = CreateWindowW(L"STATIC", L"Status: OFFLINE", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
-        gTikTokViewers = CreateWindowW(L"STATIC", L"Viewers: 0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
-        gTikTokFollowers = CreateWindowW(L"STATIC", L"Followers: 0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
-
-        gTwitchStatus = CreateWindowW(L"STATIC", L"Status: OFFLINE", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
-        gTwitchViewers = CreateWindowW(L"STATIC", L"Viewers: 0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
-        gTwitchFollowers = CreateWindowW(L"STATIC", L"Followers: 0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
-        gTwitchHelix = CreateWindowW(L"STATIC", gTwitchHelixStatus.c_str(), WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
-
-        gYouTubeStatus = CreateWindowW(L"STATIC", L"Status: OFFLINE", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
-        gYouTubeViewers = CreateWindowW(L"STATIC", L"Viewers: 0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
-        gYouTubeFollowers = CreateWindowW(L"STATIC", L"Followers: 0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
-
-        // Buttons
-        hGroupSettings = CreateWindowW(L"BUTTON", L"Settings", WS_CHILD | WS_VISIBLE | BS_GROUPBOX, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
-        hSave = CreateWindowW(L"BUTTON", L"Save settings", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_SAVE_BTN, nullptr, nullptr);
-
-        hStartTikTokBtn = CreateWindowW(L"BUTTON", L"Start/Restart", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_START_TIKTOK, nullptr, nullptr);
-        hRestartTikTokBtn = CreateWindowW(L"BUTTON", L"Stop", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_RESTART_TIKTOK, nullptr, nullptr);
-
-        hStartTwitchBtn = CreateWindowW(L"BUTTON", L"Start/Restart", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_START_TWITCH, nullptr, nullptr);
-        hRestartTwitchBtn = CreateWindowW(L"BUTTON", L"Stop", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_RESTART_TWITCH, nullptr, nullptr);
-
-        hStartYouTubeBtn = CreateWindowW(L"BUTTON", L"Start/Restart", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_START_YOUTUBE, nullptr, nullptr);
-        hRestartYouTubeBtn = CreateWindowW(L"BUTTON", L"Stop", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_RESTART_YOUTUBE, nullptr, nullptr);
-
-        // Legacy Win32 fallback keeps Stop buttons disabled.
-        // Start/Stop is now intended to be driven from the WebView dashboard via /api/platform/... .
-        if (hRestartTikTokBtn)  EnableWindow(hRestartTikTokBtn, FALSE);
-        if (hRestartTwitchBtn)  EnableWindow(hRestartTwitchBtn, FALSE);
-        if (hRestartYouTubeBtn) EnableWindow(hRestartYouTubeBtn, FALSE);
-
-        // Initial button enable/disable state based on current input values.
-        UpdateTikTokButtons(hTikTok, hStartTikTokBtn, hRestartTikTokBtn);
-        UpdateTwitchButtons(hTwitch, hStartTwitchBtn, hRestartTwitchBtn);
-        UpdateYouTubeButtons(hYouTube, hStartYouTubeBtn, hRestartYouTubeBtn);
-
-        hHint = CreateWindowW(L"STATIC", L"", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
-
-        // Log + tools
-        gLog = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
-            WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_READONLY | WS_VSCROLL, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
-        LogLine(L"APP: UI log initialized");
-
-        hClearLogBtn = CreateWindowW(L"BUTTON", L"Clear", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_CLEAR_LOG, nullptr, nullptr);
-        hCopyLogBtn = CreateWindowW(L"BUTTON", L"Copy", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_COPY_LOG, nullptr, nullptr);
-
-        // Legacy Win32 fallback: open chat button.
-#ifndef IDC_OPEN_CHAT
-#define IDC_OPEN_CHAT        41001
-#endif
-
-        HINSTANCE hInst = GetModuleHandleW(nullptr);
-
-        hOpenFloatingChatBtn = CreateWindowW(
-            L"BUTTON", L"Open Chat",
-            WS_CHILD | WS_VISIBLE,
-            0, 0, 0, 0,
-            hwnd, (HMENU)(INT_PTR)IDC_OPEN_CHAT,
-            hInst, nullptr
-        );
-
-        // Create floating chat manager lazily
-        gFloatingChat = std::make_unique<FloatingChat>();
-
-        // Apply font
-        HWND controls[] = {
-            hGroupTikTok,hGroupTwitch,hGroupYouTube,
-            hLblTikTok,hLblTwitch,hLblYouTube,hHint,hGroupSettings,
-            hTikTok,hTwitch,hYouTube,hTikTokCookies,
-            hSave,hStartTikTokBtn,hRestartTikTokBtn,hStartTwitchBtn,hRestartTwitchBtn,hStartYouTubeBtn,hRestartYouTubeBtn,
-            gTikTokStatus,gTikTokViewers,gTikTokFollowers,
-            gTwitchStatus,gTwitchViewers,gTwitchFollowers,gTwitchHelix,
-            gYouTubeStatus,gYouTubeViewers,gYouTubeFollowers,
-            gLog,hClearLogBtn,hCopyLogBtn,hOpenFloatingChatBtn
-        };
-        for (HWND c : controls) if (c) SendMessageW(c, WM_SETFONT, (WPARAM)gFontUi, TRUE);
-
-
-        // Initial logs
-        LogLine(L"Starting Mode-S Client overlay");
-        LogLine(L"Overlay: http://localhost:17845/overlay/chat.html");
-        LogLine(L"Metrics: http://localhost:17845/api/metrics");
-
-        if (config.tiktok_unique_id.empty() && config.twitch_login.empty() && config.youtube_handle.empty()) {
-            LogLine(L"No config.json found yet. Please enter channel details and click Save.");
         }
-        else {
-            LogLine(L"Loaded config.json");
-        }
-
-        SetWindowTextW(hHint, L"Tip: Save settings first. TikTok cookies are optional unless required by TikTok.");
-
-        UpdateTikTokButtons(hTikTok, hStartTikTokBtn, hRestartTikTokBtn);
-        LayoutControls(hwnd);
-
-        PostMessageW(hwnd, WM_APP + 1, 0, 0);
-
+#endif
         return 0;
     }
     case WM_APP + 1:
@@ -1844,11 +1488,13 @@ catch (...) {
                     hwnd,
                     [](const std::wstring& s) { LogLine(s); });
 
+                if (!ok) return false;
+
                 youtubeChat.start(config.youtube_handle, chat,
                     [](const std::wstring& s) { LogLine(s); },
                     &state);
 
-                return ok;
+                return true;
                 };
 
             opt.stop_youtube = [&]() -> bool {
@@ -1979,7 +1625,7 @@ LogLine(L"TIKTOK: starting followers poller thread");
             TikTokFollowersUiCallbacks{
                 /*log*/           [](const std::wstring& s) { LogLine(s); },
                 /*set_status*/    [](const std::wstring& /*s*/) { /* optional */ },
-                /*set_followers*/ [&](int f) { gTikTokFollowerCount = f; }
+                /*set_followers*/ [&](int /*f*/) {}
             }
         );
         // Twitch OAuth token refresh (silent) - runs during boot while splash is visible
@@ -2049,14 +1695,6 @@ LogLine(L"TIKTOK: starting followers poller thread");
         return 0;
     }
 
-    case WM_APP + 41: // refresh platform metrics UI
-    {
-        Metrics m{};
-        if (TryFetchMetricsFromApi(m)) UpdatePlatformStatusUI(m);
-        else UpdatePlatformStatusUI(state.get_metrics());
-    }
-    return 0;
-
     case WM_APP_LOG:
     {
         auto* heap = reinterpret_cast<std::wstring*>(lParam);
@@ -2083,199 +1721,11 @@ LogLine(L"TIKTOK: starting followers poller thread");
         return 0;
     }
 
-case WM_COMMAND:
-    {
-        // The legacy Win32 dashboard is no longer the active control surface in modern mode.
-        if (gUseModernUi) {
-            return 0;
-        }
-
-        const int id = LOWORD(wParam);
-
-        if (HIWORD(wParam) == EN_CHANGE && id == IDC_TIKTOK_EDIT) {
-            UpdateTikTokButtons(hTikTok, hStartTikTokBtn, hRestartTikTokBtn);
-            return 0;
-        }
-
-
-        if (HIWORD(wParam) == EN_CHANGE && id == IDC_TWITCH_EDIT) {
-            UpdateTwitchButtons(hTwitch, hStartTwitchBtn, hRestartTwitchBtn);
-            return 0;
-        }
-
-        if (HIWORD(wParam) == EN_CHANGE && id == IDC_YOUTUBE_EDIT) {
-            UpdateYouTubeButtons(hYouTube, hStartYouTubeBtn, hRestartYouTubeBtn);
-            return 0;
-        }
-
-
-        if (id == IDC_START_TIKTOK) {
-            StartOrRestartTikTokSidecar(tiktok, state, chat, hwnd, gLog, hTikTok);
-            return 0;
-        }
-
-        if (id == IDC_START_TWITCH) {
-            // Ensure existing Twitch client is stopped before starting to allow restart or channel change
-            twitch.stop();
-            twitchEventSub.Stop();
-
-
-
-            // Apply current UI channel login into config so Helix poller + web UI use the same channel.
-            {
-                std::string newLogin = SanitizeTwitchLogin(ToUtf8(GetWindowTextWString(hTwitch)));
-                if (newLogin != config.twitch_login) {
-                    config.twitch_login = newLogin;
-                    RestartTwitchHelixPoller("channel change");
-                }
-            }
-            // Start authenticated IRC and sink messages directly into ChatAggregator
-            const std::string token = ReadTwitchUserAccessToken();
-
-            bool ok = twitch.StartAuthenticated(
-                SanitizeTwitchLogin(ToUtf8(GetWindowTextWString(hTwitch))),   // login / nick
-                token,                                                       // raw token from config (will be normalized)
-                SanitizeTwitchLogin(ToUtf8(GetWindowTextWString(hTwitch))),   // channel
-                chat
-            );
-
-            if (ok) {
-                LogLine(L"TWITCH: started/restarted IRC client.");
-                // Start EventSub (follows/subs/gifts) using existing OAuth token in config.json
-                twitchEventSub.Start(
-                    config.twitch_client_id,
-                    token,
-                    config.twitch_login,
-                    [&](const ChatMessage& msg)
-                    {
-                        chat.Add(msg);
-                    },
-                    [&](const nlohmann::json& ev)
-                    {
-                        state.add_twitch_eventsub_event(ev);
-                    });
-            }
-            else {
-                LogLine(L"TWITCH: failed to start IRC client (already running or invalid parameters). Consider checking the channel name.");
-            }
-            return 0;
-        }
-
-        
-        if (id == IDC_START_YOUTUBE) {
-            std::string raw = ToUtf8(GetWindowTextWString(hYouTube));
-            std::string cleaned = SanitizeYouTubeHandle(raw);
-            SetWindowTextW(hYouTube, ToW(cleaned).c_str());
-
-            PlatformControl::StartOrRestartYouTubeSidecar(
-                youtube, state, chat,
-                GetExeDir(),
-                cleaned,
-                hwnd,
-                [](const std::wstring& s) { LogLine(s); });
-
-            youtubeChat.start(cleaned, chat,
-                [](const std::wstring& s) { LogLine(s); },
-                &state);
-
-            return 0;
-        }
-
-        if (id == IDC_TIKTOK_COOKIES) {
-            TikTokCookiesDraft draft;
-            draft.sessionid = ToW(config.tiktok_sessionid);
-            draft.sessionid_ss = ToW(config.tiktok_sessionid_ss);
-            draft.tt_target_idc = ToW(config.tiktok_tt_target_idc);
-
-            if (EditTikTokCookiesModal(hwnd, draft) && draft.accepted) {
-                config.tiktok_sessionid = ToUtf8(draft.sessionid);
-                config.tiktok_sessionid_ss = ToUtf8(draft.sessionid_ss);
-                config.tiktok_tt_target_idc = ToUtf8(draft.tt_target_idc);
-                LogLine(L"TikTok cookies updated (not saved yet). Click Save settings to persist.");
-            }
-            return 0;
-        }
-
-        if (id == IDC_TWITCH_SETTINGS) {
-            TwitchSettingsDraft draft;
-            draft.login = ToW(config.twitch_login);
-            draft.client_id = ToW(config.twitch_client_id);
-            draft.client_secret = ToW(config.twitch_client_secret);
-
-            if (EditTwitchSettingsModal(hwnd, draft) && draft.accepted) {
-                config.twitch_login = SanitizeTwitchLogin(ToUtf8(draft.login));
-                config.twitch_client_id = ToUtf8(draft.client_id);
-                config.twitch_client_secret = ToUtf8(draft.client_secret);
-
-                SetWindowTextW(hTwitch, ToW(config.twitch_login).c_str());
-                LogLine(L"Twitch settings updated (not saved yet). Click Save settings to persist.");
-            
-
-                // If the channel login changed, rebound the Helix poller immediately.
-                RestartTwitchHelixPoller("settings");
-}
-            return 0;
-        }
-
-        if (id == IDC_SAVE_BTN) {
-            config.tiktok_unique_id = SanitizeTikTok(ToUtf8(GetWindowTextWString(hTikTok)));
-            SetWindowTextW(hTikTok, ToW(config.tiktok_unique_id).c_str());
-
-            config.twitch_login = SanitizeTwitchLogin(ToUtf8(GetWindowTextWString(hTwitch)));
-            SetWindowTextW(hTwitch, ToW(config.twitch_login).c_str());
-
-            
-
-            // Rebind Helix poller if login changed and user clicked Save.
-            RestartTwitchHelixPoller("save");
-config.youtube_handle = ToUtf8(GetWindowTextWString(hYouTube));
-            config.youtube_handle = Trim(config.youtube_handle);
-            config.youtube_handle = SanitizeYouTubeHandle(config.youtube_handle);
-            SetWindowTextW(hYouTube, ToW(config.youtube_handle).c_str());
-            UpdateYouTubeButtons(hYouTube, hStartYouTubeBtn, hRestartYouTubeBtn);
-
-            // Overlay Style UI removed (will be redesigned on a separate tab/page later)
-
-            if (config.Save()) {
-                LogLine(L"Saved config.json.");
-            }
-            else {
-                LogLine(L"ERROR: Failed to save config.json");
-            }
-
-            UpdateTikTokButtons(hTikTok, hStartTikTokBtn, hRestartTikTokBtn);
-            return 0;
-        }
-
-        if (id == IDC_CLEAR_LOG) {
-            if (gLog) SetWindowTextW(gLog, L"");
-            return 0;
-        }
-
-        if (id == IDC_COPY_LOG) {
-            CopyLogToClipboard(hwnd);
-            LogLine(L"Log copied to clipboard.");
-            return 0;
-        }
-
-        {
-            const int id = LOWORD(wParam);
-
-            if (id == IDC_OPEN_CHAT) {
-                if (gFloatingChat) gFloatingChat->Open(hwnd);
-                return 0;
-            }
-
-            // ...existing handlers...
-            break;
-        }
-    }
-
 case WM_CLOSE:
     BeginShutdown(hwnd);
     return 0;
 
-    case WM_SIZE:
+case WM_SIZE:
 #if HAVE_WEBVIEW2
         if (gUseModernUi && gMainWebController) {
             RECT rc; GetClientRect(hwnd, &rc);
@@ -2283,54 +1733,6 @@ case WM_CLOSE:
             return 0;
         }
 #endif
-        LayoutControls(hwnd);
-        return 0;
-
-    case WM_ERASEBKGND:
-    {
-        RECT rc{};
-        GetClientRect(hwnd, &rc);
-        FillRect((HDC)wParam, &rc, gBrushBg ? gBrushBg : (HBRUSH)(COLOR_WINDOW + 1));
-        return 1;
-    }
-
-    case WM_CTLCOLORSTATIC:
-    {
-        HDC hdc = (HDC)wParam;
-        HWND hCtl = (HWND)lParam;
-
-        if (hCtl == gTikTokStatus || hCtl == gTwitchStatus || hCtl == gYouTubeStatus)
-        {
-            bool live = (hCtl == gTikTokStatus) ? gTikTokLive : (hCtl == gTwitchStatus) ? gTwitchLive : gYouTubeLive;
-            SetBkMode(hdc, TRANSPARENT);
-            SetTextColor(hdc, live ? RGB(0, 200, 0) : RGB(220, 50, 50));
-            return (LRESULT)(gBrushBg ? gBrushBg : GetStockObject(NULL_BRUSH));
-        }
-
-        if (hCtl == gLog)
-        {
-            SetTextColor(hdc, gClrText);
-            SetBkMode(hdc, OPAQUE);
-            SetBkColor(hdc, gClrEditBg);
-            return (LRESULT)(gBrushEdit ? gBrushEdit : GetStockObject(BLACK_BRUSH));
-        }
-
-        SetBkMode(hdc, TRANSPARENT);
-        SetTextColor(hdc, (hCtl == hHint) ? gClrHint : gClrText);
-        return (LRESULT)(gBrushBg ? gBrushBg : GetStockObject(BLACK_BRUSH));
-    }
-
-    case WM_CTLCOLOREDIT:
-    {
-        HDC hdc = (HDC)wParam;
-        HWND hCtl = (HWND)lParam;
-
-        (void)hCtl;
-        SetTextColor(hdc, RGB(0, 0, 0));
-        SetBkMode(hdc, OPAQUE);
-        SetBkColor(hdc, RGB(255, 255, 255));
-        return (INT_PTR)GetStockObject(WHITE_BRUSH);
-    }
 
     case WM_DESTROY:
         // Safety net: if we somehow got here without WM_CLOSE
@@ -2341,11 +1743,6 @@ case WM_CLOSE:
     default:
         break;
     }
-
-	// NOTE: Some builds have ended up with an extra open block inside the WM_* handlers
-	// (usually due to an edit inside a case label). The following brace ensures the
-	// switch scope is fully closed before we return to DefWindowProc.
-	}
 
     return DefWindowProc(hwnd, msg, wParam, lParam);
 }
