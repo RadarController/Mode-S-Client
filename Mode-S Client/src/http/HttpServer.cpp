@@ -1373,6 +1373,10 @@ svr.Get("/auth/twitch/start", [&](const httplib::Request& req, httplib::Response
         out["twitch_login"] = config_.twitch_login;
         out["youtube_handle"] = config_.youtube_handle;
 
+        // Twitch secrets
+        out["twitch_client_id"] = config_.twitch_client_id;
+        out["twitch_client_secret"] = config_.twitch_client_secret;
+
         // TikTok cookie/session fields
         out["tiktok_sessionid"] = config_.tiktok_sessionid;
         out["tiktok_sessionid_ss"] = config_.tiktok_sessionid_ss;
