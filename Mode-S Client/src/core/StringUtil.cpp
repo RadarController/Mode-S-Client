@@ -1,5 +1,6 @@
 #include "StringUtil.h"
 #include <algorithm>
+#include <cctype>
 
 std::string UrlEncode(const std::string& s)
 {
@@ -55,13 +56,11 @@ std::string SanitizeYouTubeHandle(const std::string& input)
 {
     std::string s = Trim(input);
 
-    // YouTube handles are typically "@handle"
     s.erase(std::remove(s.begin(), s.end(), '@'), s.end());
+    s.erase(std::remove_if(s.begin(), s.end(),
+        [](unsigned char c) { return std::isspace(c) != 0; }), s.end());
 
-    // handles cannot contain spaces
-    s.erase(std::remove(s.begin(), s.end(), ' '), s.end());
-
-    return s;
+    return Trim(s);
 }
 
 std::string SanitizeTwitchLogin(std::string s)
@@ -75,4 +74,45 @@ std::string SanitizeTwitchLogin(std::string s)
         [](unsigned char c) { return (char)std::tolower(c); });
 
     return s;
+}
+
+static std::string ReadFileUtf8(const std::wstring& path) {
+    FILE* f = nullptr;
+    _wfopen_s(&f, path.c_str(), L"rb");
+    if (!f) return "";
+    fseek(f, 0, SEEK_END);
+    long sz = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    std::string data;
+    data.resize(sz > 0 ? (size_t)sz : 0);
+    if (sz > 0) fread(data.data(), 1, (size_t)sz, f);
+    fclose(f);
+    return data;
+}
+
+static std::string UrlEncodeGoogleFontFamily(std::string family)
+{
+    for (char& c : family) {
+        if (c == ' ') c = '+';
+    }
+    return family;
+}
+
+static int ClampInt(int v, int lo, int hi)
+{
+    if (v < lo) return lo;
+    if (v > hi) return hi;
+    return v;
+}
+
+static int ParseIntOrDefault(const std::wstring& w, int def)
+{
+    try {
+        if (w.empty()) return def;
+        return std::stoi(w);
+    }
+    catch (...) {
+        return def;
+    }
+
 }
