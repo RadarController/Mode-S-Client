@@ -75,8 +75,7 @@ static ComPtr<ICoreWebView2Controller> gMainWebController;
 static ComPtr<ICoreWebView2>           gMainWebView;
 #endif
 
-// Modern WebView UI is now the primary dashboard/control surface.
-// Flip this to false only for legacy Win32 fallback/debugging.
+// Flip this to false to revert to the legacy Win32 control UI.
 static bool gUseModernUi = true;
 static std::atomic<bool> gHttpReady{ false };
 static const wchar_t* kModernUiUrl = L"http://127.0.0.1:17845/app";
@@ -420,7 +419,7 @@ static void UpdateTikTokButtons(HWND hTikTokEdit, HWND hStartBtn, HWND hRestartB
     auto cleaned = SanitizeTikTok(raw);
     BOOL enable = !cleaned.empty();
     if (hStartBtn)   EnableWindow(hStartBtn, enable);
-    // Legacy Win32 fallback keeps Stop disabled; WebView dashboard is the canonical control path.
+    // Restart/Stop button is disabled for now (Stop functionality not implemented yet).
     if (hRestartBtn) EnableWindow(hRestartBtn, FALSE);
 }
 
@@ -432,7 +431,7 @@ static void UpdateYouTubeButtons(HWND hYouTubeEdit, HWND hStartBtn, HWND hRestar
     auto cleaned = SanitizeYouTubeHandle(raw);
     BOOL enable = !cleaned.empty();
     if (hStartBtn)   EnableWindow(hStartBtn, enable);
-    // Legacy Win32 fallback keeps Stop disabled; WebView dashboard is the canonical control path.
+    // Restart/Stop button is disabled for now (Stop functionality not implemented yet).
     if (hRestartBtn) EnableWindow(hRestartBtn, FALSE);
 }
 
@@ -443,7 +442,7 @@ static void UpdateTwitchButtons(HWND hTwitchEdit, HWND hStartBtn, HWND hStopBtn)
     auto cleaned = SanitizeTwitchLogin(raw);
     BOOL enable = !cleaned.empty();
     if (hStartBtn) EnableWindow(hStartBtn, enable);
-    // Legacy Win32 fallback keeps Stop disabled; WebView dashboard is the canonical control path.
+    // Stop button is disabled for now (Stop functionality not implemented yet).
     if (hStopBtn) EnableWindow(hStopBtn, FALSE);
 }
 
@@ -802,6 +801,10 @@ static LRESULT CALLBACK TikTokCookiesWndProc(HWND hwnd, UINT msg, WPARAM wParam,
 
     case WM_COMMAND:
     {
+        if (gUseModernUi) {
+            return 0;
+        }
+
         const int id = LOWORD(wParam);
         const int code = HIWORD(wParam);
         if ((id == IDOK || id == IDCANCEL) && code == BN_CLICKED)
@@ -1684,7 +1687,8 @@ catch (...) {
         // This keeps all existing backend threads + HTTP API intact, but replaces the legacy Win32 control layout.
 #if HAVE_WEBVIEW2
         if (gUseModernUi) {
-            // Create a hidden log control so existing LogLine() plumbing still works (optional).
+            // Create a hidden log control so existing LogLine() plumbing still works.
+            // The visible dashboard is now WebView-only.
             gLog = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
                 WS_CHILD | ES_MULTILINE | ES_READONLY | WS_VSCROLL, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
 
@@ -1720,7 +1724,6 @@ catch (...) {
                                                         std::wstring json = jsonRaw ? jsonRaw : L"";
                                                         if (jsonRaw) CoTaskMemFree(jsonRaw);
 
-                                                        // Minimal parsing: look for our command string.
                                                         if (json.find(L"open_chat") != std::wstring::npos) {
                                                             if (gFloatingChat) gFloatingChat->Open(hwnd);
                                                         }
@@ -1742,15 +1745,13 @@ catch (...) {
 
                                                         if (uri.find(L"/overlay/chat.html") != std::wstring::npos) {
                                                             if (gFloatingChat) gFloatingChat->Open(hwnd);
-                                                            args->put_Handled(TRUE); // prevent external popup window
+                                                            args->put_Handled(TRUE);
                                                         }
                                                         return S_OK;
                                                     }).Get(),
                                                         &tok);
                                         }
 
-
-                                        // Tidy defaults
                                         ICoreWebView2Settings* settings = nullptr;
                                         gMainWebView->get_Settings(&settings);
                                         if (settings) {
@@ -1760,10 +1761,8 @@ catch (...) {
                                             settings->Release();
                                         }
 
-                                        // Inject build info for the /app UI (shown bottom-right).
                                         {
-                                            std::wstring build = APP_VERSION_FILE_W; // e.g. 2026.1.25.48417
-                                            // JS: window.__APP_BUILDINFO="..."; set footer on DOMContentLoaded.
+                                            std::wstring build = APP_VERSION_FILE_W;
                                             std::wstring js = L"window.__APP_BUILDINFO='" + build + L"';"
                                                              L"document.addEventListener('DOMContentLoaded',function(){"
                                                              L"var el=document.getElementById('buildInfo');"
@@ -1772,7 +1771,6 @@ catch (...) {
                                             gMainWebView->AddScriptToExecuteOnDocumentCreated(js.c_str(), nullptr);
                                         }
 
-                                        // If the HTTP server is already ready, navigate now.
                                         if (gHttpReady.load()) {
                                             gMainWebView->Navigate(kModernUiUrl);
                                         }
@@ -1790,6 +1788,12 @@ catch (...) {
             // Kick off backend init (HTTP server, pollers, etc.)
             PostMessageW(hwnd, WM_APP + 1, 0, 0);
             return 0;
+#else
+            MessageBoxW(hwnd,
+                L"This build requires WebView2 for the main dashboard.",
+                kAppDisplayName,
+                MB_OK | MB_ICONERROR);
+            return -1;
 #endif
 
         // Group boxes
@@ -1839,8 +1843,7 @@ catch (...) {
         hStartYouTubeBtn = CreateWindowW(L"BUTTON", L"Start/Restart", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_START_YOUTUBE, nullptr, nullptr);
         hRestartYouTubeBtn = CreateWindowW(L"BUTTON", L"Stop", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_RESTART_YOUTUBE, nullptr, nullptr);
 
-        // Legacy Win32 fallback keeps Stop buttons disabled.
-        // Start/Stop is now intended to be driven from the WebView dashboard via /api/platform/... .
+        // 'Stop' buttons are placeholders for now (Stop functionality not implemented yet). Disable them.
         if (hRestartTikTokBtn)  EnableWindow(hRestartTikTokBtn, FALSE);
         if (hRestartTwitchBtn)  EnableWindow(hRestartTwitchBtn, FALSE);
         if (hRestartYouTubeBtn) EnableWindow(hRestartYouTubeBtn, FALSE);
@@ -1860,7 +1863,7 @@ catch (...) {
         hClearLogBtn = CreateWindowW(L"BUTTON", L"Clear", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_CLEAR_LOG, nullptr, nullptr);
         hCopyLogBtn = CreateWindowW(L"BUTTON", L"Copy", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_COPY_LOG, nullptr, nullptr);
 
-        // Legacy Win32 fallback: open chat button.
+        // Give open chat button an ID so WM_COMMAND can handle it cleanly
 #ifndef IDC_OPEN_CHAT
 #define IDC_OPEN_CHAT        41001
 #endif
@@ -1930,12 +1933,6 @@ catch (...) {
             opt.overlay_root = std::filesystem::path(GetExeDir()) / "assets" / "overlay";
             // Platform control callbacks for the /app Web UI
             opt.start_tiktok = [&]() -> bool {
-                config.tiktok_unique_id = SanitizeTikTok(config.tiktok_unique_id);
-                if (config.tiktok_unique_id.empty()) {
-                    LogLine(L"TIKTOK: username is empty - refusing to start");
-                    return false;
-                }
-
                 return PlatformControl::StartOrRestartTikTokSidecar(
                     tiktok, state, chat,
                     GetExeDir(),
@@ -1949,20 +1946,10 @@ catch (...) {
             };
 
             opt.start_twitch = [&]() -> bool {
-                config.twitch_login = SanitizeTwitchLogin(config.twitch_login);
-                if (config.twitch_login.empty()) {
-                    LogLine(L"TWITCH: channel login is empty - refusing to start");
-                    return false;
-                }
-
                 std::string token = twitchAuth.GetAccessToken().value_or("");
                 if (token.empty()) {
                     LogLine(L"TWITCH: token not available yet (auth not ready) - refusing to start");
                     return false;
-                }
-
-                if (gTwitchHelixBoundLogin != config.twitch_login) {
-                    RestartTwitchHelixPoller("web dashboard start");
                 }
 
                 const bool ok = PlatformControl::StartOrRestartTwitchIrc(
@@ -2005,12 +1992,6 @@ catch (...) {
             };
 
             opt.start_youtube = [&]() -> bool {
-                config.youtube_handle = SanitizeYouTubeHandle(config.youtube_handle);
-                if (config.youtube_handle.empty()) {
-                    LogLine(L"YOUTUBE: handle/channel is empty - refusing to start");
-                    return false;
-                }
-
                 const bool ok = PlatformControl::StartOrRestartYouTubeSidecar(
                     youtube, state, chat,
                     GetExeDir(),
@@ -2446,9 +2427,11 @@ case WM_CLOSE:
 
     case WM_SIZE:
 #if HAVE_WEBVIEW2
-        if (gUseModernUi && gMainWebController) {
-            RECT rc; GetClientRect(hwnd, &rc);
-            gMainWebController->put_Bounds(rc);
+        if (gUseModernUi) {
+            if (gMainWebController) {
+                RECT rc; GetClientRect(hwnd, &rc);
+                gMainWebController->put_Bounds(rc);
+            }
             return 0;
         }
 #endif
