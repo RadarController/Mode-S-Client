@@ -498,7 +498,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   loadYouTubeVodDraft();
   wireTwitchOAuthPage();
   wireOverlayTitlePage();
-  wireTikTokCookiesPage();
   wireActions();
   await loadSettings();
   await pollMetrics();
@@ -593,6 +592,7 @@ function wireSmartBackButtons(){
     try{
       const ref = document.referrer || "";
       if (ref.includes("/app/settings.html")) return "/app/settings.html";
+      if (ref.includes("/app/twitch_stream.html")) return "/app/settings.html";
     }catch(_){}
     return "/app/index.html";
   }
@@ -727,36 +727,21 @@ function wireTwitchOAuthPage(){
   const elCopy = document.getElementById("btnTwitchOAuthCopy");
   const elStatus = document.getElementById("twitchOAuthStatus");
 
-  const elLogin = document.getElementById("twitchLogin");
-  const elClientId = document.getElementById("twitchClientId");
-  const elClientSecret = document.getElementById("twitchClientSecret");
-  const elSaveSettings = document.getElementById("btnSaveTwitchSettings");
-  const elSettingsStatus = document.getElementById("twitchSettingsStatus");
-
   const setStatus = (t)=>{ if(elStatus) elStatus.textContent = t || ""; };
-  const setSettingsStatus = (t)=>{ if(elSettingsStatus) elSettingsStatus.textContent = t || ""; };
 
   async function load(){
     try{
-      const [authInfo, settings] = await Promise.all([
-        apiGet("/api/twitch/auth/info"),
-        apiGet("/api/settings")
-      ]);
+      const j = await apiGet("/api/twitch/auth/info");
+      if(elScopes) elScopes.textContent = (j.scopes_readable || "").trim();
 
-      if(elScopes) elScopes.textContent = (authInfo.scopes_readable || "").trim();
-
-      if (elLogin) elLogin.value = sanitizeTwitch(settings.twitch_login || "");
-      if (elClientId) elClientId.value = settings.twitch_client_id || "";
-      if (elClientSecret) elClientSecret.value = settings.twitch_client_secret || "";
-
-      if(authInfo.oauth_routes_wired === false){
+      if(j.oauth_routes_wired === false){
         setStatus("OAuth routes are not wired in this build.");
-        if (elStart) elStart.disabled = true;
-        if (elCopy) elCopy.disabled = true;
+        elStart && (elStart.disabled = true);
+        elCopy && (elCopy.disabled = true);
         return;
       }
 
-      const startUrl = authInfo.start_url || "/auth/twitch/start";
+      const startUrl = j.start_url || "/auth/twitch/start";
       const abs = `${window.location.origin}${startUrl}`;
 
       elStart?.addEventListener("click", () => {
@@ -769,6 +754,7 @@ function wireTwitchOAuthPage(){
           await navigator.clipboard.writeText(abs);
           setStatus("Copied start URL.");
         }catch(e){
+          // Fallback
           const ta = document.createElement("textarea");
           ta.value = abs;
           document.body.appendChild(ta);
@@ -780,48 +766,15 @@ function wireTwitchOAuthPage(){
       });
 
       setStatus("");
-      setSettingsStatus("");
     }catch(e){
-      console.warn("Failed to load Twitch OAuth/settings info", e);
+      console.warn("Failed to load Twitch OAuth info", e);
       setStatus("Could not load OAuth info.");
-      setSettingsStatus("Could not load Twitch settings.");
     }
   }
-
-  async function saveSettings(){
-    setSettingsStatus("Saving…");
-    try{
-      const body = {
-        twitch_login: sanitizeTwitch(elLogin?.value || ""),
-        twitch_client_id: (elClientId?.value || "").trim(),
-        twitch_client_secret: elClientSecret?.value || ""
-      };
-
-      const j = await apiPost("/api/settings/save", body);
-      if(j && j.ok === false) throw new Error(j.error || "ok=false");
-
-      if (elLogin) elLogin.value = body.twitch_login;
-      setSettingsStatus("Saved");
-      return true;
-    }catch(e){
-      console.error("Failed to save Twitch settings", e);
-      setSettingsStatus("Save failed");
-      return false;
-    }
-  }
-
-  elSaveSettings?.addEventListener("click", saveSettings);
-
-  [elLogin, elClientId, elClientSecret].forEach((el) => {
-    el?.addEventListener("keydown", async (ev) => {
-      if (ev.key !== "Enter") return;
-      ev.preventDefault();
-      await saveSettings();
-    });
-  });
 
   load();
 }
+
 
 function debounce(fn, ms){
   let t;
@@ -988,57 +941,3 @@ document.addEventListener("DOMContentLoaded", () => {
   if (d) d.addEventListener("blur", saveYouTubeVodDraft);
   if (b) b.addEventListener("click", (e) => { e.preventDefault(); applyYouTubeVod(); });
 });
-
-
-
-function wireTikTokCookiesPage(){
-
-  const root = document.getElementById("tiktokCookiesPage");
-  if(!root) return;
-
-  const s1 = document.getElementById("ttSession");
-  const s2 = document.getElementById("ttSessionSS");
-  const s3 = document.getElementById("ttTarget");
-
-  const btn = document.getElementById("btnSaveTikTokCookies");
-  const status = document.getElementById("tiktokCookieStatus");
-
-  const setStatus = (t)=>{ if(status) status.textContent = t||""; };
-
-  async function load(){
-    try{
-      const j = await apiGet("/api/settings");
-
-      s1.value = j.tiktok_sessionid || "";
-      s2.value = j.tiktok_sessionid_ss || "";
-      s3.value = j.tiktok_tt_target_idc || "";
-
-      setStatus("");
-    }catch(e){
-      setStatus("Failed to load");
-    }
-  }
-
-  async function save(){
-    setStatus("Saving…");
-
-    const body = {
-      tiktok_sessionid: s1.value,
-      tiktok_sessionid_ss: s2.value,
-      tiktok_tt_target_idc: s3.value
-    };
-
-    try{
-      const j = await apiPost("/api/settings/save", body);
-      if(j && j.ok === false) throw new Error("ok=false");
-
-      setStatus("Saved");
-    }catch(e){
-      setStatus("Save failed");
-    }
-  }
-
-  btn?.addEventListener("click", save);
-
-  load();
-}
