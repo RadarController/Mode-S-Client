@@ -75,7 +75,8 @@ static ComPtr<ICoreWebView2Controller> gMainWebController;
 static ComPtr<ICoreWebView2>           gMainWebView;
 #endif
 
-// Flip this to false to revert to the legacy Win32 control UI.
+// Modern WebView UI is now the primary dashboard/control surface.
+// Flip this to false only for legacy Win32 fallback/debugging.
 static bool gUseModernUi = true;
 static std::atomic<bool> gHttpReady{ false };
 static const wchar_t* kModernUiUrl = L"http://127.0.0.1:17845/app";
@@ -419,7 +420,7 @@ static void UpdateTikTokButtons(HWND hTikTokEdit, HWND hStartBtn, HWND hRestartB
     auto cleaned = SanitizeTikTok(raw);
     BOOL enable = !cleaned.empty();
     if (hStartBtn)   EnableWindow(hStartBtn, enable);
-    // Restart/Stop button is disabled for now (Stop functionality not implemented yet).
+    // Legacy Win32 fallback keeps Stop disabled; WebView dashboard is the canonical control path.
     if (hRestartBtn) EnableWindow(hRestartBtn, FALSE);
 }
 
@@ -431,7 +432,7 @@ static void UpdateYouTubeButtons(HWND hYouTubeEdit, HWND hStartBtn, HWND hRestar
     auto cleaned = SanitizeYouTubeHandle(raw);
     BOOL enable = !cleaned.empty();
     if (hStartBtn)   EnableWindow(hStartBtn, enable);
-    // Restart/Stop button is disabled for now (Stop functionality not implemented yet).
+    // Legacy Win32 fallback keeps Stop disabled; WebView dashboard is the canonical control path.
     if (hRestartBtn) EnableWindow(hRestartBtn, FALSE);
 }
 
@@ -442,7 +443,7 @@ static void UpdateTwitchButtons(HWND hTwitchEdit, HWND hStartBtn, HWND hStopBtn)
     auto cleaned = SanitizeTwitchLogin(raw);
     BOOL enable = !cleaned.empty();
     if (hStartBtn) EnableWindow(hStartBtn, enable);
-    // Stop button is disabled for now (Stop functionality not implemented yet).
+    // Legacy Win32 fallback keeps Stop disabled; WebView dashboard is the canonical control path.
     if (hStopBtn) EnableWindow(hStopBtn, FALSE);
 }
 
@@ -1838,7 +1839,8 @@ catch (...) {
         hStartYouTubeBtn = CreateWindowW(L"BUTTON", L"Start/Restart", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_START_YOUTUBE, nullptr, nullptr);
         hRestartYouTubeBtn = CreateWindowW(L"BUTTON", L"Stop", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_RESTART_YOUTUBE, nullptr, nullptr);
 
-        // 'Stop' buttons are placeholders for now (Stop functionality not implemented yet). Disable them.
+        // Legacy Win32 fallback keeps Stop buttons disabled.
+        // Start/Stop is now intended to be driven from the WebView dashboard via /api/platform/... .
         if (hRestartTikTokBtn)  EnableWindow(hRestartTikTokBtn, FALSE);
         if (hRestartTwitchBtn)  EnableWindow(hRestartTwitchBtn, FALSE);
         if (hRestartYouTubeBtn) EnableWindow(hRestartYouTubeBtn, FALSE);
@@ -1858,7 +1860,7 @@ catch (...) {
         hClearLogBtn = CreateWindowW(L"BUTTON", L"Clear", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_CLEAR_LOG, nullptr, nullptr);
         hCopyLogBtn = CreateWindowW(L"BUTTON", L"Copy", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_COPY_LOG, nullptr, nullptr);
 
-        // Give open chat button an ID so WM_COMMAND can handle it cleanly
+        // Legacy Win32 fallback: open chat button.
 #ifndef IDC_OPEN_CHAT
 #define IDC_OPEN_CHAT        41001
 #endif
