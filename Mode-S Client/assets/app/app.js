@@ -498,7 +498,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   loadYouTubeVodDraft();
   wireTwitchOAuthPage();
   wireOverlayTitlePage();
-  wireTikTokCookiesPage();
   wireActions();
   await loadSettings();
   await pollMetrics();
@@ -593,6 +592,7 @@ function wireSmartBackButtons(){
     try{
       const ref = document.referrer || "";
       if (ref.includes("/app/settings.html")) return "/app/settings.html";
+      if (ref.includes("/app/twitch_stream.html")) return "/app/settings.html";
     }catch(_){}
     return "/app/index.html";
   }
@@ -941,57 +941,3 @@ document.addEventListener("DOMContentLoaded", () => {
   if (d) d.addEventListener("blur", saveYouTubeVodDraft);
   if (b) b.addEventListener("click", (e) => { e.preventDefault(); applyYouTubeVod(); });
 });
-
-
-
-function wireTikTokCookiesPage(){
-
-  const root = document.getElementById("tiktokCookiesPage");
-  if(!root) return;
-
-  const s1 = document.getElementById("ttSession");
-  const s2 = document.getElementById("ttSessionSS");
-  const s3 = document.getElementById("ttTarget");
-
-  const btn = document.getElementById("btnSaveTikTokCookies");
-  const status = document.getElementById("tiktokCookieStatus");
-
-  const setStatus = (t)=>{ if(status) status.textContent = t||""; };
-
-  async function load(){
-    try{
-      const j = await apiGet("/api/settings");
-
-      s1.value = j.tiktok_sessionid || "";
-      s2.value = j.tiktok_sessionid_ss || "";
-      s3.value = j.tiktok_tt_target_idc || "";
-
-      setStatus("");
-    }catch(e){
-      setStatus("Failed to load");
-    }
-  }
-
-  async function save(){
-    setStatus("Saving…");
-
-    const body = {
-      tiktok_sessionid: s1.value,
-      tiktok_sessionid_ss: s2.value,
-      tiktok_tt_target_idc: s3.value
-    };
-
-    try{
-      const j = await apiPost("/api/settings/save", body);
-      if(j && j.ok === false) throw new Error("ok=false");
-
-      setStatus("Saved");
-    }catch(e){
-      setStatus("Save failed");
-    }
-  }
-
-  btn?.addEventListener("click", save);
-
-  load();
-}

@@ -22,9 +22,12 @@ html,body{height:100%}
 body{
   margin:0;
   font-family:var(--sans);
-  background:radial-gradient(1200px 700px at 20% 0%, rgba(59,130,246,.22), transparent 60%),
-             radial-gradient(900px 600px at 90% 20%, rgba(59,130,246,.14), transparent 55%),
-             var(--bg);
+  background:
+    radial-gradient(1200px 700px at 20% 0%, rgba(59,130,246,.22), transparent 60%),
+    radial-gradient(900px 600px at 90% 20%, rgba(59,130,246,.14), transparent 55%),
+    var(--bg);
+  background-repeat:no-repeat;
+  background-attachment:fixed;
   color:var(--text);
 }
 
