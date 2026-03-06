@@ -67,218 +67,198 @@ static std::wstring ToW(const std::string& s) {
 
 namespace PlatformControl {
 
-bool StartOrRestartTikTokSidecar(
-    TikTokSidecar& tiktok,
-    AppState& state,
-    ChatAggregator& chat,
-    const std::wstring& exeDir,
-    const std::string& tiktokUniqueId,
-    HWND hwndMain,
-    LogFn log)
-{
-    std::string cleaned = SanitizeTikTok(tiktokUniqueId);
-    if (cleaned.empty()) {
-        if (log) log(L"TikTok username is empty. Enter it first.");
-        return false;
-    }
-
-    tiktok.stop();
-
-    std::wstring sidecarPath = exeDir + L"\\sidecar\\tiktok_sidecar.py";
-    if (log) log(L"Starting python sidecar: " + sidecarPath);
-
-    _wputenv_s(L"WHITELIST_AUTHENTICATED_SESSION_ID_HOST", L"tiktok.eulerstream.com");
-
-    bool ok = tiktok.start(L"python", sidecarPath, [log, hwndMain, &state, &chat](const json& j) {
-        std::string type = j.value("type", "");
-        std::string msg = j.value("message", "");
-        if (type.rfind("tiktok.", 0) == 0 && log) {
-            std::string extra;
-            if (!msg.empty()) extra = " | " + msg;
-            log(ToW("TIKTOK: " + type + extra));
+    bool StartOrRestartTikTokSidecar(
+        TikTokSidecar& tiktok,
+        AppState& state,
+        ChatAggregator& chat,
+        const std::wstring& exeDir,
+        const std::string& tiktokUniqueId,
+        LogFn log)
+    {
+        std::string cleaned = SanitizeTikTok(tiktokUniqueId);
+        if (cleaned.empty()) {
+            if (log) log(L"TikTok username is empty. Enter it first.");
+            return false;
         }
 
-        auto uiPing = [hwndMain](){
-            if (hwndMain) PostMessageW(hwndMain, WM_APP + 41, 0, 0);
-        };
+        tiktok.stop();
 
-        if (type == "tiktok.connected") {
-            state.set_tiktok_live(true);
-            uiPing();
-        } else if (type == "tiktok.disconnected" || type == "tiktok.offline" || type == "tiktok.error") {
-            state.set_tiktok_live(false);
-            state.set_tiktok_viewers(0);
-            uiPing();
-        } else if (type == "tiktok.event") {
-            EventItem e;
-            e.platform = "tiktok";
-            e.type = j.value("event_type", j.value("kind", j.value("event", "")));
-            if (e.type.empty()) e.type = "event";
-            e.user = j.value("user", "unknown");
-            e.message = j.value("message", "");
-            if (j.contains("ts_ms")) e.ts_ms = (std::int64_t)j.value("ts_ms", 0LL);
-            else {
-                double ts = j.value("ts", 0.0);
-                e.ts_ms = (std::int64_t)(ts * 1000.0);
+        std::wstring sidecarPath = exeDir + L"\\sidecar\\tiktok_sidecar.py";
+        if (log) log(L"Starting python sidecar: " + sidecarPath);
+
+        _wputenv_s(L"WHITELIST_AUTHENTICATED_SESSION_ID_HOST", L"tiktok.eulerstream.com");
+
+        bool ok = tiktok.start(L"python", sidecarPath, [log, &state, &chat](const json& j) {
+            std::string type = j.value("type", "");
+            std::string msg = j.value("message", "");
+            if (type.rfind("tiktok.", 0) == 0 && log) {
+                std::string extra;
+                if (!msg.empty()) extra = " | " + msg;
+                log(ToW("TIKTOK: " + type + extra));
             }
-            state.push_tiktok_event(e);
-            // Mirror YouTube/Twitch behaviour: also inject TikTok events into the unified chat feed.
-            // This avoids relying on chat.html polling /api/tiktok/events and keeps everything server-side.
-            ChatMessage c;
+
+            if (type == "tiktok.connected") {
+                state.set_tiktok_live(true);
+            }
+            else if (type == "tiktok.disconnected" || type == "tiktok.offline" || type == "tiktok.error") {
+                state.set_tiktok_live(false);
+                state.set_tiktok_viewers(0);
+            }
+            else if (type == "tiktok.event") {
+                EventItem e;
+                e.platform = "tiktok";
+                e.type = j.value("event_type", j.value("kind", j.value("event", "")));
+                if (e.type.empty()) e.type = "event";
+                e.user = j.value("user", "unknown");
+                e.message = j.value("message", "");
+                if (j.contains("ts_ms")) e.ts_ms = (std::int64_t)j.value("ts_ms", 0LL);
+                else {
+                    double ts = j.value("ts", 0.0);
+                    e.ts_ms = (std::int64_t)(ts * 1000.0);
+                }
+                state.push_tiktok_event(e);
+
+                ChatMessage c;
                 c.platform = "tiktok";
                 c.user = e.user;
                 c.message = e.message;
                 c.ts_ms = e.ts_ms;
                 c.is_event = true;
                 chat.Add(std::move(c));
-            uiPing();
-        } else if (type == "tiktok.chat") {
-            ChatMessage c;
-            c.platform = "tiktok";
-            c.user = j.value("user", "unknown");
-            c.message = j.value("message", "");
-            double ts = j.value("ts", 0.0);
-            c.ts_ms = (std::int64_t)(ts * 1000.0);
-            chat.Add(std::move(c));
-        } else if (type == "tiktok.stats") {
-            bool live = j.value("live", false);
-            int viewers = j.value("viewers", 0);
-
-            state.set_tiktok_live(live);
-            state.set_tiktok_viewers(viewers);
-
-            if (j.contains("followers")) {
-                state.set_tiktok_followers(j.value("followers", 0));
             }
-            uiPing();
-        } else if (type == "tiktok.viewers") {
-            state.set_tiktok_viewers(j.value("viewers", 0));
-            uiPing();
+            else if (type == "tiktok.chat") {
+                ChatMessage c;
+                c.platform = "tiktok";
+                c.user = j.value("user", "unknown");
+                c.message = j.value("message", "");
+                double ts = j.value("ts", 0.0);
+                c.ts_ms = (std::int64_t)(ts * 1000.0);
+                chat.Add(std::move(c));
+            }
+            else if (type == "tiktok.stats") {
+                bool live = j.value("live", false);
+                int viewers = j.value("viewers", 0);
+
+                state.set_tiktok_live(live);
+                state.set_tiktok_viewers(viewers);
+
+                if (j.contains("followers")) {
+                    state.set_tiktok_followers(j.value("followers", 0));
+                }
+            }
+            else if (type == "tiktok.viewers") {
+                state.set_tiktok_viewers(j.value("viewers", 0));
+            }
+            });
+
+        if (log) {
+            log(ok ? L"TikTok sidecar started/restarted." :
+                L"ERROR: Could not start TikTok sidecar. Check Python + TikTokLive install.");
         }
-    });
-
-    if (log) {
-        log(ok ? L"TikTok sidecar started/restarted." :
-                 L"ERROR: Could not start TikTok sidecar. Check Python + TikTokLive install.");
-    }
-    return ok;
-}
-
-bool StartOrRestartYouTubeSidecar(
-    TikTokSidecar& youtube,
-    AppState& state,
-    ChatAggregator& chat,
-    const std::wstring& exeDir,
-    const std::string& youtubeHandle,
-    HWND hwndMain,
-    LogFn log)
-{
-    std::string cleaned = SanitizeYouTubeHandle(youtubeHandle);
-    if (cleaned.empty()) {
-        if (log) log(L"YouTube handle is empty. Enter it first.");
-        return false;
+        return ok;
     }
 
-    youtube.stop();
-
-    std::wstring sidecarPath = exeDir + L"\\sidecar\\youtube_sidecar.py";
-    if (log) log(L"Starting python sidecar: " + sidecarPath);
-
-    bool ok = youtube.start(L"python", sidecarPath, [log, hwndMain, &state, &chat](const json& j) {
-        std::string type = j.value("type", "");
-        std::string msg = j.value("message", "");
-
-        if (type.rfind("youtube.", 0) == 0 && log) {
-            std::string extra;
-            if (!msg.empty()) extra = " | " + msg;
-            log(ToW("YOUTUBE: " + type + extra));
+    bool StartOrRestartYouTubeSidecar(
+        TikTokSidecar& youtube,
+        AppState& state,
+        ChatAggregator& chat,
+        const std::wstring& exeDir,
+        const std::string& youtubeHandle,
+        LogFn log)
+    {
+        std::string cleaned = SanitizeYouTubeHandle(youtubeHandle);
+        if (cleaned.empty()) {
+            if (log) log(L"YouTube handle is empty. Enter it first.");
+            return false;
         }
 
-        auto uiPing = [hwndMain](){
-            if (hwndMain) PostMessageW(hwndMain, WM_APP + 41, 0, 0);
-        };
+        youtube.stop();
 
-        if (type == "youtube.connected") {
-            // "connected" just means the sidecar is running / reachable, not that the channel is live.
-            // Live state should come from youtube.stats.
-            state.set_youtube_live(false);
-            uiPing();
-        } else if (type == "youtube.disconnected" || type == "youtube.offline" || type == "youtube.error") {
-            state.set_youtube_live(false);
-            state.set_youtube_viewers(0);
-            uiPing();
-        } else if (type == "youtube.chat") {
-            ChatMessage c;
-            c.platform = "youtube";
-            c.user = j.value("user", "unknown");
-            c.message = j.value("message", "");
-            double ts = j.value("ts", 0.0);
-            c.ts_ms = (std::int64_t)(ts * 1000.0);
-            chat.Add(std::move(c));
-        }
-        else if (type == "youtube.followers_delta") {
-            // Synthetic "follow" approximation (no identity available on YouTube).
-            const int delta = j.value("delta", 0);
-            const int followers = j.value("followers", 0);
+        std::wstring sidecarPath = exeDir + L"\\sidecar\\youtube_sidecar.py";
+        if (log) log(L"Starting python sidecar: " + sidecarPath);
 
-            if (followers > 0) {
-                state.set_youtube_followers(followers);
+        bool ok = youtube.start(L"python", sidecarPath, [log, &state, &chat](const json& j) {
+            std::string type = j.value("type", "");
+            std::string msg = j.value("message", "");
+
+            if (type.rfind("youtube.", 0) == 0 && log) {
+                std::string extra;
+                if (!msg.empty()) extra = " | " + msg;
+                log(ToW("YOUTUBE: " + type + extra));
             }
 
-            // Prefer sidecar-supplied timestamp, fall back to "now".
-            std::int64_t ts_ms = 0;
-            if (j.contains("ts")) {
-                const double ts = j.value("ts", 0.0);
-                ts_ms = (std::int64_t)(ts * 1000.0);
+            if (type == "youtube.connected") {
+                state.set_youtube_live(false);
             }
-            if (ts_ms <= 0) {
-                ts_ms = (std::int64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
-                    std::chrono::system_clock::now().time_since_epoch()
-                ).count();
+            else if (type == "youtube.disconnected" || type == "youtube.offline" || type == "youtube.error") {
+                state.set_youtube_live(false);
+                state.set_youtube_viewers(0);
             }
-
-            // Emit N events if delta jumps > 1 (keeps behaviour consistent with multiple follows).
-            const int n = (std::max)(0, (std::min)(delta, 25)); // cap to avoid burst spam
-            for (int i = 0; i < n; ++i) {
-                // 1) Chat line (YouTube styling in chat overlay)
-                // Note: chat overlay format varies; we aim for the visible phrase "Someone followed".
+            else if (type == "youtube.chat") {
                 ChatMessage c;
                 c.platform = "youtube";
-                c.user = "Someone";
-                c.message = "followed 👋";
-                c.ts_ms = ts_ms + i; // micro-spread for stable ordering / ids
-                c.is_event = true;
+                c.user = j.value("user", "unknown");
+                c.message = j.value("message", "");
+                double ts = j.value("ts", 0.0);
+                c.ts_ms = (std::int64_t)(ts * 1000.0);
                 chat.Add(std::move(c));
-
-                // 2) Alert event for /api/youtube/events (consumed by alerts.js)
-                EventItem e;
-                e.platform = "youtube";
-                e.type = "subscribe";     // <-- this triggers your alerts.js mapping
-                e.user = "Someone";
-                e.message = "followed 👋";   // safe; alerts.js won’t overwrite ATC phrase for "followed"
-                e.ts_ms = ts_ms + i;
-                state.push_youtube_event(e);
             }
-            uiPing();
-        } else if (type == "youtube.stats") {
-            bool live = j.value("live", false);
-            int viewers = j.value("viewers", 0);
-            state.set_youtube_live(live);
-            state.set_youtube_viewers(viewers);
-            if (j.contains("followers")) state.set_youtube_followers(j.value("followers", 0));
-            uiPing();
-        } else if (type == "youtube.viewers") {
-            state.set_youtube_viewers(j.value("viewers", 0));
-            uiPing();
-        }
-    });
+            else if (type == "youtube.followers_delta") {
+                const int delta = j.value("delta", 0);
+                const int followers = j.value("followers", 0);
 
-    if (log) {
-        log(ok ? L"YouTube sidecar started/restarted." :
-                 L"ERROR: Could not start YouTube sidecar. Check Python + deps.");
+                if (followers > 0) {
+                    state.set_youtube_followers(followers);
+                }
+
+                std::int64_t ts_ms = 0;
+                if (j.contains("ts")) {
+                    const double ts = j.value("ts", 0.0);
+                    ts_ms = (std::int64_t)(ts * 1000.0);
+                }
+                if (ts_ms <= 0) {
+                    ts_ms = (std::int64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::system_clock::now().time_since_epoch()
+                    ).count();
+                }
+
+                const int n = (std::max)(0, (std::min)(delta, 25));
+                for (int i = 0; i < n; ++i) {
+                    ChatMessage c;
+                    c.platform = "youtube";
+                    c.user = "Someone";
+                    c.message = "followed 👋";
+                    c.ts_ms = ts_ms + i;
+                    c.is_event = true;
+                    chat.Add(std::move(c));
+
+                    EventItem e;
+                    e.platform = "youtube";
+                    e.type = "subscribe";
+                    e.user = "Someone";
+                    e.message = "followed 👋";
+                    e.ts_ms = ts_ms + i;
+                    state.push_youtube_event(e);
+                }
+            }
+            else if (type == "youtube.stats") {
+                bool live = j.value("live", false);
+                int viewers = j.value("viewers", 0);
+                state.set_youtube_live(live);
+                state.set_youtube_viewers(viewers);
+                if (j.contains("followers")) state.set_youtube_followers(j.value("followers", 0));
+            }
+            else if (type == "youtube.viewers") {
+                state.set_youtube_viewers(j.value("viewers", 0));
+            }
+            });
+
+        if (log) {
+            log(ok ? L"YouTube sidecar started/restarted." :
+                L"ERROR: Could not start YouTube sidecar. Check Python + deps.");
+        }
+        return ok;
     }
-    return ok;
-}
 
 bool StartOrRestartTwitchIrc(
     TwitchIrcWsClient& twitch,
@@ -315,25 +295,22 @@ bool StartOrRestartTwitchIrc(
     }
     return ok;
 }
-void StopTikTok(TikTokSidecar& tiktok, AppState& state, HWND hwndMain, UINT uiMsg, LogFn log) {
+void StopTikTok(TikTokSidecar& tiktok, AppState& state, LogFn log) {
     tiktok.stop();
     state.set_tiktok_live(false);
     state.set_tiktok_viewers(0);
-    if (hwndMain) PostMessageW(hwndMain, uiMsg, 0, 0);
     if (log) log(L"TIKTOK: stopped.");
 }
-void StopYouTube(TikTokSidecar& youtube, AppState& state, HWND hwndMain, UINT uiMsg, LogFn log) {
+void StopYouTube(TikTokSidecar& youtube, AppState& state, LogFn log) {
     youtube.stop();
     state.set_youtube_live(false);
     state.set_youtube_viewers(0);
-    if (hwndMain) PostMessageW(hwndMain, uiMsg, 0, 0);
     if (log) log(L"YOUTUBE: stopped.");
 }
-void StopTwitch(TwitchIrcWsClient& twitch, AppState& state, HWND hwndMain, UINT uiMsg, LogFn log) {
+void StopTwitch(TwitchIrcWsClient& twitch, AppState& state, LogFn log) {
     twitch.stop();
     state.set_twitch_live(false);
     state.set_twitch_viewers(0);
-    if (hwndMain) PostMessageW(hwndMain, uiMsg, 0, 0);
     if (log) log(L"TWITCH: stopped.");
 }
 

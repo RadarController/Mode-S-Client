@@ -43,6 +43,10 @@
 #include "floating/FloatingChat.h"
 #include "platform/PlatformControl.h"
 
+#ifndef HAVE_WEBVIEW2
+#error Mode-S Client now requires WebView2 to build.
+#endif
+
 // Web UI log capture: LogLine() will also push into AppState so /api/log can display it.
 static AppState* gStateForWebLog = nullptr;
 
@@ -55,7 +59,6 @@ static std::string ToUtf8(const std::wstring& w) {
 }
 
 // --------------------------- WebView2 (Modern UI host) ----------------------
-#if !defined(HAVE_WEBVIEW2)
 #  if defined(__has_include)
 #    if __has_include("WebView2.h")
 #      include <wrl.h>
@@ -67,17 +70,11 @@ static std::string ToUtf8(const std::wstring& w) {
 #  else
 #    define HAVE_WEBVIEW2 0
 #  endif
-#endif
 
-#if HAVE_WEBVIEW2
 using Microsoft::WRL::ComPtr;
 static ComPtr<ICoreWebView2Controller> gMainWebController;
 static ComPtr<ICoreWebView2>           gMainWebView;
-#endif
 
-// Modern WebView UI is now the primary dashboard/control surface.
-// Flip this to false only for legacy Win32 fallback/debugging.
-static bool gUseModernUi = true;
 static std::atomic<bool> gHttpReady{ false };
 static const wchar_t* kModernUiUrl = L"http://127.0.0.1:17845/app";
 
@@ -983,11 +980,6 @@ catch (...) {
             LogLine(snap.c_str());
         }
 
-        
-        // If enabled, host the new modern UI (HTML/CSS) directly inside the main window via WebView2.
-        // This keeps all existing backend threads + HTTP API intact, but replaces the legacy Win32 control layout.
-#if HAVE_WEBVIEW2
-        if (gUseModernUi) {
             // Create a hidden log control so existing LogLine() plumbing still works (optional).
             gLog = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
                 WS_CHILD | ES_MULTILINE | ES_READONLY | WS_VSCROLL, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
@@ -1096,9 +1088,8 @@ catch (...) {
             PostMessageW(hwnd, WM_APP + 1, 0, 0);
             return 0;
         }
-#endif
         return 0;
-    }
+
     case WM_APP + 1:
     {
         // Start HTTP server in background thread
@@ -1121,11 +1112,10 @@ catch (...) {
                     tiktok, state, chat,
                     GetExeDir(),
                     config.tiktok_unique_id,
-                    hwnd,
                     [](const std::wstring& s) { LogLine(s); });
             };
             opt.stop_tiktok = [&]() -> bool {
-                PlatformControl::StopTikTok(tiktok, state, hwnd, (UINT)(WM_APP + 41), [](const std::wstring& s) { LogLine(s); });
+                PlatformControl::StopTikTok(tiktok, state, [](const std::wstring& s) { LogLine(s); });
                 return true;
             };
 
@@ -1181,7 +1171,7 @@ catch (...) {
                 return true;
                 };
             opt.stop_twitch = [&]() -> bool {
-                PlatformControl::StopTwitch(twitch, state, hwnd, (UINT)(WM_APP + 41), [](const std::wstring& s) { LogLine(s); });
+                PlatformControl::StopTwitch(twitch, state, [](const std::wstring& s) { LogLine(s); });
                 return true;
             };
 
@@ -1196,7 +1186,6 @@ catch (...) {
                     youtube, state, chat,
                     GetExeDir(),
                     config.youtube_handle,
-                    hwnd,
                     [](const std::wstring& s) { LogLine(s); });
 
                 if (!ok) return false;
@@ -1209,7 +1198,7 @@ catch (...) {
                 };
 
             opt.stop_youtube = [&]() -> bool {
-                PlatformControl::StopYouTube(youtube, state, hwnd, (UINT)(WM_APP + 41), [](const std::wstring& s) { LogLine(s); });
+                PlatformControl::StopYouTube(youtube, state, [](const std::wstring& s) { LogLine(s); });
                 youtubeChat.stop();
                 return true;
             };
@@ -1299,12 +1288,9 @@ catch (...) {
 
         // Signal that the HTTP server is ready for WebView2 navigation.
         gHttpReady = true;
-#if HAVE_WEBVIEW2
-        if (gUseModernUi && gMainWebView) {
+        if (gMainWebView) {
             gMainWebView->Navigate(kModernUiUrl);
         }
-#endif
-
 
         metricsThread = std::thread([&]() {
             while (gRunning) {
@@ -1328,11 +1314,9 @@ LogLine(L"TWITCH: starting Helix poller thread");
         RestartTwitchHelixPoller("init");
 LogLine(L"TIKTOK: starting followers poller thread");
         tiktokFollowersThread = StartTikTokFollowersPoller(
-            hwnd,
             config,
             state,
             gRunning,
-            (UINT)(WM_APP + 41),
             TikTokFollowersUiCallbacks{
                 /*log*/           [](const std::wstring& s) { LogLine(s); },
                 /*set_status*/    [](const std::wstring& /*s*/) { /* optional */ },
@@ -1437,13 +1421,11 @@ case WM_CLOSE:
     return 0;
 
 case WM_SIZE:
-#if HAVE_WEBVIEW2
-        if (gUseModernUi && gMainWebController) {
-            RECT rc; GetClientRect(hwnd, &rc);
-            gMainWebController->put_Bounds(rc);
-            return 0;
-        }
-#endif
+    if (gMainWebController) {
+        RECT rc; GetClientRect(hwnd, &rc);
+        gMainWebController->put_Bounds(rc);
+    }
+    return 0;
 
     case WM_DESTROY:
         // Safety net: if we somehow got here without WM_CLOSE

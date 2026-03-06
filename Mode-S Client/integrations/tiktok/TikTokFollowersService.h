@@ -17,11 +17,8 @@ struct TikTokFollowersUiCallbacks {
 
 // Starts a poller thread that periodically fetches TikTok follower count for config.tiktok_unique_id.
 // - Writes follower count into AppState (for /api/metrics).
-// - Optionally updates UI via callbacks and posts refresh_msg to hwnd.
 std::thread StartTikTokFollowersPoller(
-    HWND hwnd,
     AppConfig& config,
     AppState& state,
     std::atomic<bool>& running,
-    UINT refresh_msg,
     TikTokFollowersUiCallbacks cb);
