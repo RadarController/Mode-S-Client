@@ -1,6 +1,8 @@
 #include "StringUtil.h"
+#include <Windows.h>
 #include <algorithm>
 #include <cctype>
+
 
 std::string UrlEncode(const std::string& s)
 {
@@ -34,17 +36,6 @@ std::string Trim(const std::string& s)
     return s.substr(a, b - a);
 }
 
-void ReplaceAll(std::string& s, const std::string& from, const std::string& to)
-{
-    if (from.empty()) return;
-
-    size_t pos = 0;
-    while ((pos = s.find(from, pos)) != std::string::npos) {
-        s.replace(pos, from.size(), to);
-        pos += to.size();
-    }
-}
-
 std::string SanitizeTikTok(const std::string& input)
 {
     std::string s = Trim(input);
@@ -74,6 +65,24 @@ std::string SanitizeTwitchLogin(std::string s)
         [](unsigned char c) { return (char)std::tolower(c); });
 
     return s;
+}
+
+std::string ToUtf8(const std::wstring& w)
+{
+    if (w.empty()) return {};
+    int len = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
+    std::string out(len, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), out.data(), len, nullptr, nullptr);
+    return out;
+}
+
+std::wstring ToW(const std::string& s)
+{
+    if (s.empty()) return {};
+    int len = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
+    std::wstring out(len, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), out.data(), len);
+    return out;
 }
 
 static std::string ReadFileUtf8(const std::wstring& path) {
@@ -115,4 +124,15 @@ static int ParseIntOrDefault(const std::wstring& w, int def)
         return def;
     }
 
+}
+
+void ReplaceAll(std::string& s, const std::string& from, const std::string& to)
+{
+    if (from.empty()) return;
+
+    size_t pos = 0;
+    while ((pos = s.find(from, pos)) != std::string::npos) {
+        s.replace(pos, from.size(), to);
+        pos += to.size();
+    }
 }

@@ -51,14 +51,6 @@
 // Web UI log capture: LogLine() will also push into AppState so /api/log can display it.
 static AppState* gStateForWebLog = nullptr;
 
-static std::string ToUtf8(const std::wstring& w) {
-    if (w.empty()) return "";
-    int len = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-    std::string s(len, '\0');
-    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), s.data(), len, nullptr, nullptr);
-    return s;
-}
-
 // --------------------------- WebView2 (Modern UI host) ----------------------
 #  if defined(__has_include)
 #    if __has_include("WebView2.h")
@@ -206,14 +198,6 @@ static void JoinWithTimeout(std::thread& t, DWORD timeoutMs, const wchar_t* name
     // Timed out (or failed). Don't hang shutdown.
     LogLine(std::wstring(L"Timeout waiting for thread: ") + name + L" (detaching)");
     t.detach(); // process exit will still terminate it if we quit main loop
-}
-
-static std::wstring ToW(const std::string& s) {
-    if (s.empty()) return L"";
-    int len = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
-    std::wstring w(len, L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), w.data(), len);
-    return w;
 }
 
 struct HttpResult {
