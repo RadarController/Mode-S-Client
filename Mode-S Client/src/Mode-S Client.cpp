@@ -43,13 +43,11 @@
 #include "obs/ObsWsClient.h"
 #include "floating/FloatingChat.h"
 #include "platform/PlatformControl.h"
+#include "log/UiLog.h"
 
 #ifndef HAVE_WEBVIEW2
 #error Mode-S Client now requires WebView2 to build.
 #endif
-
-// Web UI log capture: LogLine() will also push into AppState so /api/log can display it.
-static AppState* gStateForWebLog = nullptr;
 
 // --------------------------- WebView2 (Modern UI host) ----------------------
 #  if defined(__has_include)
@@ -72,10 +70,7 @@ static std::atomic<bool> gHttpReady{ false };
 static const wchar_t* kModernUiUrl = L"http://127.0.0.1:17845/app";
 
 // --------------------------- Globals (UI handles) ---------------------------
-static HWND gLog = nullptr;
-static std::mutex gLogMutex;
 static HWND gMainWnd = nullptr;
-static DWORD gUiThreadId = 0;
 static constexpr UINT WM_APP_LOG = WM_APP + 100;
 // Splash screen
 static HWND gSplashWnd = nullptr;
@@ -134,52 +129,6 @@ static std::string ReadTwitchUserAccessToken()
 
     // Fallback: current working directory
     return try_path(std::filesystem::path("config.json"));
-}
-
-static void AppendLogOnUiThread(const std::wstring& s)
-{
-    if (!gLog && !gSplashLog) return;
-
-    // Make each log call atomic across threads and avoid double newlines.
-    std::lock_guard<std::mutex> _lk(gLogMutex);
-
-    std::wstring clean = s;
-
-    // Trim trailing CR/LF
-    while (!clean.empty() && (clean.back() == L'\r' || clean.back() == L'\n'))
-        clean.pop_back();
-
-    int len = GetWindowTextLengthW(gLog);
-    SendMessageW(gLog, EM_SETSEL, (WPARAM)len, (LPARAM)len);
-    SendMessageW(gLog, EM_REPLACESEL, FALSE, (LPARAM)clean.c_str());
-    SendMessageW(gLog, EM_REPLACESEL, FALSE, (LPARAM)L"\r\n");
-
-    if (gSplashLog) {
-        int slen = GetWindowTextLengthW(gSplashLog);
-        SendMessageW(gSplashLog, EM_SETSEL, (WPARAM)slen, (LPARAM)slen);
-        SendMessageW(gSplashLog, EM_REPLACESEL, FALSE, (LPARAM)clean.c_str());
-        SendMessageW(gSplashLog, EM_REPLACESEL, FALSE, (LPARAM)L"\r\n");
-    }
-}
-
-static void LogLine(const std::wstring& s)
-{
-    // Also feed the Web UI log buffer (served via /api/log)
-    if (gStateForWebLog) {
-        gStateForWebLog->push_log_utf8(ToUtf8(s));
-    }
-    // If called from a worker thread, marshal to the UI thread to avoid deadlocks/freezes.
-    if (gUiThreadId != 0 && GetCurrentThreadId() != gUiThreadId) {
-        if (gMainWnd) {
-            auto* heap = new std::wstring(s);
-            if (!PostMessageW(gMainWnd, WM_APP_LOG, 0, (LPARAM)heap)) {
-                delete heap; // fallback if posting fails
-            }
-        }
-        return;
-    }
-
-    AppendLogOnUiThread(s);
 }
 
 static void JoinWithTimeout(std::thread& t, DWORD timeoutMs, const wchar_t* name)
@@ -313,6 +262,7 @@ static LRESULT CALLBACK SplashWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         gSplashLog = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
             WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_READONLY | WS_VSCROLL,
             pad, pad + 58, 520, 220, hwnd, nullptr, nullptr, nullptr);
+        UiLog_SetSplashHwnd(gSplashLog);
 
         if (hTitle) SendMessageW(hTitle, WM_SETFONT, (WPARAM)hFontTitle, TRUE);
         if (hVer)   SendMessageW(hVer, WM_SETFONT, (WPARAM)hFontBody, TRUE);
@@ -387,6 +337,7 @@ static LRESULT CALLBACK SplashWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         // cleanup fonts stored as properties
         if (auto h = (HFONT)GetPropW(hwnd, L"splash_font_title")) { DeleteObject(h); RemovePropW(hwnd, L"splash_font_title"); }
         if (auto h = (HFONT)GetPropW(hwnd, L"splash_font_body")) { DeleteObject(h); RemovePropW(hwnd, L"splash_font_body"); }
+        UiLog_SetSplashHwnd(nullptr);
         gSplashLog = nullptr;
 
         // If splash is closing and main window isn't alive, exit.
@@ -533,78 +484,78 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             static std::atomic<bool> shuttingDown{ false };
             if (shuttingDown.exchange(true)) return;
 
-            OutputDebugStringW(L"SHUTDOWN: BeginShutdown()\n");
+            LogLine(L"SHUTDOWN: BeginShutdown()");
 
             // 1) Flip flags so loops exit
             gRunning = false;
             gTwitchHelixRunning = false;
-            OutputDebugStringW(L"SHUTDOWN: flags set\n");
+            LogLine(L"SHUTDOWN: flags set");
 
             // 2) Stop HTTP early
             if (gHttp) {
-                OutputDebugStringW(L"SHUTDOWN: stopping HTTP\n");
+                LogLine(L"SHUTDOWN: stopping HTTP");
                 gHttp->Stop();
                 gHttp.reset();
-                OutputDebugStringW(L"SHUTDOWN: HTTP stopped\n");
+                LogLine(L"SHUTDOWN: HTTP stopped");
             }
 
             // 3) Join threads next
             if (tiktokFollowersThread.joinable()) {
-                OutputDebugStringW(L"SHUTDOWN: join tiktokFollowersThread...\n");
+                LogLine(L"SHUTDOWN: join tiktokFollowersThread...");
                 tiktokFollowersThread.join();
-                OutputDebugStringW(L"SHUTDOWN: joined tiktokFollowersThread\n");
+                LogLine(L"SHUTDOWN: joined tiktokFollowersThread");
             }
 
             if (twitchHelixThread.joinable()) {
-                OutputDebugStringW(L"SHUTDOWN: join twitchHelixThread...\n");
+                LogLine(L"SHUTDOWN: join twitchHelixThread...");
                 twitchHelixThread.join();
-                OutputDebugStringW(L"SHUTDOWN: joined twitchHelixThread\n");
+                LogLine(L"SHUTDOWN: joined twitchHelixThread");
             }
 
             if (metricsThread.joinable()) {
-                OutputDebugStringW(L"SHUTDOWN: join metricsThread...\n");
+                LogLine(L"SHUTDOWN: join metricsThread...");
                 metricsThread.join();
-                OutputDebugStringW(L"SHUTDOWN: joined metricsThread\n");
+                LogLine(L"SHUTDOWN: joined metricsThread");
             }
 
             // 4) Stop services last (less risk of deadlock)
-            OutputDebugStringW(L"SHUTDOWN: stopping services...\n");
+            LogLine(L"SHUTDOWN: stopping services...");
 
-            OutputDebugStringW(L"SHUTDOWN: stopping twitchEventSub...\n");
+            LogLine(L"SHUTDOWN: stopping twitchEventSub...");
             try { twitchEventSub.Stop(); }
             catch (...) {}
-            OutputDebugStringW(L"SHUTDOWN: stopped twitchEventSub\n");
+            LogLine(L"SHUTDOWN: stopped twitchEventSub");
 
-            OutputDebugStringW(L"SHUTDOWN: stopping twitchAuth...\n");
+            LogLine(L"SHUTDOWN: stopping twitchAuth...");
             try { twitchAuth.Stop(); }
             catch (...) {}
-            OutputDebugStringW(L"SHUTDOWN: stopped twitchAuth\n");
+            LogLine(L"SHUTDOWN: stopped twitchAuth");
 
-            OutputDebugStringW(L"SHUTDOWN: stopping twitch...\n");
+            LogLine(L"SHUTDOWN: stopping twitch...");
             try { twitch.stop(); }
             catch (...) {}
-            OutputDebugStringW(L"SHUTDOWN: stopped twitch\n");
+            LogLine(L"SHUTDOWN: stopped twitch");
 
-            OutputDebugStringW(L"SHUTDOWN: stopping youtubeChat...\n");
+            LogLine(L"SHUTDOWN: stopping youtubeChat...");
             try { youtubeChat.stop(); }
             catch (...) {}
-            OutputDebugStringW(L"SHUTDOWN: stopped youtubeChat\n");
+            LogLine(L"SHUTDOWN: stopped youtubeChat");
 
-            OutputDebugStringW(L"SHUTDOWN: stopping youtube...\n");
+            LogLine(L"SHUTDOWN: stopping youtube...");
             try { youtube.stop(); }
             catch (...) {}
-            OutputDebugStringW(L"SHUTDOWN: stopped youtube\n");
+            LogLine(L"SHUTDOWN: stopped youtube");
 
-            OutputDebugStringW(L"SHUTDOWN: stopping tiktok...\n");
+            LogLine(L"SHUTDOWN: stopping tiktok...");
             try { tiktok.stop(); }
             catch (...) {}
-            OutputDebugStringW(L"SHUTDOWN: stopped tiktok\n");
+            LogLine(L"SHUTDOWN: stopped tiktok");
 
-            OutputDebugStringW(L"SHUTDOWN: services stopped\n");
+            LogLine(L"SHUTDOWN: services stopped");
 
             // Destroy window to reach WM_DESTROY -> PostQuitMessage
             if (hwndToDestroy && IsWindow(hwndToDestroy)) {
-                OutputDebugStringW(L"SHUTDOWN: destroying window\n");
+                LogLine(L"SHUTDOWN: destroying window");
                 DestroyWindow(hwndToDestroy);
             }
         };
@@ -645,7 +596,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             gTwitchHelixRunning,
             0,
             TwitchHelixUiCallbacks{
-                /*log*/ [](const std::wstring& s) { OutputDebugStringW((s + L"\n").c_str()); },
+                /*log*/ [](const std::wstring& s) { LogLine(s); },
                 /*set_status*/   [&](const std::wstring& /*s*/) {},
                 /*set_live*/     [&](bool /*live*/) {},
                 /*set_viewers*/  [&](int /*v*/) {},
@@ -717,7 +668,7 @@ catch (...) {
 }
 
         // Allow LogLine() to feed the Web UI (/api/log)
-        gStateForWebLog = &state;
+        UiLog_SetWebLogState(&state);
 
         // -----------------------------------------------------------------
         // Bot command handler (injects into ChatAggregator)
@@ -839,13 +790,13 @@ catch (...) {
                 // This keeps overlay injection but makes the bot respond on-platform too.
                 if (platform_lc == "twitch" && pTwitch) {
                     if (!pTwitch->SendPrivMsg(reply)) {
-                        OutputDebugStringA("[BOT] Twitch send failed\n");
+                        LogLine(L"BOT: Twitch send failed");
                     }
                 }
                 // Send back to the origin platform (Tiktok).
                 if (platform_lc == "tiktok" && pTikTok) {
                     if (!pTikTok->send_chat(reply)) {
-                        OutputDebugStringA("[BOT] TikTok send failed (sidecar)\n");
+                        LogLine(L"BOT: TikTok send failed (sidecar)");
                     }
                 }
 
@@ -865,8 +816,9 @@ catch (...) {
         }
 
             // Create a hidden log control so existing LogLine() plumbing still works (optional).
-            gLog = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+            HWND hLog = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
                 WS_CHILD | ES_MULTILINE | ES_READONLY | WS_VSCROLL, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
+            UiLog_SetLogHwnd(hLog);
 
             if (!gFloatingChat) gFloatingChat = std::make_unique<FloatingChat>();
 
@@ -1276,11 +1228,7 @@ LogLine(L"TIKTOK: starting followers poller thread");
 
     case WM_APP_LOG:
     {
-        auto* heap = reinterpret_cast<std::wstring*>(lParam);
-        if (heap) {
-            AppendLogOnUiThread(*heap);
-            delete heap;
-        }
+        UiLog_HandleAppLogMessage(lParam);
         return 0;
     }
 
@@ -1313,6 +1261,7 @@ case WM_SIZE:
 
     case WM_DESTROY:
         // Safety net: if we somehow got here without WM_CLOSE
+        UiLog_SetLogHwnd(nullptr);
         BeginShutdown(nullptr);
         PostQuitMessage(0);
         return 0;
@@ -1325,7 +1274,7 @@ case WM_SIZE:
 }
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
-    gUiThreadId = GetCurrentThreadId();
+    const DWORD uiThreadId = GetCurrentThreadId();
 
     const wchar_t CLASS_NAME[] = L"StreamHubWindow";
 
@@ -1366,6 +1315,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
     );
 
     gMainWnd = hwnd;
+    UiLog_SetUiContext(hwnd, uiThreadId, WM_APP_LOG);
 
     // Set window title to include build/file version
     {
