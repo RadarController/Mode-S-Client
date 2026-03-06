@@ -43,6 +43,10 @@
 #include "floating/FloatingChat.h"
 #include "platform/PlatformControl.h"
 
+#ifndef HAVE_WEBVIEW2
+#error Mode-S Client now requires WebView2 to build.
+#endif
+
 // Web UI log capture: LogLine() will also push into AppState so /api/log can display it.
 static AppState* gStateForWebLog = nullptr;
 
@@ -55,7 +59,6 @@ static std::string ToUtf8(const std::wstring& w) {
 }
 
 // --------------------------- WebView2 (Modern UI host) ----------------------
-#if !defined(HAVE_WEBVIEW2)
 #  if defined(__has_include)
 #    if __has_include("WebView2.h")
 #      include <wrl.h>
@@ -67,13 +70,10 @@ static std::string ToUtf8(const std::wstring& w) {
 #  else
 #    define HAVE_WEBVIEW2 0
 #  endif
-#endif
 
-#if HAVE_WEBVIEW2
 using Microsoft::WRL::ComPtr;
 static ComPtr<ICoreWebView2Controller> gMainWebController;
 static ComPtr<ICoreWebView2>           gMainWebView;
-#endif
 
 static std::atomic<bool> gHttpReady{ false };
 static const wchar_t* kModernUiUrl = L"http://127.0.0.1:17845/app";
@@ -980,7 +980,6 @@ catch (...) {
             LogLine(snap.c_str());
         }
 
-#if HAVE_WEBVIEW2
             // Create a hidden log control so existing LogLine() plumbing still works (optional).
             gLog = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
                 WS_CHILD | ES_MULTILINE | ES_READONLY | WS_VSCROLL, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
@@ -1089,7 +1088,6 @@ catch (...) {
             PostMessageW(hwnd, WM_APP + 1, 0, 0);
             return 0;
         }
-#endif
         return 0;
 
     case WM_APP + 1:
@@ -1290,12 +1288,9 @@ catch (...) {
 
         // Signal that the HTTP server is ready for WebView2 navigation.
         gHttpReady = true;
-#if HAVE_WEBVIEW2
         if (gMainWebView) {
             gMainWebView->Navigate(kModernUiUrl);
         }
-#endif
-
 
         metricsThread = std::thread([&]() {
             while (gRunning) {
@@ -1426,12 +1421,10 @@ case WM_CLOSE:
     return 0;
 
 case WM_SIZE:
-#if HAVE_WEBVIEW2
     if (gMainWebController) {
         RECT rc; GetClientRect(hwnd, &rc);
         gMainWebController->put_Bounds(rc);
     }
-#endif
     return 0;
 
     case WM_DESTROY:
