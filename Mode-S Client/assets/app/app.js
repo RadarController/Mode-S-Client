@@ -11,6 +11,88 @@ function fmtNum(n){
 
 function setText(id, v){ const el = document.getElementById(id); if (el) el.textContent = v; }
 
+function trim(s){ return String(s ?? "").trim(); }
+
+function sanitizeTikTok(input){
+  return trim(input).replaceAll("@", "");
+}
+
+function sanitizeTwitch(input){
+  let s = trim(input);
+  if (s.startsWith("#")) s = s.slice(1);
+  return s.toLowerCase();
+}
+
+function sanitizeYouTube(input){
+  let s = trim(input).replaceAll("@", "");
+  s = s.replace(/\s+/g, "");
+  return s;
+}
+
+function sanitizePlatformValue(platform, value){
+  switch(platform){
+    case "tiktok": return sanitizeTikTok(value);
+    case "twitch": return sanitizeTwitch(value);
+    case "youtube": return sanitizeYouTube(value);
+    default: return trim(value);
+  }
+}
+
+function inputIdForPlatform(platform){
+  switch(platform){
+    case "tiktok": return "tiktokUser";
+    case "twitch": return "twitchUser";
+    case "youtube": return "youtubeUser";
+    default: return "";
+  }
+}
+
+function getPlatformInput(platform){
+  const id = inputIdForPlatform(platform);
+  return id ? document.getElementById(id) : null;
+}
+
+function getPlatformButton(platform, action){
+  const card = document.querySelector(`.platform[data-platform="${platform}"]`);
+  return card?.querySelector(`button[data-action="${action}"]`) || null;
+}
+
+function hasValidPlatformInput(platform){
+  const input = getPlatformInput(platform);
+  return !!sanitizePlatformValue(platform, input?.value || "");
+}
+
+function applySanitizedInputValue(platform){
+  const input = getPlatformInput(platform);
+  if (!input) return "";
+  const cleaned = sanitizePlatformValue(platform, input.value);
+  input.value = cleaned;
+  return cleaned;
+}
+
+function updatePlatformInputUi(platform){
+  const valid = hasValidPlatformInput(platform);
+  const setBtn = getPlatformButton(platform, "set");
+  const startBtn = getPlatformButton(platform, "start");
+
+  if (setBtn) setBtn.disabled = !valid;
+  if (startBtn) startBtn.disabled = !valid;
+
+  const input = getPlatformInput(platform);
+  if (input) input.classList.toggle("input--invalid", !valid && trim(input.value).length > 0);
+}
+
+function updateAllPlatformInputUi(){
+  ["tiktok", "twitch", "youtube"].forEach(updatePlatformInputUi);
+}
+
+function setActionBusy(button, busy, busyText){
+  if (!button) return;
+  if (!button.dataset.label) button.dataset.label = button.textContent;
+  button.disabled = !!busy;
+  button.textContent = busy ? (busyText || "Working...") : button.dataset.label;
+}
+
 async function apiGet(url){
   const r = await fetch(url, {cache:"no-store"});
   if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
@@ -23,18 +105,32 @@ async function apiPost(url, body){
     headers: {"Content-Type":"application/json"},
     body: body ? JSON.stringify(body) : ""
   });
-  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-    const t = await r.text().catch(() => "");
+
+  const t = await r.text().catch(() => "");
+
+  if (!r.ok) {
     throw new Error(`${r.status} ${r.statusText}${t ? `: ${t}` : ""}`);
+  }
+
+  if (!t) return { ok: true };
+
+  try{
+    return JSON.parse(t);
+  }catch{
+    return { ok: true, text: t };
+  }
 }
 
 async function loadSettings(){
   try{
     const s = await apiGet("/api/settings");
     if (!s || s.ok !== true) throw new Error("ok=false");
-    const t = $("#tiktokUser"); if (t) t.value = s.tiktok_unique_id ?? "";
-    const tw = $("#twitchUser"); if (tw) tw.value = s.twitch_login ?? "";
-    const y = $("#youtubeUser"); if (y) y.value = s.youtube_handle ?? "";
+
+    const t = $("#tiktokUser"); if (t) t.value = sanitizeTikTok(s.tiktok_unique_id ?? "");
+    const tw = $("#twitchUser"); if (tw) tw.value = sanitizeTwitch(s.twitch_login ?? "");
+    const y = $("#youtubeUser"); if (y) y.value = sanitizeYouTube(s.youtube_handle ?? "");
+
+    updateAllPlatformInputUi();
     logLine("settings", `loaded (${s.config_path || "unknown path"})`);
   }catch(e){
     logLine("settings", `load failed (${e.message})`);
@@ -43,10 +139,12 @@ async function loadSettings(){
 
 async function saveSettingsFromInputs(){
   const payload = {
-    tiktok_unique_id: $("#tiktokUser")?.value || "",
-    twitch_login: $("#twitchUser")?.value || "",
-    youtube_handle: $("#youtubeUser")?.value || ""
+    tiktok_unique_id: applySanitizedInputValue("tiktok"),
+    twitch_login: applySanitizedInputValue("twitch"),
+    youtube_handle: applySanitizedInputValue("youtube")
   };
+
+  updateAllPlatformInputUi();
 
   // Support both endpoints (older builds used /api/settingssave)
   try{
@@ -146,6 +244,9 @@ function applyMetrics(m){
   // (Previously we only changed text, leaving the badge blue.)
   setBadge("twitch", isLive);
   setState("twitch", isLive ? "Live" : (hasData ? "Connected" : "Disconnected"));
+  // Do NOT enable Stop just because cached follower/viewer data exists.
+  // A later per-platform bucket can still enable it when the backend reports connected/running.
+  setStopEnabled("twitch", isLive);
 
   
 
@@ -164,6 +265,9 @@ function applyMetrics(m){
 
   setBadge("tiktok", ttIsLive);
   setState("tiktok", ttIsLive ? "Live" : (ttHasData ? "Connected" : "Disconnected"));
+  // Do NOT enable Stop just because cached follower/viewer data exists.
+  // A later per-platform bucket can still enable it when the backend reports connected/running.
+  setStopEnabled("tiktok", ttIsLive);
 
   // YouTube (top-level fields in /api/metrics)
   const yt_viewers = m.youtube_viewers ?? (s.youtube && (s.youtube.viewers ?? s.youtube.viewer_count ?? s.youtube.live_viewers ?? s.youtube.concurrent_viewers));
@@ -180,6 +284,9 @@ function applyMetrics(m){
 
   setBadge("youtube", ytIsLive);
   setState("youtube", ytIsLive ? "Live" : (ytHasData ? "Connected" : "Disconnected"));
+  // Do NOT enable Stop just because cached follower/viewer data exists.
+  // A later per-platform bucket can still enable it when the backend reports connected/running.
+  setStopEnabled("youtube", ytIsLive);
 
 // status dot (best effort)
   const dot = $("#mDot");
@@ -208,8 +315,8 @@ function applyMetrics(m){
     setText(`${name}Viewers`, fmtNum(v));
     setText(`${name}Followers`, fmtNum(f));
 
-    // stop button enabled when "live" (best effort)
-    setStopEnabled(name, live);
+    // stop button enabled when connected or live (best effort)
+    setStopEnabled(name, live || connected);
   };
 
   applyPlatform("tiktok", s.tiktok);
@@ -266,40 +373,64 @@ async function pollLog(){
 }
 
 function wireActions(){
-    $("#btnOpenChat")?.addEventListener("click", () => {
-        // In-app (WebView2): ask the native host to open the floating chat window.
-        if (window.chrome?.webview?.postMessage) {
-            window.chrome.webview.postMessage({ type: "open_chat" });
-            return;
-        }
+  $("#btnOpenChat")?.addEventListener("click", () => {
+    if (window.chrome?.webview?.postMessage) {
+      window.chrome.webview.postMessage({ type: "open_chat" });
+      return;
+    }
+    window.open("/overlay/chat.html", "_blank", "noopener");
+  });
 
-        // Fallback if /app is opened in a normal browser:
-        window.open("/overlay/chat.html", "_blank", "noopener");
-    });
-
-   $("#btnOpenSettings")?.addEventListener("click", () => {
-     window.location.href = "/app/settings.html";
-   });
+  $("#btnOpenSettings")?.addEventListener("click", () => {
+    window.location.href = "/app/settings.html";
+  });
 
   $("#btnOpenBot")?.addEventListener("click", () => {
-    // Navigate within the same WebView/app window.
     window.location.href = "/app/bot.html";
   });
 
-  $("#btnStartAll")?.addEventListener("click", async () => {
-    logLine("start-all", "starting all platforms");
-    const platforms = ["tiktok", "twitch", "youtube"];
-    for (const p of platforms) {
-      try {
-        await apiPost(`/api/platform/${p}/start`, {});
-        logLine("start-all", `${p} start requested`);
-      } catch (e) {
-        logLine("start-all", `${p} start failed (${e.message})`);
-      }
-    }
-    logLine("start-all", "done");
+  ["tiktok", "twitch", "youtube"].forEach((platform) => {
+    const input = getPlatformInput(platform);
+    input?.addEventListener("input", () => updatePlatformInputUi(platform));
+    input?.addEventListener("blur", () => {
+      applySanitizedInputValue(platform);
+      updatePlatformInputUi(platform);
+    });
+    input?.addEventListener("keydown", async (ev) => {
+      if (ev.key !== "Enter") return;
+      ev.preventDefault();
+      if (!hasValidPlatformInput(platform)) return;
+      await saveSettingsFromInputs();
+    });
   });
 
+  $("#btnStartAll")?.addEventListener("click", async (ev) => {
+    const btn = ev.currentTarget;
+    setActionBusy(btn, true, "Starting...");
+    try{
+      const ok = await saveSettingsFromInputs();
+      if (!ok) return;
+
+      logLine("start-all", "starting all platforms");
+      const platforms = ["tiktok", "twitch", "youtube"];
+
+      for (const p of platforms) {
+        if (!hasValidPlatformInput(p)) {
+          logLine("start-all", `${p} skipped (no saved input)`);
+          continue;
+        }
+        try {
+          await apiPost(`/api/platform/${p}/start`, {});
+          logLine("start-all", `${p} start requested`);
+        } catch (e) {
+          logLine("start-all", `${p} start failed (${e.message})`);
+        }
+      }
+      logLine("start-all", "done");
+    } finally {
+      setActionBusy(btn, false);
+    }
+  });
 
   $("#btnSave")?.addEventListener("click", async () => {
     await saveSettingsFromInputs();
@@ -312,28 +443,55 @@ function wireActions(){
       if (!btn) return;
 
       const action = btn.getAttribute("data-action");
+
       if (action === "set"){
-        // For now: SET just saves the current usernames via /api/settings/save.
-        await saveSettingsFromInputs();
+        if (!hasValidPlatformInput(platform)) {
+          logLine(platform, "set failed (input is empty)");
+          updatePlatformInputUi(platform);
+          return;
+        }
+        setActionBusy(btn, true, "Saving...");
+        try{
+          await saveSettingsFromInputs();
+        } finally {
+          setActionBusy(btn, false);
+        }
         return;
       }
 
       if (action === "start"){
+        if (!hasValidPlatformInput(platform)) {
+          logLine(platform, "start failed (input is empty)");
+          updatePlatformInputUi(platform);
+          return;
+        }
+
+        setActionBusy(btn, true, "Starting...");
         try{
-          await apiPost(`/api/platform/${platform}/start`);
+          const ok = await saveSettingsFromInputs();
+          if (!ok) return;
+
+          await apiPost(`/api/platform/${platform}/start`, {});
           logLine(platform, "start requested");
         }catch(e){
           logLine(platform, `start failed (${e.message})`);
+        } finally {
+          setActionBusy(btn, false);
         }
         return;
       }
 
       if (action === "stop"){
+        setActionBusy(btn, true, "Stopping...");
         try{
-          await apiPost(`/api/platform/${platform}/stop`);
+          await apiPost(`/api/platform/${platform}/stop`, {});
           logLine(platform, "stop requested");
+          setStopEnabled(platform, false);
+          await pollMetrics();
         }catch(e){
           logLine(platform, `stop failed (${e.message})`);
+        } finally {
+          setActionBusy(btn, false);
         }
         return;
       }
