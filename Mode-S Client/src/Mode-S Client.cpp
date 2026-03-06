@@ -75,9 +75,6 @@ static ComPtr<ICoreWebView2Controller> gMainWebController;
 static ComPtr<ICoreWebView2>           gMainWebView;
 #endif
 
-// Modern WebView UI is now the primary dashboard/control surface.
-// Flip this to false only for legacy Win32 fallback/debugging.
-static bool gUseModernUi = true;
 static std::atomic<bool> gHttpReady{ false };
 static const wchar_t* kModernUiUrl = L"http://127.0.0.1:17845/app";
 
@@ -983,11 +980,7 @@ catch (...) {
             LogLine(snap.c_str());
         }
 
-        
-        // If enabled, host the new modern UI (HTML/CSS) directly inside the main window via WebView2.
-        // This keeps all existing backend threads + HTTP API intact, but replaces the legacy Win32 control layout.
 #if HAVE_WEBVIEW2
-        if (gUseModernUi) {
             // Create a hidden log control so existing LogLine() plumbing still works (optional).
             gLog = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
                 WS_CHILD | ES_MULTILINE | ES_READONLY | WS_VSCROLL, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
@@ -1098,7 +1091,7 @@ catch (...) {
         }
 #endif
         return 0;
-    }
+
     case WM_APP + 1:
     {
         // Start HTTP server in background thread
@@ -1298,7 +1291,7 @@ catch (...) {
         // Signal that the HTTP server is ready for WebView2 navigation.
         gHttpReady = true;
 #if HAVE_WEBVIEW2
-        if (gUseModernUi && gMainWebView) {
+        if (gMainWebView) {
             gMainWebView->Navigate(kModernUiUrl);
         }
 #endif
@@ -1434,12 +1427,12 @@ case WM_CLOSE:
 
 case WM_SIZE:
 #if HAVE_WEBVIEW2
-        if (gUseModernUi && gMainWebController) {
-            RECT rc; GetClientRect(hwnd, &rc);
-            gMainWebController->put_Bounds(rc);
-            return 0;
-        }
+    if (gMainWebController) {
+        RECT rc; GetClientRect(hwnd, &rc);
+        gMainWebController->put_Bounds(rc);
+    }
 #endif
+    return 0;
 
     case WM_DESTROY:
         // Safety net: if we somehow got here without WM_CLOSE
