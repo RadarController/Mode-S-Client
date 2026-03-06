@@ -1121,11 +1121,10 @@ catch (...) {
                     tiktok, state, chat,
                     GetExeDir(),
                     config.tiktok_unique_id,
-                    hwnd,
                     [](const std::wstring& s) { LogLine(s); });
             };
             opt.stop_tiktok = [&]() -> bool {
-                PlatformControl::StopTikTok(tiktok, state, hwnd, 0, [](const std::wstring& s) { LogLine(s); });
+                PlatformControl::StopTikTok(tiktok, state, [](const std::wstring& s) { LogLine(s); });
                 return true;
             };
 
@@ -1181,7 +1180,7 @@ catch (...) {
                 return true;
                 };
             opt.stop_twitch = [&]() -> bool {
-                PlatformControl::StopTwitch(twitch, state, hwnd, 0, [](const std::wstring& s) { LogLine(s); });
+                PlatformControl::StopTwitch(twitch, state, [](const std::wstring& s) { LogLine(s); });
                 return true;
             };
 
@@ -1196,7 +1195,6 @@ catch (...) {
                     youtube, state, chat,
                     GetExeDir(),
                     config.youtube_handle,
-                    hwnd,
                     [](const std::wstring& s) { LogLine(s); });
 
                 if (!ok) return false;
@@ -1209,7 +1207,7 @@ catch (...) {
                 };
 
             opt.stop_youtube = [&]() -> bool {
-                PlatformControl::StopYouTube(youtube, state, hwnd, 0, [](const std::wstring& s) { LogLine(s); });
+                PlatformControl::StopYouTube(youtube, state, [](const std::wstring& s) { LogLine(s); });
                 youtubeChat.stop();
                 return true;
             };
@@ -1328,11 +1326,9 @@ LogLine(L"TWITCH: starting Helix poller thread");
         RestartTwitchHelixPoller("init");
 LogLine(L"TIKTOK: starting followers poller thread");
         tiktokFollowersThread = StartTikTokFollowersPoller(
-            hwnd,
             config,
             state,
             gRunning,
-            0,
             TikTokFollowersUiCallbacks{
                 /*log*/           [](const std::wstring& s) { LogLine(s); },
                 /*set_status*/    [](const std::wstring& /*s*/) { /* optional */ },

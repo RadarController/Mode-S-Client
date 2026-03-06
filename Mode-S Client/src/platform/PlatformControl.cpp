@@ -73,7 +73,6 @@ namespace PlatformControl {
         ChatAggregator& chat,
         const std::wstring& exeDir,
         const std::string& tiktokUniqueId,
-        HWND hwndMain,
         LogFn log)
     {
         std::string cleaned = SanitizeTikTok(tiktokUniqueId);
@@ -165,7 +164,6 @@ namespace PlatformControl {
         ChatAggregator& chat,
         const std::wstring& exeDir,
         const std::string& youtubeHandle,
-        HWND hwndMain,
         LogFn log)
     {
         std::string cleaned = SanitizeYouTubeHandle(youtubeHandle);
@@ -297,25 +295,22 @@ bool StartOrRestartTwitchIrc(
     }
     return ok;
 }
-void StopTikTok(TikTokSidecar& tiktok, AppState& state, HWND hwndMain, UINT uiMsg, LogFn log) {
+void StopTikTok(TikTokSidecar& tiktok, AppState& state, LogFn log) {
     tiktok.stop();
     state.set_tiktok_live(false);
     state.set_tiktok_viewers(0);
-    if (hwndMain) PostMessageW(hwndMain, uiMsg, 0, 0);
     if (log) log(L"TIKTOK: stopped.");
 }
-void StopYouTube(TikTokSidecar& youtube, AppState& state, HWND hwndMain, UINT uiMsg, LogFn log) {
+void StopYouTube(TikTokSidecar& youtube, AppState& state, LogFn log) {
     youtube.stop();
     state.set_youtube_live(false);
     state.set_youtube_viewers(0);
-    if (hwndMain) PostMessageW(hwndMain, uiMsg, 0, 0);
     if (log) log(L"YOUTUBE: stopped.");
 }
-void StopTwitch(TwitchIrcWsClient& twitch, AppState& state, HWND hwndMain, UINT uiMsg, LogFn log) {
+void StopTwitch(TwitchIrcWsClient& twitch, AppState& state, LogFn log) {
     twitch.stop();
     state.set_twitch_live(false);
     state.set_twitch_viewers(0);
-    if (hwndMain) PostMessageW(hwndMain, uiMsg, 0, 0);
     if (log) log(L"TWITCH: stopped.");
 }
 

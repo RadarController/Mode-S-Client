@@ -245,11 +245,9 @@ static bool TryExtractFollowerCount(const std::string& html, const std::string& 
 } // namespace
 
 std::thread StartTikTokFollowersPoller(
-    HWND hwnd,
     AppConfig& config,
     AppState& state,
     std::atomic<bool>& running,
-    UINT refresh_msg,
     TikTokFollowersUiCallbacks cb)
 {
     return std::thread([=, &config, &state, &running]() mutable {
@@ -260,8 +258,7 @@ std::thread StartTikTokFollowersPoller(
 
         auto set_status = [&](const std::wstring& s) {
             SafeCall(cb.set_status, s);
-            if (hwnd && refresh_msg) PostMessageW(hwnd, refresh_msg, 0, 0);
-        };
+            };
 
         while (running) {
             std::string user = SanitizeTikTok(config.tiktok_unique_id);
