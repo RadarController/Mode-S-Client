@@ -9,6 +9,7 @@
   --muted2:rgba(255,255,255,.45);
   --blue:#3b82f6;
   --blue2:#2563eb;
+  --green:#22c55e;
   --red:#ef4444;
   --shadow:0 10px 30px rgba(0,0,0,.35);
   --r:16px;
@@ -428,4 +429,10 @@ background: rgba(59,130,246,.18);
 .yt-auth-status {
     margin-top: 8px;
     font-size: 0.85rem;
+}
+
+
+.input--invalid{
+  border-color: rgba(239,68,68,.65);
+  box-shadow: 0 0 0 3px rgba(239,68,68,.12);
 }

@@ -5,6 +5,9 @@
 #include <ws2tcpip.h>
 #include <windows.h>
 #include <wininet.h>
+#include <winhttp.h>
+#pragma comment(lib, "winhttp.lib")
+
 #include <string>
 #include <thread>
 #include <atomic>
@@ -25,9 +28,6 @@
 #include "version.h"
 #include "AppConfig.h"
 #include "AppState.h"
-#include "core/StringUtil.h"
-#include "log/UiLog.h"
-#include "http/LocalApiClient.h"
 #include "http/HttpServer.h"
 #include "chat/ChatAggregator.h"
 #include "twitch/TwitchHelixService.h"
@@ -43,6 +43,16 @@
 #include "floating/FloatingChat.h"
 #include "platform/PlatformControl.h"
 
+// Web UI log capture: LogLine() will also push into AppState so /api/log can display it.
+static AppState* gStateForWebLog = nullptr;
+
+static std::string ToUtf8(const std::wstring& w) {
+    if (w.empty()) return "";
+    int len = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
+    std::string s(len, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), s.data(), len, nullptr, nullptr);
+    return s;
+}
 
 // --------------------------- WebView2 (Modern UI host) ----------------------
 #if !defined(HAVE_WEBVIEW2)
@@ -101,6 +111,7 @@ static HFONT  gFontUi = nullptr;
 
 // --------------------------- Globals (UI handles) ---------------------------
 static HWND gLog = nullptr;
+static std::mutex gLogMutex;
 static HWND gMainWnd = nullptr;
 static DWORD gUiThreadId = 0;
 static constexpr UINT WM_APP_LOG = WM_APP + 100;
@@ -192,16 +203,51 @@ static std::string ReadTwitchUserAccessToken()
     return try_path(std::filesystem::path("config.json"));
 }
 
+static void AppendLogOnUiThread(const std::wstring& s)
+{
+    if (!gLog && !gSplashLog) return;
 
-static std::string ToUtf8(const std::wstring& w) {
-    if (w.empty()) return "";
-    int len = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-    std::string s(len, '\0');
-    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), s.data(), len, nullptr, nullptr);
-    return s;
+    // Make each log call atomic across threads and avoid double newlines.
+    std::lock_guard<std::mutex> _lk(gLogMutex);
+
+    std::wstring clean = s;
+
+    // Trim trailing CR/LF
+    while (!clean.empty() && (clean.back() == L'\r' || clean.back() == L'\n'))
+        clean.pop_back();
+
+    int len = GetWindowTextLengthW(gLog);
+    SendMessageW(gLog, EM_SETSEL, (WPARAM)len, (LPARAM)len);
+    SendMessageW(gLog, EM_REPLACESEL, FALSE, (LPARAM)clean.c_str());
+    SendMessageW(gLog, EM_REPLACESEL, FALSE, (LPARAM)L"\r\n");
+
+    if (gSplashLog) {
+        int slen = GetWindowTextLengthW(gSplashLog);
+        SendMessageW(gSplashLog, EM_SETSEL, (WPARAM)slen, (LPARAM)slen);
+        SendMessageW(gSplashLog, EM_REPLACESEL, FALSE, (LPARAM)clean.c_str());
+        SendMessageW(gSplashLog, EM_REPLACESEL, FALSE, (LPARAM)L"\r\n");
+    }
 }
 
+static void LogLine(const std::wstring& s)
+{
+    // Also feed the Web UI log buffer (served via /api/log)
+    if (gStateForWebLog) {
+        gStateForWebLog->push_log_utf8(ToUtf8(s));
+    }
+    // If called from a worker thread, marshal to the UI thread to avoid deadlocks/freezes.
+    if (gUiThreadId != 0 && GetCurrentThreadId() != gUiThreadId) {
+        if (gMainWnd) {
+            auto* heap = new std::wstring(s);
+            if (!PostMessageW(gMainWnd, WM_APP_LOG, 0, (LPARAM)heap)) {
+                delete heap; // fallback if posting fails
+            }
+        }
+        return;
+    }
 
+    AppendLogOnUiThread(s);
+}
 
 static void JoinWithTimeout(std::thread& t, DWORD timeoutMs, const wchar_t* name)
 {
@@ -229,6 +275,95 @@ static std::wstring ToW(const std::string& s) {
     return w;
 }
 
+struct HttpResult {
+    int status = 0;
+    DWORD winerr = 0;
+    std::string body;
+};
+
+static HttpResult WinHttpRequest(const std::wstring& method,
+    const std::wstring& host,
+    INTERNET_PORT port,
+    const std::wstring& path,
+    const std::wstring& headers,
+    const std::string& body,
+    bool secure)
+{
+    HttpResult r;
+    DWORD status = 0; DWORD statusSize = sizeof(status);
+    std::string out;
+    HINTERNET hSession = WinHttpOpen(L"Mode-S Client/1.0",
+        WINHTTP_ACCESS_TYPE_NO_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    if (!hSession) { r.winerr = GetLastError(); return r; }
+
+// --------------------------- Twitch EventSub (WebSocket) --------------------
+// Receives on-stream events (follow, sub, gift sub) and forwards them into ChatAggregator
+// as synthetic chat messages so the overlay can render them interleaved with chat.
+
+
+    HINTERNET hConnect = WinHttpConnect(hSession, host.c_str(), port, 0);
+    if (!hConnect) { r.winerr = GetLastError(); WinHttpCloseHandle(hSession); return r; }
+
+    DWORD flags = secure ? WINHTTP_FLAG_SECURE : 0;
+    HINTERNET hRequest = WinHttpOpenRequest(hConnect, method.c_str(), path.c_str(),
+        nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, flags);
+    if (!hRequest) { r.winerr = GetLastError(); WinHttpCloseHandle(hConnect); WinHttpCloseHandle(hSession); return r; }
+
+    if (!headers.empty()) {
+        WinHttpAddRequestHeaders(hRequest, headers.c_str(), (ULONG)-1L, WINHTTP_ADDREQ_FLAG_ADD);
+    }
+
+    BOOL ok = WinHttpSendRequest(
+        hRequest,
+        WINHTTP_NO_ADDITIONAL_HEADERS, 0,
+        body.empty() ? WINHTTP_NO_REQUEST_DATA : (LPVOID)body.data(),
+        (DWORD)body.size(),
+        (DWORD)body.size(),
+        0);
+
+    if (!ok) { r.winerr = GetLastError(); goto done; }
+
+    ok = WinHttpReceiveResponse(hRequest, nullptr);
+    if (!ok) { r.winerr = GetLastError(); goto done; }
+    if (WinHttpQueryHeaders(hRequest,
+        WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+        WINHTTP_HEADER_NAME_BY_INDEX, &status, &statusSize, WINHTTP_NO_HEADER_INDEX))
+    {
+        r.status = (int)status;
+    }
+    for (;;) {
+        DWORD avail = 0;
+        if (!WinHttpQueryDataAvailable(hRequest, &avail)) { r.winerr = GetLastError(); break; }
+        if (avail == 0) break;
+        size_t cur = out.size();
+        out.resize(cur + avail);
+        DWORD read = 0;
+        if (!WinHttpReadData(hRequest, out.data() + cur, avail, &read)) { r.winerr = GetLastError(); break; }
+        out.resize(cur + read);
+    }
+    r.body = std::move(out);
+
+done:
+    WinHttpCloseHandle(hRequest);
+    WinHttpCloseHandle(hConnect);
+    WinHttpCloseHandle(hSession);
+    return r;
+}
+
+static std::string UrlEncode(const std::string& s)
+{
+    static const char* hex = "0123456789ABCDEF";
+    std::string out;
+    for (unsigned char c : s) {
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~') out.push_back((char)c);
+        else {
+            out.push_back('%');
+            out.push_back(hex[(c >> 4) & 0xF]);
+            out.push_back(hex[c & 0xF]);
+        }
+    }
+    return out;
+}
 
 static std::wstring GetWindowTextWString(HWND h) {
     int len = GetWindowTextLengthW(h);
@@ -240,6 +375,41 @@ static std::wstring GetWindowTextWString(HWND h) {
     if (copied < 0) return L"";
     w.resize(copied);
     return w;
+}
+
+static std::string Trim(const std::string& s)
+{
+    size_t a = 0;
+    while (a < s.size() && (s[a] == ' ' || s[a] == '\t' || s[a] == '\r' || s[a] == '\n')) a++;
+    size_t b = s.size();
+    while (b > a && (s[b - 1] == ' ' || s[b - 1] == '\t' || s[b - 1] == '\r' || s[b - 1] == '\n')) b--;
+    return s.substr(a, b - a);
+}
+
+static std::string SanitizeTikTok(const std::string& input)
+{
+    std::string s = Trim(input);
+    s.erase(std::remove(s.begin(), s.end(), '@'), s.end());
+    return Trim(s);
+}
+
+
+static std::string SanitizeYouTubeHandle(const std::string& input)
+{
+    std::string s = Trim(input);
+    // YouTube handles are typically entered as "@handle" - strip leading @
+    s.erase(std::remove(s.begin(), s.end(), '@'), s.end());
+    // remove spaces (handles cannot contain spaces)
+    s.erase(std::remove_if(s.begin(), s.end(), [](unsigned char c){ return std::isspace(c) != 0; }), s.end());
+    return Trim(s);
+}
+
+static std::string SanitizeTwitchLogin(std::string s)
+{
+    s = Trim(s);
+    if (!s.empty() && s[0] == '#') s.erase(s.begin());
+    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return (char)std::tolower(c); });
+    return s;
 }
 
 static void UpdateTikTokButtons(HWND hTikTokEdit, HWND hStartBtn, HWND hRestartBtn)
@@ -309,6 +479,32 @@ static void UpdatePlatformStatusUI(const Metrics& m)
 }
 
 // Pull metrics through the local HTTP endpoint so the UI reflects exactly what overlays/OBS see.
+static bool TryFetchMetricsFromApi(Metrics& out)
+{
+    HttpResult r = WinHttpRequest(L"GET", L"127.0.0.1", 17845, L"/api/metrics", L"", "", false);
+    if (r.status != 200 || r.body.empty()) return false;
+
+    try {
+        auto j = nlohmann::json::parse(r.body);
+
+        out.ts_ms = j.value("ts_ms", 0LL);
+        out.twitch_viewers = j.value("twitch_viewers", 0);
+        out.youtube_viewers = j.value("youtube_viewers", 0);
+        out.tiktok_viewers = j.value("tiktok_viewers", 0);
+
+        out.twitch_followers = j.value("twitch_followers", 0);
+        out.youtube_followers = j.value("youtube_followers", 0);
+        out.tiktok_followers = j.value("tiktok_followers", 0);
+
+        out.twitch_live = j.value("twitch_live", false);
+        out.youtube_live = j.value("youtube_live", false);
+        out.tiktok_live = j.value("tiktok_live", false);
+        return true;
+    }
+    catch (...) {
+        return false;
+    }
+}
 static std::string ReadFileUtf8(const std::wstring& path) {
     FILE* f = nullptr;
     _wfopen_s(&f, path.c_str(), L"rb");
@@ -321,6 +517,17 @@ static std::string ReadFileUtf8(const std::wstring& path) {
     if (sz > 0) fread(data.data(), 1, (size_t)sz, f);
     fclose(f);
     return data;
+}
+
+//Chat overlay helpers
+static void ReplaceAll(std::string& s, const std::string& from, const std::string& to)
+{
+    if (from.empty()) return;
+    size_t pos = 0;
+    while ((pos = s.find(from, pos)) != std::string::npos) {
+        s.replace(pos, from.size(), to);
+        pos += to.size();
+    }
 }
 
 static std::string UrlEncodeGoogleFontFamily(std::string family)
@@ -394,7 +601,6 @@ static LRESULT CALLBACK SplashWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
             WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_READONLY | WS_VSCROLL,
             pad, pad + 58, 520, 220, hwnd, nullptr, nullptr, nullptr);
 
-    UiLog_SetSplashHwnd(gSplashLog);
         if (hTitle) SendMessageW(hTitle, WM_SETFONT, (WPARAM)hFontTitle, TRUE);
         if (hVer)   SendMessageW(hVer, WM_SETFONT, (WPARAM)hFontBody, TRUE);
         if (gSplashLog) SendMessageW(gSplashLog, WM_SETFONT, (WPARAM)hFontBody, TRUE);
@@ -1325,8 +1531,7 @@ catch (...) {
 }
 
         // Allow LogLine() to feed the Web UI (/api/log)
-        UiLog_SetWebLogState(&state);
-        UiLog_SetUiContext(hwnd, gUiThreadId, WM_APP_LOG);
+        gStateForWebLog = &state;
 
         // -----------------------------------------------------------------
         // Bot command handler (injects into ChatAggregator)
@@ -1482,7 +1687,6 @@ catch (...) {
             gLog = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
                 WS_CHILD | ES_MULTILINE | ES_READONLY | WS_VSCROLL, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
 
-            UiLog_SetLogHwnd(gLog);
             if (!gFloatingChat) gFloatingChat = std::make_unique<FloatingChat>();
 
             // Init WebView2 (controller + view). Navigation happens once the HTTP server is running.
@@ -1649,7 +1853,6 @@ catch (...) {
         // Log + tools
         gLog = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
             WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_READONLY | WS_VSCROLL, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
-            UiLog_SetLogHwnd(gLog);
         LogLine(L"APP: UI log initialized");
 
         hClearLogBtn = CreateWindowW(L"BUTTON", L"Clear", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, (HMENU)IDC_CLEAR_LOG, nullptr, nullptr);
@@ -1725,6 +1928,12 @@ catch (...) {
             opt.overlay_root = std::filesystem::path(GetExeDir()) / "assets" / "overlay";
             // Platform control callbacks for the /app Web UI
             opt.start_tiktok = [&]() -> bool {
+                config.tiktok_unique_id = SanitizeTikTok(config.tiktok_unique_id);
+                if (config.tiktok_unique_id.empty()) {
+                    LogLine(L"TIKTOK: username is empty - refusing to start");
+                    return false;
+                }
+
                 return PlatformControl::StartOrRestartTikTokSidecar(
                     tiktok, state, chat,
                     GetExeDir(),
@@ -1738,10 +1947,20 @@ catch (...) {
             };
 
             opt.start_twitch = [&]() -> bool {
+                config.twitch_login = SanitizeTwitchLogin(config.twitch_login);
+                if (config.twitch_login.empty()) {
+                    LogLine(L"TWITCH: channel login is empty - refusing to start");
+                    return false;
+                }
+
                 std::string token = twitchAuth.GetAccessToken().value_or("");
                 if (token.empty()) {
                     LogLine(L"TWITCH: token not available yet (auth not ready) - refusing to start");
                     return false;
+                }
+
+                if (gTwitchHelixBoundLogin != config.twitch_login) {
+                    RestartTwitchHelixPoller("web dashboard start");
                 }
 
                 const bool ok = PlatformControl::StartOrRestartTwitchIrc(
@@ -1784,6 +2003,12 @@ catch (...) {
             };
 
             opt.start_youtube = [&]() -> bool {
+                config.youtube_handle = SanitizeYouTubeHandle(config.youtube_handle);
+                if (config.youtube_handle.empty()) {
+                    LogLine(L"YOUTUBE: handle/channel is empty - refusing to start");
+                    return false;
+                }
+
                 const bool ok = PlatformControl::StartOrRestartYouTubeSidecar(
                     youtube, state, chat,
                     GetExeDir(),
@@ -2006,7 +2231,11 @@ LogLine(L"TIKTOK: starting followers poller thread");
 
     case WM_APP_LOG:
     {
-        UiLog_HandleAppLogMessage(lParam);
+        auto* heap = reinterpret_cast<std::wstring*>(lParam);
+        if (heap) {
+            AppendLogOnUiThread(*heap);
+            delete heap;
+        }
         return 0;
     }
 
