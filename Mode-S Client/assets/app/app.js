@@ -244,6 +244,9 @@ function applyMetrics(m){
   // (Previously we only changed text, leaving the badge blue.)
   setBadge("twitch", isLive);
   setState("twitch", isLive ? "Live" : (hasData ? "Connected" : "Disconnected"));
+  // Do NOT enable Stop just because cached follower/viewer data exists.
+  // A later per-platform bucket can still enable it when the backend reports connected/running.
+  setStopEnabled("twitch", isLive);
 
   
 
@@ -262,6 +265,9 @@ function applyMetrics(m){
 
   setBadge("tiktok", ttIsLive);
   setState("tiktok", ttIsLive ? "Live" : (ttHasData ? "Connected" : "Disconnected"));
+  // Do NOT enable Stop just because cached follower/viewer data exists.
+  // A later per-platform bucket can still enable it when the backend reports connected/running.
+  setStopEnabled("tiktok", ttIsLive);
 
   // YouTube (top-level fields in /api/metrics)
   const yt_viewers = m.youtube_viewers ?? (s.youtube && (s.youtube.viewers ?? s.youtube.viewer_count ?? s.youtube.live_viewers ?? s.youtube.concurrent_viewers));
@@ -278,6 +284,9 @@ function applyMetrics(m){
 
   setBadge("youtube", ytIsLive);
   setState("youtube", ytIsLive ? "Live" : (ytHasData ? "Connected" : "Disconnected"));
+  // Do NOT enable Stop just because cached follower/viewer data exists.
+  // A later per-platform bucket can still enable it when the backend reports connected/running.
+  setStopEnabled("youtube", ytIsLive);
 
 // status dot (best effort)
   const dot = $("#mDot");
@@ -307,7 +316,7 @@ function applyMetrics(m){
     setText(`${name}Followers`, fmtNum(f));
 
     // stop button enabled when connected or live (best effort)
-    setStopEnabled(name, live || connected || hasData);
+    setStopEnabled(name, live || connected);
   };
 
   applyPlatform("tiktok", s.tiktok);
@@ -477,6 +486,8 @@ function wireActions(){
         try{
           await apiPost(`/api/platform/${platform}/stop`, {});
           logLine(platform, "stop requested");
+          setStopEnabled(platform, false);
+          await pollMetrics();
         }catch(e){
           logLine(platform, `stop failed (${e.message})`);
         } finally {
