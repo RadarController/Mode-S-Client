@@ -1373,6 +1373,11 @@ svr.Get("/auth/twitch/start", [&](const httplib::Request& req, httplib::Response
         out["twitch_login"] = config_.twitch_login;
         out["youtube_handle"] = config_.youtube_handle;
 
+        // TikTok cookie/session fields
+        out["tiktok_sessionid"] = config_.tiktok_sessionid;
+        out["tiktok_sessionid_ss"] = config_.tiktok_sessionid_ss;
+        out["tiktok_tt_target_idc"] = config_.tiktok_tt_target_idc;
+
         res.set_header("X-Config-Path", cfg_path.c_str());
         res.set_content(out.dump(2), "application/json; charset=utf-8");
         });
