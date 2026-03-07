@@ -209,6 +209,8 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClInclude Include="src\Mode-S Client.h" />
     <ClInclude Include="src\http\HttpServer.h" />
     <ClInclude Include="src\platform\PlatformControl.h" />
+    <ClInclude Include="src\ui\SplashScreen.h" />
+    <ClInclude Include="src\ui\WebViewHost.h" />
     <ClInclude Include="targetver.h" />
     <ClInclude Include="ui\Resource.h" />
   </ItemGroup>
@@ -234,6 +236,8 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClCompile Include="src\Mode-S Client.cpp" />
     <ClCompile Include="src\http\HttpServer.cpp" />
     <ClCompile Include="src\platform\PlatformControl.cpp" />
+    <ClCompile Include="src\ui\SplashScreen.cpp" />
+    <ClCompile Include="src\ui\WebViewHost.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="assets\app\app.css" />

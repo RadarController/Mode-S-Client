@@ -6,6 +6,7 @@
 #include <windows.h>
 #include <wininet.h>
 #include <winhttp.h>
+#include <objbase.h>
 #pragma comment(lib, "winhttp.lib")
 
 #include <string>
@@ -45,41 +46,16 @@
 #include "platform/PlatformControl.h"
 #include "log/UiLog.h"
 
-#ifndef HAVE_WEBVIEW2
-#error Mode-S Client now requires WebView2 to build.
-#endif
+#include "ui/WebViewHost.h"
+#include "ui/SplashScreen.h"
 
-// --------------------------- WebView2 (Modern UI host) ----------------------
-#  if defined(__has_include)
-#    if __has_include("WebView2.h")
-#      include <wrl.h>
-#      include "WebView2.h"
-#      define HAVE_WEBVIEW2 1
-#    else
-#      define HAVE_WEBVIEW2 0
-#    endif
-#  else
-#    define HAVE_WEBVIEW2 0
-#  endif
-
-using Microsoft::WRL::ComPtr;
-static ComPtr<ICoreWebView2Controller> gMainWebController;
-static ComPtr<ICoreWebView2>           gMainWebView;
-
-static std::atomic<bool> gHttpReady{ false };
 static const wchar_t* kModernUiUrl = L"http://127.0.0.1:17845/app";
 
 // --------------------------- Globals (UI handles) ---------------------------
 static HWND gMainWnd = nullptr;
 static constexpr UINT WM_APP_LOG = WM_APP + 100;
-// Splash screen
-static HWND gSplashWnd = nullptr;
-static HWND gSplashLog = nullptr;
 static constexpr UINT WM_APP_SPLASH_READY = WM_APP + 201;
-static constexpr UINT_PTR SPLASH_CLOSE_TIMER_ID = 1001;
-static constexpr UINT SPLASH_CLOSE_DELAY_MS = 1 * 1000; // test: keep splash for 1s after ready
 static const wchar_t* kAppDisplayName = L"StreamingATC.Live Mode-S Client";
-static const wchar_t* kAppVersion = APP_VERSION_W; // auto-generated per build
 
 // Floating chat instance
 // Moved to FloatingChat class in src/floating/FloatingChat.*
@@ -91,10 +67,6 @@ static std::atomic<bool> gRunning{ true };
 // Helix poller is restartable independently of full app shutdown.
 static std::atomic<bool> gTwitchHelixRunning{ true };
 static std::string gTwitchHelixBoundLogin;
-
-// Forward decl
-static HWND CreateSplashWindow(HINSTANCE hInstance);
-static void DestroySplashWindow();
 
 // --------------------------- Helpers ----------------------------------------
 static std::wstring GetExeDir()
@@ -117,10 +89,11 @@ static std::string ReadTwitchUserAccessToken()
             nlohmann::json j;
             f >> j;
             return j.value("twitch", nlohmann::json::object()).value("user_access_token", "");
-        } catch (...) {
+        }
+        catch (...) {
             return {};
         }
-    };
+        };
 
     // Prefer config.json next to the exe
     std::filesystem::path p1 = std::filesystem::path(GetExeDir()) / "config.json";
@@ -217,193 +190,6 @@ done:
     WinHttpCloseHandle(hConnect);
     WinHttpCloseHandle(hSession);
     return r;
-}
-
-// --------------------------- Splash screen ---------------------------------
-static LRESULT CALLBACK SplashWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
-{
-    switch (msg)
-    {
-    case WM_CREATE:
-    {
-        // Basic, dependency-free splash: title + version + live log output
-        HFONT hFontTitle = nullptr;
-        HFONT hFontBody = nullptr;
-
-        {
-            LOGFONTW lf{};
-            lf.lfHeight = -22;
-            lf.lfWeight = FW_SEMIBOLD;
-            wcscpy_s(lf.lfFaceName, L"Segoe UI");
-            hFontTitle = CreateFontIndirectW(&lf);
-        }
-        {
-            LOGFONTW lf{};
-            lf.lfHeight = -16;
-            wcscpy_s(lf.lfFaceName, L"Segoe UI");
-            hFontBody = CreateFontIndirectW(&lf);
-        }
-
-        // Store fonts as window properties so we can delete on destroy
-        SetPropW(hwnd, L"splash_font_title", hFontTitle);
-        SetPropW(hwnd, L"splash_font_body", hFontBody);
-
-        const int pad = 14;
-
-        HWND hTitle = CreateWindowW(L"STATIC", kAppDisplayName,
-            WS_CHILD | WS_VISIBLE,
-            pad, pad, 520, 28, hwnd, nullptr, nullptr, nullptr);
-
-        std::wstring ver = std::wstring(L"Loading… ") + kAppVersion;
-        HWND hVer = CreateWindowW(L"STATIC", ver.c_str(),
-            WS_CHILD | WS_VISIBLE,
-            pad, pad + 30, 520, 20, hwnd, nullptr, nullptr, nullptr);
-
-        gSplashLog = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
-            WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_READONLY | WS_VSCROLL,
-            pad, pad + 58, 520, 220, hwnd, nullptr, nullptr, nullptr);
-        UiLog_SetSplashHwnd(gSplashLog);
-
-        if (hTitle) SendMessageW(hTitle, WM_SETFONT, (WPARAM)hFontTitle, TRUE);
-        if (hVer)   SendMessageW(hVer, WM_SETFONT, (WPARAM)hFontBody, TRUE);
-        if (gSplashLog) SendMessageW(gSplashLog, WM_SETFONT, (WPARAM)hFontBody, TRUE);
-
-        return 0;
-    }
-
-    case WM_CTLCOLORSTATIC:
-    case WM_CTLCOLOREDIT:
-    {
-        HDC hdc = (HDC)wParam;
-        SetTextColor(hdc, RGB(230, 230, 230));
-
-        static HBRUSH hBg = CreateSolidBrush(RGB(18, 18, 18));
-        static HBRUSH hEditBg = CreateSolidBrush(RGB(32, 32, 32));
-
-        if (msg == WM_CTLCOLOREDIT) {
-            SetBkMode(hdc, OPAQUE);
-            SetBkColor(hdc, RGB(32, 32, 32));
-            return (LRESULT)hEditBg;
-        }
-
-        SetBkMode(hdc, TRANSPARENT);
-        return (LRESULT)hBg;
-    }
-
-    case WM_ERASEBKGND:
-    {
-        RECT rc{};
-        GetClientRect(hwnd, &rc);
-        static HBRUSH hBg = CreateSolidBrush(RGB(18, 18, 18));
-        FillRect((HDC)wParam, &rc, hBg);
-        return 1;
-    }
-
-
-    case WM_TIMER:
-    {
-        if (wParam == SPLASH_CLOSE_TIMER_ID) {
-            KillTimer(hwnd, SPLASH_CLOSE_TIMER_ID);
-
-            // Close splash
-            DestroySplashWindow();
-
-            // Now reveal main UI
-            if (gMainWnd && IsWindow(gMainWnd)) {
-                ShowWindow(gMainWnd, SW_SHOWDEFAULT);
-                UpdateWindow(gMainWnd);
-                SetForegroundWindow(gMainWnd);
-            }
-            return 0;
-        }
-        break;
-    }
-
-    case WM_CLOSE:
-    {
-        // If the user closes the splash, treat it as "exit app".
-        // Close main window too (it may still be hidden during boot).
-        if (gMainWnd && IsWindow(gMainWnd)) {
-            DestroyWindow(gMainWnd);
-        }
-
-        DestroyWindow(hwnd);      // close splash
-        PostQuitMessage(0);       // end message loop
-        return 0;
-    }
-
-    case WM_DESTROY:
-    {
-        // cleanup fonts stored as properties
-        if (auto h = (HFONT)GetPropW(hwnd, L"splash_font_title")) { DeleteObject(h); RemovePropW(hwnd, L"splash_font_title"); }
-        if (auto h = (HFONT)GetPropW(hwnd, L"splash_font_body")) { DeleteObject(h); RemovePropW(hwnd, L"splash_font_body"); }
-        UiLog_SetSplashHwnd(nullptr);
-        gSplashLog = nullptr;
-
-        // If splash is closing and main window isn't alive, exit.
-        if (!gMainWnd || !IsWindow(gMainWnd)) {
-            PostQuitMessage(0);
-        }
-        return 0;
-    }
-
-    default:
-        break;
-    }
-    return DefWindowProcW(hwnd, msg, wParam, lParam);
-}
-
-static HWND CreateSplashWindow(HINSTANCE hInstance)
-{
-    const wchar_t* kSplashClass = L"ModeSClientSplash";
-
-    static std::atomic<bool> registered{ false };
-    if (!registered.exchange(true))
-    {
-        WNDCLASSW wc{};
-        wc.lpfnWndProc = SplashWndProc;
-        wc.hInstance = hInstance;
-        wc.lpszClassName = kSplashClass;
-        wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-        wc.hbrBackground = nullptr;
-        wc.style = CS_HREDRAW | CS_VREDRAW;
-        RegisterClassW(&wc);
-    }
-
-    const int w = 560;
-    const int h = 320;
-
-    RECT wa{};
-    SystemParametersInfoW(SPI_GETWORKAREA, 0, &wa, 0);
-    const int x = wa.left + ((wa.right - wa.left) - w) / 2;
-    const int y = wa.top + ((wa.bottom - wa.top) - h) / 2;
-
-    HWND hwnd = CreateWindowExW(
-        WS_EX_TOPMOST,
-        kSplashClass,
-        kAppDisplayName,
-        WS_POPUP | WS_CAPTION | WS_SYSMENU,
-        x, y, w, h,
-        nullptr, nullptr, hInstance, nullptr);
-
-    if (hwnd) {
-        {
-            std::wstring title = std::wstring(kAppDisplayName) + L" " + APP_VERSION_FILE_W;
-            SetWindowTextW(hwnd, title.c_str());
-        }
-        ShowWindow(hwnd, SW_SHOW);
-        UpdateWindow(hwnd);
-    }
-    return hwnd;
-}
-
-static void DestroySplashWindow()
-{
-    if (gSplashWnd && IsWindow(gSplashWnd)) {
-        DestroyWindow(gSplashWnd);
-    }
-    gSplashWnd = nullptr;
-    gSplashLog = nullptr;
 }
 
 // --------------------------- Translucent window helper ----------------------
@@ -603,9 +389,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 /*set_followers*/[&](int /*f*/) {}
             }
         );
-    };
+        };
 
-switch (msg) {
+    switch (msg) {
 
     case WM_CREATE:
     {
@@ -649,23 +435,23 @@ switch (msg) {
         }
 
 
-// -----------------------------------------------------------------
-// Overlay header settings persistence
-// Store overlay_header.json next to the exe, and load it at startup.
-// -----------------------------------------------------------------
-try {
-    std::filesystem::path hdrPath = std::filesystem::path(GetExeDir()) / "overlay_header.json";
-    state.set_overlay_header_storage_path(ToUtf8(hdrPath.wstring()));
-    if (state.load_overlay_header_from_disk()) {
-        LogLine(L"OVERLAY: loaded header settings from overlay_header.json");
-    }
-    else {
-        LogLine(L"OVERLAY: no overlay_header.json found (or empty/invalid) - using defaults");
-    }
-}
-catch (...) {
-    LogLine(L"OVERLAY: failed to set/load overlay header settings path");
-}
+        // -----------------------------------------------------------------
+        // Overlay header settings persistence
+        // Store overlay_header.json next to the exe, and load it at startup.
+        // -----------------------------------------------------------------
+        try {
+            std::filesystem::path hdrPath = std::filesystem::path(GetExeDir()) / "overlay_header.json";
+            state.set_overlay_header_storage_path(ToUtf8(hdrPath.wstring()));
+            if (state.load_overlay_header_from_disk()) {
+                LogLine(L"OVERLAY: loaded header settings from overlay_header.json");
+            }
+            else {
+                LogLine(L"OVERLAY: no overlay_header.json found (or empty/invalid) - using defaults");
+            }
+        }
+        catch (...) {
+            LogLine(L"OVERLAY: failed to set/load overlay header settings path");
+        }
 
         // Allow LogLine() to feed the Web UI (/api/log)
         UiLog_SetWebLogState(&state);
@@ -683,7 +469,7 @@ catch (...) {
         //   are treated as false here. The test endpoint can simulate roles.
         if (!botSubscribed) {
             botSubscribed = true;
-            chat.Subscribe([pChat=&chat, pState=&state, pTwitch=&twitch, pTikTok = &tiktok](const ChatMessage& m) {
+            chat.Subscribe([pChat = &chat, pState = &state, pTwitch = &twitch, pTikTok = &tiktok](const ChatMessage& m) {
                 // Avoid responding to ourselves.
                 if (m.user == "StreamingATC.Bot") return;
                 if (m.message.size() < 2 || m.message[0] != '!') return;
@@ -692,7 +478,7 @@ catch (...) {
                     std::transform(s.begin(), s.end(), s.begin(),
                         [](unsigned char c) { return (char)std::tolower(c); });
                     return s;
-                };
+                    };
                 auto replace_all = [](std::string s, const std::string& from, const std::string& to) {
                     if (from.empty()) return s;
                     size_t pos = 0;
@@ -701,7 +487,7 @@ catch (...) {
                         pos += to.size();
                     }
                     return s;
-                };
+                    };
 
                 // Extract first token after '!'
                 size_t start = 1;
@@ -800,7 +586,7 @@ catch (...) {
                     }
                 }
 
-            });
+                });
         }
 
         // Log what AppConfig actually loaded (helps diagnose mismatched JSON keys vs. AppConfig mapping).
@@ -815,116 +601,36 @@ catch (...) {
             LogLine(snap.c_str());
         }
 
-            // Create a hidden log control so existing LogLine() plumbing still works (optional).
-            HWND hLog = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
-                WS_CHILD | ES_MULTILINE | ES_READONLY | WS_VSCROLL, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
-            UiLog_SetLogHwnd(hLog);
+        // Create a hidden log control so existing LogLine() plumbing still works (optional).
+        HWND hLog = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+            WS_CHILD | ES_MULTILINE | ES_READONLY | WS_VSCROLL, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
+        UiLog_SetLogHwnd(hLog);
 
-            if (!gFloatingChat) gFloatingChat = std::make_unique<FloatingChat>();
+        if (!gFloatingChat) gFloatingChat = std::make_unique<FloatingChat>();
 
-            HRESULT hr = CreateCoreWebView2EnvironmentWithOptions(
-                nullptr, nullptr, nullptr,
-                Microsoft::WRL::Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
-                    [hwnd](HRESULT envResult, ICoreWebView2Environment* env) -> HRESULT {
-                        if (FAILED(envResult) || !env) return envResult;
-                        env->CreateCoreWebView2Controller(
-                            hwnd,
-                            Microsoft::WRL::Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
-                                [hwnd](HRESULT ctlResult, ICoreWebView2Controller* controller) -> HRESULT {
-                                    if (FAILED(ctlResult) || !controller) return ctlResult;
+        (void)WebViewHost::Create(
+            hwnd,
+            kModernUiUrl,
+            APP_VERSION_FILE_W,
+            [hwnd](HWND) {
+                if (gFloatingChat) gFloatingChat->Open(hwnd);
+            });
 
-                                    gMainWebController = controller;
+        LogLine(L"Starting Mode-S Client overlay");
+        LogLine(L"Overlay: http://localhost:17845/overlay/chat.html");
+        LogLine(L"Metrics: http://localhost:17845/api/metrics");
 
-                                    ICoreWebView2* core = nullptr;
-                                    gMainWebController->get_CoreWebView2(&core);
-                                    if (core) {
-                                        gMainWebView.Attach(core);
-
-                                        {
-                                            EventRegistrationToken tok{};
-                                            gMainWebView->add_WebMessageReceived(
-                                                Microsoft::WRL::Callback<ICoreWebView2WebMessageReceivedEventHandler>(
-                                                    [hwnd](ICoreWebView2*, ICoreWebView2WebMessageReceivedEventArgs* args) -> HRESULT {
-                                                        LPWSTR jsonRaw = nullptr;
-                                                        args->get_WebMessageAsJson(&jsonRaw);
-                                                        std::wstring json = jsonRaw ? jsonRaw : L"";
-                                                        if (jsonRaw) CoTaskMemFree(jsonRaw);
-
-                                                        if (json.find(L"open_chat") != std::wstring::npos) {
-                                                            if (gFloatingChat) gFloatingChat->Open(hwnd);
-                                                        }
-                                                        return S_OK;
-                                                    }).Get(),
-                                                        &tok);
-                                        }
-
-                                        {
-                                            EventRegistrationToken tok{};
-                                            gMainWebView->add_NewWindowRequested(
-                                                Microsoft::WRL::Callback<ICoreWebView2NewWindowRequestedEventHandler>(
-                                                    [hwnd](ICoreWebView2*, ICoreWebView2NewWindowRequestedEventArgs* args) -> HRESULT {
-                                                        LPWSTR uriRaw = nullptr;
-                                                        args->get_Uri(&uriRaw);
-                                                        std::wstring uri = uriRaw ? uriRaw : L"";
-                                                        if (uriRaw) CoTaskMemFree(uriRaw);
-
-                                                        if (uri.find(L"/overlay/chat.html") != std::wstring::npos) {
-                                                            if (gFloatingChat) gFloatingChat->Open(hwnd);
-                                                            args->put_Handled(TRUE);
-                                                        }
-                                                        return S_OK;
-                                                    }).Get(),
-                                                        &tok);
-                                        }
-
-                                        ICoreWebView2Settings* settings = nullptr;
-                                        gMainWebView->get_Settings(&settings);
-                                        if (settings) {
-                                            settings->put_IsStatusBarEnabled(FALSE);
-                                            settings->put_AreDefaultContextMenusEnabled(FALSE);
-                                            settings->put_AreDefaultScriptDialogsEnabled(FALSE);
-                                            settings->Release();
-                                        }
-
-                                        {
-                                            std::wstring build = APP_VERSION_FILE_W;
-                                            std::wstring js = L"window.__APP_BUILDINFO='" + build + L"';"
-                                                L"document.addEventListener('DOMContentLoaded',function(){"
-                                                L"var el=document.getElementById('buildInfo');"
-                                                L"if(el){el.textContent=window.__APP_BUILDINFO;}"
-                                                L"});";
-                                            gMainWebView->AddScriptToExecuteOnDocumentCreated(js.c_str(), nullptr);
-                                        }
-
-                                        if (gHttpReady.load()) {
-                                            gMainWebView->Navigate(kModernUiUrl);
-                                        }
-                                    }
-
-                                    gMainWebController->put_IsVisible(TRUE);
-                                    RECT rc; GetClientRect(hwnd, &rc);
-                                    gMainWebController->put_Bounds(rc);
-                                    return S_OK;
-                                }).Get());
-                        return S_OK;
-                    }).Get());
-            (void)hr;
-
-            LogLine(L"Starting Mode-S Client overlay");
-            LogLine(L"Overlay: http://localhost:17845/overlay/chat.html");
-            LogLine(L"Metrics: http://localhost:17845/api/metrics");
-
-            if (config.tiktok_unique_id.empty() && config.twitch_login.empty() && config.youtube_handle.empty()) {
-                LogLine(L"No config.json found yet. Configure your platform details in the Settings page.");
-            }
-            else {
-                LogLine(L"Loaded config.json");
-            }
-
-            PostMessageW(hwnd, WM_APP + 1, 0, 0);
-            return 0;
+        if (config.tiktok_unique_id.empty() && config.twitch_login.empty() && config.youtube_handle.empty()) {
+            LogLine(L"No config.json found yet. Configure your platform details in the Settings page.");
         }
+        else {
+            LogLine(L"Loaded config.json");
+        }
+
+        PostMessageW(hwnd, WM_APP + 1, 0, 0);
         return 0;
+    }
+    return 0;
 
     case WM_APP + 1:
     {
@@ -949,11 +655,11 @@ catch (...) {
                     GetExeDir(),
                     config.tiktok_unique_id,
                     [](const std::wstring& s) { LogLine(s); });
-            };
+                };
             opt.stop_tiktok = [&]() -> bool {
                 PlatformControl::StopTikTok(tiktok, state, [](const std::wstring& s) { LogLine(s); });
                 return true;
-            };
+                };
 
             opt.start_twitch = [&]() -> bool {
                 config.twitch_login = SanitizeTwitchLogin(config.twitch_login);
@@ -1009,7 +715,7 @@ catch (...) {
             opt.stop_twitch = [&]() -> bool {
                 PlatformControl::StopTwitch(twitch, state, [](const std::wstring& s) { LogLine(s); });
                 return true;
-            };
+                };
 
             opt.start_youtube = [&]() -> bool {
                 config.youtube_handle = SanitizeYouTubeHandle(config.youtube_handle);
@@ -1037,7 +743,7 @@ catch (...) {
                 PlatformControl::StopYouTube(youtube, state, [](const std::wstring& s) { LogLine(s); });
                 youtubeChat.stop();
                 return true;
-            };
+                };
 
             // Twitch OAuth (interactive) endpoints
             // Provides /auth/twitch/start and /auth/twitch/callback so you can (re)authorize with chat:read/chat:edit.
@@ -1049,20 +755,20 @@ catch (...) {
                     LogLine(ToW(std::string("TWITCHAUTH: BuildAuthorizeUrl failed: ") + err));
                 }
                 return url;
-            };
+                };
 
             opt.twitch_auth_handle_callback = [&](const std::string& code,
-                                                  const std::string& state,
-                                                  const std::string& redirect_uri,
-                                                  std::string* out_error) -> bool {
-                 std::string err;
-                 const bool ok = twitchAuth.HandleOAuthCallback(code, state, redirect_uri, &err);
-                if (!ok) {
-                    if (out_error) *out_error = err;
-                    LogLine(ToW(std::string("TWITCHAUTH: OAuth callback failed: ") + err));
-                }
-                return ok;
-            };
+                const std::string& state,
+                const std::string& redirect_uri,
+                std::string* out_error) -> bool {
+                    std::string err;
+                    const bool ok = twitchAuth.HandleOAuthCallback(code, state, redirect_uri, &err);
+                    if (!ok) {
+                        if (out_error) *out_error = err;
+                        LogLine(ToW(std::string("TWITCHAUTH: OAuth callback failed: ") + err));
+                    }
+                    return ok;
+                };
 
             // YouTube OAuth (interactive) endpoints
             // Provides /auth/youtube/start and /auth/youtube/callback so you can authorize YouTube Data API access.
@@ -1074,25 +780,25 @@ catch (...) {
                     LogLine(ToW(std::string("YTAUTH: BuildAuthorizeUrl failed: ") + err));
                 }
                 return url;
-            };
+                };
 
             opt.youtube_auth_handle_callback = [&](const std::string& code,
-                                                   const std::string& state,
-                                                   const std::string& redirect_uri,
-                                                   std::string* out_error) -> bool {
-                std::string err;
-                const bool ok = youtubeAuth.HandleOAuthCallback(code, state, redirect_uri, &err);
-                if (!ok) {
-                    if (out_error) *out_error = err;
-                    LogLine(ToW(std::string("YTAUTH: OAuth callback failed: ") + err));
-                }
-                return ok;
-            };
+                const std::string& state,
+                const std::string& redirect_uri,
+                std::string* out_error) -> bool {
+                    std::string err;
+                    const bool ok = youtubeAuth.HandleOAuthCallback(code, state, redirect_uri, &err);
+                    if (!ok) {
+                        if (out_error) *out_error = err;
+                        LogLine(ToW(std::string("YTAUTH: OAuth callback failed: ") + err));
+                    }
+                    return ok;
+                };
 
             // YouTube access token provider (used by /api/youtube/vod/* endpoints)
             opt.youtube_get_access_token = []() -> std::optional<std::string> {
                 return youtubeAuth.GetAccessToken();
-            };
+                };
 
             // YouTube OAuth status (read-only): used by the UI to show "connected" vs "not connected".
             // IMPORTANT: Do not return tokens here; only booleans + non-sensitive metadata.
@@ -1104,16 +810,16 @@ catch (...) {
 
                 const auto snap = youtubeAuth.GetTokenSnapshot();
                 j["has_refresh_token"] = snap.has_value() && !snap->refresh_token.empty();
-                j["has_access_token"]  = snap.has_value() && !snap->access_token.empty();
-                j["expires_at_unix"]   = snap.has_value() ? snap->expires_at_unix : 0;
-                j["scope"]             = snap.has_value() ? snap->scope_joined : "";
-                j["channel_id"]        = youtubeAuth.GetChannelId().value_or("");
+                j["has_access_token"] = snap.has_value() && !snap->access_token.empty();
+                j["expires_at_unix"] = snap.has_value() ? snap->expires_at_unix : 0;
+                j["scope"] = snap.has_value() ? snap->scope_joined : "";
+                j["channel_id"] = youtubeAuth.GetChannelId().value_or("");
 
                 // Keep existing fields for callers that display scopes (and for debug).
                 j["scopes_readable"] = std::string(YouTubeAuth::RequiredScopeReadable());
                 j["scopes_encoded"] = std::string(YouTubeAuth::RequiredScopeEncoded());
                 return j.dump(2);
-            };
+                };
 
 
             gHttp = std::make_unique<HttpServer>(state, chat, euroscope, config, opt,
@@ -1123,10 +829,7 @@ catch (...) {
         }
 
         // Signal that the HTTP server is ready for WebView2 navigation.
-        gHttpReady = true;
-        if (gMainWebView) {
-            gMainWebView->Navigate(kModernUiUrl);
-        }
+        WebViewHost::SetHttpReadyAndNavigate(kModernUiUrl);
 
         metricsThread = std::thread([&]() {
             while (gRunning) {
@@ -1137,18 +840,19 @@ catch (...) {
             }
             });
 
-        
-            if (!youtubeAuth.Start()) {
-                LogLine(L"YOUTUBE: OAuth token refresh/start failed (check config: youtube.client_id / youtube.client_secret / youtube.refresh_token)");
-            } else {
-                LogLine(L"YOUTUBE: OAuth token refresh/start OK");
-            }
 
-LogLine(L"TWITCH: starting Helix poller thread");
+        if (!youtubeAuth.Start()) {
+            LogLine(L"YOUTUBE: OAuth token refresh/start failed (check config: youtube.client_id / youtube.client_secret / youtube.refresh_token)");
+        }
+        else {
+            LogLine(L"YOUTUBE: OAuth token refresh/start OK");
+        }
+
+        LogLine(L"TWITCH: starting Helix poller thread");
 
         // Bind the poller to the current config.twitch_login.
         RestartTwitchHelixPoller("init");
-LogLine(L"TIKTOK: starting followers poller thread");
+        LogLine(L"TIKTOK: starting followers poller thread");
         tiktokFollowersThread = StartTikTokFollowersPoller(
             config,
             state,
@@ -1215,7 +919,8 @@ LogLine(L"TIKTOK: starting followers poller thread");
 
             if (!twitchAuth.Start()) {
                 LogLine(L"TWITCH: OAuth token refresh/start failed (check config: twitch_client_id / twitch_client_secret / twitch.user_refresh_token)");
-            } else {
+            }
+            else {
                 LogLine(L"TWITCH: OAuth token refresh worker started");
             }
         }
@@ -1234,34 +939,23 @@ LogLine(L"TIKTOK: starting followers poller thread");
 
     case WM_APP_SPLASH_READY:
     {
-        // Background init has completed; keep splash visible briefly (test) then show main UI.
-        if (gSplashWnd && IsWindow(gSplashWnd)) {
-            // Start (or restart) the close timer on the splash window.
-            SetTimer(gSplashWnd, SPLASH_CLOSE_TIMER_ID, SPLASH_CLOSE_DELAY_MS, nullptr);
-        }
-        else {
-            // Fallback: if splash doesn't exist, just show the main UI immediately.
-            ShowWindow(hwnd, SW_SHOWDEFAULT);
-            UpdateWindow(hwnd);
-            SetForegroundWindow(hwnd);
-        }
+        SplashScreen::OnAppReady(hwnd);
         return 0;
     }
 
-case WM_CLOSE:
-    BeginShutdown(hwnd);
-    return 0;
+    case WM_CLOSE:
+        BeginShutdown(hwnd);
+        return 0;
 
-case WM_SIZE:
-    if (gMainWebController) {
-        RECT rc; GetClientRect(hwnd, &rc);
-        gMainWebController->put_Bounds(rc);
-    }
-    return 0;
+    case WM_SIZE:
+        WebViewHost::ResizeToClient(hwnd);
+        return 0;
 
     case WM_DESTROY:
         // Safety net: if we somehow got here without WM_CLOSE
         UiLog_SetLogHwnd(nullptr);
+        SplashScreen::Destroy();
+        WebViewHost::Destroy();
         BeginShutdown(nullptr);
         PostQuitMessage(0);
         return 0;
@@ -1273,7 +967,28 @@ case WM_SIZE:
     return DefWindowProc(hwnd, msg, wParam, lParam);
 }
 
+
+static RECT CenteredWindowRect(int width, int height)
+{
+    RECT wa{};
+    SystemParametersInfoW(SPI_GETWORKAREA, 0, &wa, 0);
+
+    RECT rc{ 0, 0, width, height };
+    AdjustWindowRectEx(&rc, WS_OVERLAPPEDWINDOW, FALSE, 0);
+
+    const int windowWidth = rc.right - rc.left;
+    const int windowHeight = rc.bottom - rc.top;
+
+    const int x = wa.left + ((wa.right - wa.left) - windowWidth) / 2;
+    const int y = wa.top + ((wa.bottom - wa.top) - windowHeight) / 2;
+
+    return RECT{ x, y, x + windowWidth, y + windowHeight };
+}
+
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
+    HRESULT hrCom = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    const bool comInitialized = SUCCEEDED(hrCom) || hrCom == RPC_E_CHANGED_MODE;
+
     const DWORD uiThreadId = GetCurrentThreadId();
 
     const wchar_t CLASS_NAME[] = L"StreamHubWindow";
@@ -1305,8 +1020,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
         }
     }
 
+    WebViewHost::EnsureSharedEnvironment();
+
     // Splash screen shown while the main window initializes
-    gSplashWnd = CreateSplashWindow(hInstance);
+    SplashScreen::Create(hInstance, kAppDisplayName, APP_VERSION_FILE_W);
 
     // Process any pending messages so the splash paints immediately.
     MSG sm{};
@@ -1315,10 +1032,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
         DispatchMessageW(&sm);
     }
 
+    RECT mainRc = CenteredWindowRect(1440, 900);
+
     HWND hwnd = CreateWindowExW(
         0, CLASS_NAME, kAppDisplayName,
         WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT, 1440, 900,
+        mainRc.left, mainRc.top,
+        mainRc.right - mainRc.left,
+        mainRc.bottom - mainRc.top,
         nullptr, nullptr, hInstance, nullptr
     );
 
@@ -1358,6 +1079,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
     while (GetMessageW(&msg, nullptr, 0, 0)) {
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
+    }
+
+    if (SUCCEEDED(hrCom)) {
+        CoUninitialize();
     }
 
     return 0;
