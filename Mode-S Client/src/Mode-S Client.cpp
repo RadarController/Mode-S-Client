@@ -44,40 +44,21 @@
 #include "floating/FloatingChat.h"
 #include "platform/PlatformControl.h"
 #include "log/UiLog.h"
-
-#ifndef HAVE_WEBVIEW2
-#error Mode-S Client now requires WebView2 to build.
-#endif
-
-// --------------------------- WebView2 (Modern UI host) ----------------------
-#  if defined(__has_include)
-#    if __has_include("WebView2.h")
-#      include <wrl.h>
-#      include "WebView2.h"
-#      define HAVE_WEBVIEW2 1
-#    else
-#      define HAVE_WEBVIEW2 0
-#    endif
-#  else
-#    define HAVE_WEBVIEW2 0
-#  endif
-
-using Microsoft::WRL::ComPtr;
-static ComPtr<ICoreWebView2Controller> gMainWebController;
-static ComPtr<ICoreWebView2>           gMainWebView;
+#include "ui/WebViewHost.h"
+#include "ui/SplashScreen.h"
 
 static std::atomic<bool> gHttpReady{ false };
 static const wchar_t* kModernUiUrl = L"http://127.0.0.1:17845/app";
+static std::unique_ptr<WebViewHost> gWebViewHost;
 
 // --------------------------- Globals (UI handles) ---------------------------
 static HWND gMainWnd = nullptr;
 static constexpr UINT WM_APP_LOG = WM_APP + 100;
 // Splash screen
-static HWND gSplashWnd = nullptr;
-static HWND gSplashLog = nullptr;
+static std::unique_ptr<SplashScreen> gSplash;
 static constexpr UINT WM_APP_SPLASH_READY = WM_APP + 201;
-static constexpr UINT_PTR SPLASH_CLOSE_TIMER_ID = 1001;
-static constexpr UINT SPLASH_CLOSE_DELAY_MS = 1 * 1000; // test: keep splash for 1s after ready
+static constexpr UINT SPLASH_CLOSE_DELAY_MS = 1 * 1000;
+// App version
 static const wchar_t* kAppDisplayName = L"StreamingATC.Live Mode-S Client";
 static const wchar_t* kAppVersion = APP_VERSION_W; // auto-generated per build
 
@@ -91,10 +72,6 @@ static std::atomic<bool> gRunning{ true };
 // Helix poller is restartable independently of full app shutdown.
 static std::atomic<bool> gTwitchHelixRunning{ true };
 static std::string gTwitchHelixBoundLogin;
-
-// Forward decl
-static HWND CreateSplashWindow(HINSTANCE hInstance);
-static void DestroySplashWindow();
 
 // --------------------------- Helpers ----------------------------------------
 static std::wstring GetExeDir()
@@ -217,193 +194,6 @@ done:
     WinHttpCloseHandle(hConnect);
     WinHttpCloseHandle(hSession);
     return r;
-}
-
-// --------------------------- Splash screen ---------------------------------
-static LRESULT CALLBACK SplashWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
-{
-    switch (msg)
-    {
-    case WM_CREATE:
-    {
-        // Basic, dependency-free splash: title + version + live log output
-        HFONT hFontTitle = nullptr;
-        HFONT hFontBody = nullptr;
-
-        {
-            LOGFONTW lf{};
-            lf.lfHeight = -22;
-            lf.lfWeight = FW_SEMIBOLD;
-            wcscpy_s(lf.lfFaceName, L"Segoe UI");
-            hFontTitle = CreateFontIndirectW(&lf);
-        }
-        {
-            LOGFONTW lf{};
-            lf.lfHeight = -16;
-            wcscpy_s(lf.lfFaceName, L"Segoe UI");
-            hFontBody = CreateFontIndirectW(&lf);
-        }
-
-        // Store fonts as window properties so we can delete on destroy
-        SetPropW(hwnd, L"splash_font_title", hFontTitle);
-        SetPropW(hwnd, L"splash_font_body", hFontBody);
-
-        const int pad = 14;
-
-        HWND hTitle = CreateWindowW(L"STATIC", kAppDisplayName,
-            WS_CHILD | WS_VISIBLE,
-            pad, pad, 520, 28, hwnd, nullptr, nullptr, nullptr);
-
-        std::wstring ver = std::wstring(L"Loading… ") + kAppVersion;
-        HWND hVer = CreateWindowW(L"STATIC", ver.c_str(),
-            WS_CHILD | WS_VISIBLE,
-            pad, pad + 30, 520, 20, hwnd, nullptr, nullptr, nullptr);
-
-        gSplashLog = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
-            WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_READONLY | WS_VSCROLL,
-            pad, pad + 58, 520, 220, hwnd, nullptr, nullptr, nullptr);
-        UiLog_SetSplashHwnd(gSplashLog);
-
-        if (hTitle) SendMessageW(hTitle, WM_SETFONT, (WPARAM)hFontTitle, TRUE);
-        if (hVer)   SendMessageW(hVer, WM_SETFONT, (WPARAM)hFontBody, TRUE);
-        if (gSplashLog) SendMessageW(gSplashLog, WM_SETFONT, (WPARAM)hFontBody, TRUE);
-
-        return 0;
-    }
-
-    case WM_CTLCOLORSTATIC:
-    case WM_CTLCOLOREDIT:
-    {
-        HDC hdc = (HDC)wParam;
-        SetTextColor(hdc, RGB(230, 230, 230));
-
-        static HBRUSH hBg = CreateSolidBrush(RGB(18, 18, 18));
-        static HBRUSH hEditBg = CreateSolidBrush(RGB(32, 32, 32));
-
-        if (msg == WM_CTLCOLOREDIT) {
-            SetBkMode(hdc, OPAQUE);
-            SetBkColor(hdc, RGB(32, 32, 32));
-            return (LRESULT)hEditBg;
-        }
-
-        SetBkMode(hdc, TRANSPARENT);
-        return (LRESULT)hBg;
-    }
-
-    case WM_ERASEBKGND:
-    {
-        RECT rc{};
-        GetClientRect(hwnd, &rc);
-        static HBRUSH hBg = CreateSolidBrush(RGB(18, 18, 18));
-        FillRect((HDC)wParam, &rc, hBg);
-        return 1;
-    }
-
-
-    case WM_TIMER:
-    {
-        if (wParam == SPLASH_CLOSE_TIMER_ID) {
-            KillTimer(hwnd, SPLASH_CLOSE_TIMER_ID);
-
-            // Close splash
-            DestroySplashWindow();
-
-            // Now reveal main UI
-            if (gMainWnd && IsWindow(gMainWnd)) {
-                ShowWindow(gMainWnd, SW_SHOWDEFAULT);
-                UpdateWindow(gMainWnd);
-                SetForegroundWindow(gMainWnd);
-            }
-            return 0;
-        }
-        break;
-    }
-
-    case WM_CLOSE:
-    {
-        // If the user closes the splash, treat it as "exit app".
-        // Close main window too (it may still be hidden during boot).
-        if (gMainWnd && IsWindow(gMainWnd)) {
-            DestroyWindow(gMainWnd);
-        }
-
-        DestroyWindow(hwnd);      // close splash
-        PostQuitMessage(0);       // end message loop
-        return 0;
-    }
-
-    case WM_DESTROY:
-    {
-        // cleanup fonts stored as properties
-        if (auto h = (HFONT)GetPropW(hwnd, L"splash_font_title")) { DeleteObject(h); RemovePropW(hwnd, L"splash_font_title"); }
-        if (auto h = (HFONT)GetPropW(hwnd, L"splash_font_body")) { DeleteObject(h); RemovePropW(hwnd, L"splash_font_body"); }
-        UiLog_SetSplashHwnd(nullptr);
-        gSplashLog = nullptr;
-
-        // If splash is closing and main window isn't alive, exit.
-        if (!gMainWnd || !IsWindow(gMainWnd)) {
-            PostQuitMessage(0);
-        }
-        return 0;
-    }
-
-    default:
-        break;
-    }
-    return DefWindowProcW(hwnd, msg, wParam, lParam);
-}
-
-static HWND CreateSplashWindow(HINSTANCE hInstance)
-{
-    const wchar_t* kSplashClass = L"ModeSClientSplash";
-
-    static std::atomic<bool> registered{ false };
-    if (!registered.exchange(true))
-    {
-        WNDCLASSW wc{};
-        wc.lpfnWndProc = SplashWndProc;
-        wc.hInstance = hInstance;
-        wc.lpszClassName = kSplashClass;
-        wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-        wc.hbrBackground = nullptr;
-        wc.style = CS_HREDRAW | CS_VREDRAW;
-        RegisterClassW(&wc);
-    }
-
-    const int w = 560;
-    const int h = 320;
-
-    RECT wa{};
-    SystemParametersInfoW(SPI_GETWORKAREA, 0, &wa, 0);
-    const int x = wa.left + ((wa.right - wa.left) - w) / 2;
-    const int y = wa.top + ((wa.bottom - wa.top) - h) / 2;
-
-    HWND hwnd = CreateWindowExW(
-        WS_EX_TOPMOST,
-        kSplashClass,
-        kAppDisplayName,
-        WS_POPUP | WS_CAPTION | WS_SYSMENU,
-        x, y, w, h,
-        nullptr, nullptr, hInstance, nullptr);
-
-    if (hwnd) {
-        {
-            std::wstring title = std::wstring(kAppDisplayName) + L" " + APP_VERSION_FILE_W;
-            SetWindowTextW(hwnd, title.c_str());
-        }
-        ShowWindow(hwnd, SW_SHOW);
-        UpdateWindow(hwnd);
-    }
-    return hwnd;
-}
-
-static void DestroySplashWindow()
-{
-    if (gSplashWnd && IsWindow(gSplashWnd)) {
-        DestroyWindow(gSplashWnd);
-    }
-    gSplashWnd = nullptr;
-    gSplashLog = nullptr;
 }
 
 // --------------------------- Translucent window helper ----------------------
@@ -822,92 +612,19 @@ catch (...) {
 
             if (!gFloatingChat) gFloatingChat = std::make_unique<FloatingChat>();
 
-            HRESULT hr = CreateCoreWebView2EnvironmentWithOptions(
-                nullptr, nullptr, nullptr,
-                Microsoft::WRL::Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
-                    [hwnd](HRESULT envResult, ICoreWebView2Environment* env) -> HRESULT {
-                        if (FAILED(envResult) || !env) return envResult;
-                        env->CreateCoreWebView2Controller(
-                            hwnd,
-                            Microsoft::WRL::Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
-                                [hwnd](HRESULT ctlResult, ICoreWebView2Controller* controller) -> HRESULT {
-                                    if (FAILED(ctlResult) || !controller) return ctlResult;
+            if (!gWebViewHost) {
+                gWebViewHost = std::make_unique<WebViewHost>();
+            }
 
-                                    gMainWebController = controller;
+            const HRESULT hr = gWebViewHost->Create(
+                hwnd,
+                APP_VERSION_FILE_W,
+                [hwnd]() {
+                    if (gFloatingChat) {
+                        gFloatingChat->Open(hwnd);
+                    }
+                });
 
-                                    ICoreWebView2* core = nullptr;
-                                    gMainWebController->get_CoreWebView2(&core);
-                                    if (core) {
-                                        gMainWebView.Attach(core);
-
-                                        {
-                                            EventRegistrationToken tok{};
-                                            gMainWebView->add_WebMessageReceived(
-                                                Microsoft::WRL::Callback<ICoreWebView2WebMessageReceivedEventHandler>(
-                                                    [hwnd](ICoreWebView2*, ICoreWebView2WebMessageReceivedEventArgs* args) -> HRESULT {
-                                                        LPWSTR jsonRaw = nullptr;
-                                                        args->get_WebMessageAsJson(&jsonRaw);
-                                                        std::wstring json = jsonRaw ? jsonRaw : L"";
-                                                        if (jsonRaw) CoTaskMemFree(jsonRaw);
-
-                                                        if (json.find(L"open_chat") != std::wstring::npos) {
-                                                            if (gFloatingChat) gFloatingChat->Open(hwnd);
-                                                        }
-                                                        return S_OK;
-                                                    }).Get(),
-                                                        &tok);
-                                        }
-
-                                        {
-                                            EventRegistrationToken tok{};
-                                            gMainWebView->add_NewWindowRequested(
-                                                Microsoft::WRL::Callback<ICoreWebView2NewWindowRequestedEventHandler>(
-                                                    [hwnd](ICoreWebView2*, ICoreWebView2NewWindowRequestedEventArgs* args) -> HRESULT {
-                                                        LPWSTR uriRaw = nullptr;
-                                                        args->get_Uri(&uriRaw);
-                                                        std::wstring uri = uriRaw ? uriRaw : L"";
-                                                        if (uriRaw) CoTaskMemFree(uriRaw);
-
-                                                        if (uri.find(L"/overlay/chat.html") != std::wstring::npos) {
-                                                            if (gFloatingChat) gFloatingChat->Open(hwnd);
-                                                            args->put_Handled(TRUE);
-                                                        }
-                                                        return S_OK;
-                                                    }).Get(),
-                                                        &tok);
-                                        }
-
-                                        ICoreWebView2Settings* settings = nullptr;
-                                        gMainWebView->get_Settings(&settings);
-                                        if (settings) {
-                                            settings->put_IsStatusBarEnabled(FALSE);
-                                            settings->put_AreDefaultContextMenusEnabled(FALSE);
-                                            settings->put_AreDefaultScriptDialogsEnabled(FALSE);
-                                            settings->Release();
-                                        }
-
-                                        {
-                                            std::wstring build = APP_VERSION_FILE_W;
-                                            std::wstring js = L"window.__APP_BUILDINFO='" + build + L"';"
-                                                L"document.addEventListener('DOMContentLoaded',function(){"
-                                                L"var el=document.getElementById('buildInfo');"
-                                                L"if(el){el.textContent=window.__APP_BUILDINFO;}"
-                                                L"});";
-                                            gMainWebView->AddScriptToExecuteOnDocumentCreated(js.c_str(), nullptr);
-                                        }
-
-                                        if (gHttpReady.load()) {
-                                            gMainWebView->Navigate(kModernUiUrl);
-                                        }
-                                    }
-
-                                    gMainWebController->put_IsVisible(TRUE);
-                                    RECT rc; GetClientRect(hwnd, &rc);
-                                    gMainWebController->put_Bounds(rc);
-                                    return S_OK;
-                                }).Get());
-                        return S_OK;
-                    }).Get());
             (void)hr;
 
             LogLine(L"Starting Mode-S Client overlay");
@@ -1124,8 +841,8 @@ catch (...) {
 
         // Signal that the HTTP server is ready for WebView2 navigation.
         gHttpReady = true;
-        if (gMainWebView) {
-            gMainWebView->Navigate(kModernUiUrl);
+        if (gWebViewHost) {
+            gWebViewHost->Navigate(kModernUiUrl);
         }
 
         metricsThread = std::thread([&]() {
@@ -1234,13 +951,10 @@ LogLine(L"TIKTOK: starting followers poller thread");
 
     case WM_APP_SPLASH_READY:
     {
-        // Background init has completed; keep splash visible briefly (test) then show main UI.
-        if (gSplashWnd && IsWindow(gSplashWnd)) {
-            // Start (or restart) the close timer on the splash window.
-            SetTimer(gSplashWnd, SPLASH_CLOSE_TIMER_ID, SPLASH_CLOSE_DELAY_MS, nullptr);
+        if (gSplash) {
+            gSplash->BeginCloseThenShowMain(hwnd, SPLASH_CLOSE_DELAY_MS);
         }
         else {
-            // Fallback: if splash doesn't exist, just show the main UI immediately.
             ShowWindow(hwnd, SW_SHOWDEFAULT);
             UpdateWindow(hwnd);
             SetForegroundWindow(hwnd);
@@ -1253,18 +967,19 @@ case WM_CLOSE:
     return 0;
 
 case WM_SIZE:
-    if (gMainWebController) {
-        RECT rc; GetClientRect(hwnd, &rc);
-        gMainWebController->put_Bounds(rc);
+    if (gWebViewHost) {
+        gWebViewHost->Resize();
     }
     return 0;
 
-    case WM_DESTROY:
-        // Safety net: if we somehow got here without WM_CLOSE
-        UiLog_SetLogHwnd(nullptr);
-        BeginShutdown(nullptr);
-        PostQuitMessage(0);
-        return 0;
+case WM_DESTROY:
+    // Safety net: if we somehow got here without WM_CLOSE
+    UiLog_SetLogHwnd(nullptr);
+    gWebViewHost.reset();
+    gSplash.reset();
+    BeginShutdown(nullptr);
+    PostQuitMessage(0);
+    return 0;
 
     default:
         break;
@@ -1306,7 +1021,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
     }
 
     // Splash screen shown while the main window initializes
-    gSplashWnd = CreateSplashWindow(hInstance);
+    if (!gSplash) {
+        gSplash = std::make_unique<SplashScreen>();
+    }
+    gSplash->Create(hInstance, kAppDisplayName, APP_VERSION_FILE_W);
 
     // Process any pending messages so the splash paints immediately.
     MSG sm{};
