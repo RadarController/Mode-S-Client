@@ -5,8 +5,6 @@
 #include <windows.h>
 #include <string>
 #include <filesystem>
-#include <fstream>
-#include <sstream>
 
 #include <wrl.h>
 #include "WebView2.h"
@@ -24,31 +22,7 @@ std::wstring gVersionText;
 std::wstring gLastSplashHtmlPath;
 
 bool gSplashHtmlReady = false;
-bool gSplashNavCompleted = false;
-bool gSplashNavSuccess = false;
-
-COREWEBVIEW2_WEB_ERROR_STATUS gSplashWebErrorStatus = COREWEBVIEW2_WEB_ERROR_STATUS_UNKNOWN;
-std::wstring gSplashDebugHtmlPath;
-
-bool gSplashFileExists = false;
-size_t gSplashRawByteCount = 0;
-size_t gSplashHtmlCharCount = 0;
-
-bool gSplashIndexExists = false;
-size_t gSplashIndexRawBytes = 0;
-size_t gSplashIndexChars = 0;
-
-DWORD gSplashIndexOpenError = 0;
-
-bool gSplashEnvCreated = false;
-bool gSplashControllerCreated = false;
-bool gSplashCoreAcquired = false;
-bool gSplashBuildCalled = false;
-
 bool gPendingCloseAfterHtmlReady = false;
-
-HRESULT gSplashEnvHr = S_OK;
-HRESULT gSplashControllerHr = S_OK;
 
 ComPtr<ICoreWebView2Controller> gSplashWebController;
 ComPtr<ICoreWebView2>           gSplashWebView;
@@ -77,127 +51,6 @@ std::wstring GetSplashAssetDir()
     return GetExeDir() + L"\\assets\\app\\splash";
 }
 
-std::wstring GetSplashDebugHtmlPath()
-{
-    return GetExeDir() + L"\\assets\\app\\splash\\_debug_composed.html";
-}
-
-bool WriteUtf8File(const std::filesystem::path& path, const std::wstring& text)
-{
-    const int needed = WideCharToMultiByte(CP_UTF8, 0, text.c_str(), (int)text.size(), nullptr, 0, nullptr, nullptr);
-    if (needed <= 0) return false;
-
-    std::string bytes;
-    bytes.resize(needed);
-    WideCharToMultiByte(CP_UTF8, 0, text.c_str(), (int)text.size(), bytes.data(), needed, nullptr, nullptr);
-
-    std::ofstream f(path, std::ios::binary);
-    if (!f.is_open()) return false;
-
-    const unsigned char bom[3] = { 0xEF, 0xBB, 0xBF };
-    f.write(reinterpret_cast<const char*>(bom), 3);
-    f.write(bytes.data(), bytes.size());
-    return f.good();
-}
-
-std::wstring ReadUtf8File(const std::filesystem::path& path)
-{
-    gSplashFileExists = std::filesystem::exists(path);
-    gSplashRawByteCount = 0;
-
-    HANDLE hFile = CreateFileW(
-        path.c_str(),
-        GENERIC_READ,
-        FILE_SHARE_READ,
-        nullptr,
-        OPEN_EXISTING,
-        FILE_ATTRIBUTE_NORMAL,
-        nullptr);
-
-    if (hFile == INVALID_HANDLE_VALUE) {
-        return L"";
-    }
-
-    LARGE_INTEGER size{};
-    if (!GetFileSizeEx(hFile, &size) || size.QuadPart <= 0 || size.QuadPart > 16 * 1024 * 1024) {
-        CloseHandle(hFile);
-        return L"";
-    }
-
-    std::string bytes;
-    bytes.resize(static_cast<size_t>(size.QuadPart));
-
-    DWORD bytesRead = 0;
-    if (!ReadFile(hFile, bytes.data(), static_cast<DWORD>(bytes.size()), &bytesRead, nullptr)) {
-        CloseHandle(hFile);
-        return L"";
-    }
-
-    CloseHandle(hFile);
-
-    bytes.resize(bytesRead);
-    gSplashRawByteCount = bytes.size();
-
-    if (bytes.empty()) {
-        return L"";
-    }
-
-    // Strip UTF-8 BOM if present
-    if (bytes.size() >= 3 &&
-        static_cast<unsigned char>(bytes[0]) == 0xEF &&
-        static_cast<unsigned char>(bytes[1]) == 0xBB &&
-        static_cast<unsigned char>(bytes[2]) == 0xBF) {
-        bytes.erase(0, 3);
-    }
-
-    // Try UTF-8 first
-    int needed = MultiByteToWideChar(
-        CP_UTF8,
-        MB_ERR_INVALID_CHARS,
-        bytes.data(),
-        static_cast<int>(bytes.size()),
-        nullptr,
-        0);
-
-    if (needed > 0) {
-        std::wstring out;
-        out.resize(needed);
-        MultiByteToWideChar(
-            CP_UTF8,
-            MB_ERR_INVALID_CHARS,
-            bytes.data(),
-            static_cast<int>(bytes.size()),
-            out.data(),
-            needed);
-        return out;
-    }
-
-    // Fallback to system ANSI code page
-    needed = MultiByteToWideChar(
-        CP_ACP,
-        0,
-        bytes.data(),
-        static_cast<int>(bytes.size()),
-        nullptr,
-        0);
-
-    if (needed <= 0) {
-        return L"";
-    }
-
-    std::wstring out;
-    out.resize(needed);
-    MultiByteToWideChar(
-        CP_ACP,
-        0,
-        bytes.data(),
-        static_cast<int>(bytes.size()),
-        out.data(),
-        needed);
-
-    return out;
-}
-
 std::wstring ReplaceAll(std::wstring text, const std::wstring& from, const std::wstring& to)
 {
     if (from.empty()) return text;
@@ -219,84 +72,75 @@ std::wstring BuildSplashHtmlFromDisk()
 
     gLastSplashHtmlPath = htmlPath.wstring();
 
-    gSplashIndexExists = false;
-    gSplashIndexRawBytes = 0;
-    gSplashIndexChars = 0;
-    gSplashIndexOpenError = 0;
+    auto readFile = [](const std::filesystem::path& path) -> std::wstring {
+        HANDLE hFile = CreateFileW(
+            path.c_str(),
+            GENERIC_READ,
+            FILE_SHARE_READ,
+            nullptr,
+            OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL,
+            nullptr);
 
-    HANDLE hFile = CreateFileW(
-        htmlPath.c_str(),
-        GENERIC_READ,
-        FILE_SHARE_READ,
-        nullptr,
-        OPEN_EXISTING,
-        FILE_ATTRIBUTE_NORMAL,
-        nullptr);
+        if (hFile == INVALID_HANDLE_VALUE) {
+            return L"";
+        }
 
-    if (hFile == INVALID_HANDLE_VALUE) {
-        gSplashIndexOpenError = GetLastError();
-        return L"";
-    }
+        LARGE_INTEGER size{};
+        if (!GetFileSizeEx(hFile, &size) || size.QuadPart <= 0 || size.QuadPart > 16 * 1024 * 1024) {
+            CloseHandle(hFile);
+            return L"";
+        }
 
-    gSplashIndexExists = true;
-    gSplashIndexOpenError = 0;
+        std::string bytes;
+        bytes.resize(static_cast<size_t>(size.QuadPart));
 
-    LARGE_INTEGER size{};
-    if (!GetFileSizeEx(hFile, &size) || size.QuadPart <= 0 || size.QuadPart > 16 * 1024 * 1024) {
+        DWORD bytesRead = 0;
+        if (!ReadFile(hFile, bytes.data(), static_cast<DWORD>(bytes.size()), &bytesRead, nullptr)) {
+            CloseHandle(hFile);
+            return L"";
+        }
+
         CloseHandle(hFile);
-        return L"";
-    }
 
-    std::string htmlBytes;
-    htmlBytes.resize(static_cast<size_t>(size.QuadPart));
+        bytes.resize(bytesRead);
+        if (bytes.empty()) {
+            return L"";
+        }
 
-    DWORD bytesRead = 0;
-    if (!ReadFile(hFile, htmlBytes.data(), static_cast<DWORD>(htmlBytes.size()), &bytesRead, nullptr)) {
-        CloseHandle(hFile);
-        return L"";
-    }
+        if (bytes.size() >= 3 &&
+            static_cast<unsigned char>(bytes[0]) == 0xEF &&
+            static_cast<unsigned char>(bytes[1]) == 0xBB &&
+            static_cast<unsigned char>(bytes[2]) == 0xBF) {
+            bytes.erase(0, 3);
+        }
 
-    CloseHandle(hFile);
-
-    htmlBytes.resize(bytesRead);
-    gSplashIndexRawBytes = htmlBytes.size();
-
-    if (htmlBytes.empty()) {
-        return L"";
-    }
-
-    if (htmlBytes.size() >= 3 &&
-        static_cast<unsigned char>(htmlBytes[0]) == 0xEF &&
-        static_cast<unsigned char>(htmlBytes[1]) == 0xBB &&
-        static_cast<unsigned char>(htmlBytes[2]) == 0xBF) {
-        htmlBytes.erase(0, 3);
-    }
-
-    int needed = MultiByteToWideChar(
-        CP_UTF8,
-        MB_ERR_INVALID_CHARS,
-        htmlBytes.data(),
-        static_cast<int>(htmlBytes.size()),
-        nullptr,
-        0);
-
-    std::wstring html;
-    if (needed > 0) {
-        html.resize(needed);
-        MultiByteToWideChar(
+        int needed = MultiByteToWideChar(
             CP_UTF8,
             MB_ERR_INVALID_CHARS,
-            htmlBytes.data(),
-            static_cast<int>(htmlBytes.size()),
-            html.data(),
-            needed);
-    }
-    else {
+            bytes.data(),
+            static_cast<int>(bytes.size()),
+            nullptr,
+            0);
+
+        std::wstring out;
+        if (needed > 0) {
+            out.resize(needed);
+            MultiByteToWideChar(
+                CP_UTF8,
+                MB_ERR_INVALID_CHARS,
+                bytes.data(),
+                static_cast<int>(bytes.size()),
+                out.data(),
+                needed);
+            return out;
+        }
+
         needed = MultiByteToWideChar(
             CP_ACP,
             0,
-            htmlBytes.data(),
-            static_cast<int>(htmlBytes.size()),
+            bytes.data(),
+            static_cast<int>(bytes.size()),
             nullptr,
             0);
 
@@ -304,20 +148,21 @@ std::wstring BuildSplashHtmlFromDisk()
             return L"";
         }
 
-        html.resize(needed);
+        out.resize(needed);
         MultiByteToWideChar(
             CP_ACP,
             0,
-            htmlBytes.data(),
-            static_cast<int>(htmlBytes.size()),
-            html.data(),
+            bytes.data(),
+            static_cast<int>(bytes.size()),
+            out.data(),
             needed);
-    }
 
-    gSplashIndexChars = html.size();
+        return out;
+        };
 
-    const std::wstring css = ReadUtf8File(cssPath);
-    const std::wstring js = ReadUtf8File(jsPath);
+    std::wstring html = readFile(htmlPath);
+    const std::wstring css = readFile(cssPath);
+    const std::wstring js = readFile(jsPath);
 
     if (html.empty()) {
         return L"";
@@ -485,56 +330,16 @@ void PaintFallbackSplash(HWND hwnd, HDC hdc)
     std::wstring foot = gSplashHtmlReady ? L"HTML SPLASH LIVE" : L"RADARCONTROLLER // STARTUP";
     DrawTextW(hdc, foot.c_str(), -1, &footRc, DT_CENTER | DT_TOP | DT_SINGLELINE);
 
-    RECT pathLabelRc = inner;
-    pathLabelRc.left += 40;
-    pathLabelRc.right -= 40;
-    pathLabelRc.top = footRc.bottom + 14;
-    pathLabelRc.bottom = pathLabelRc.top + 18;
+    RECT statusRc = inner;
+    statusRc.left += 40;
+    statusRc.right -= 40;
+    statusRc.top = footRc.bottom + 18;
+    statusRc.bottom = statusRc.top + 22;
     SetTextColor(hdc, RGB(145, 170, 200));
-    DrawTextW(hdc, L"Attempted splash HTML path:", -1, &pathLabelRc, DT_CENTER | DT_TOP | DT_SINGLELINE);
-
-    RECT pathValueRc = inner;
-    pathValueRc.left += 60;
-    pathValueRc.right -= 60;
-    pathValueRc.top = pathLabelRc.bottom + 6;
-    pathValueRc.bottom = pathValueRc.top + 38; // fixed height: max ~2 lines
-    SetTextColor(hdc, RGB(232, 238, 247));
-    std::wstring shownPath = gLastSplashHtmlPath.empty() ? GetSplashHtmlPath() : gLastSplashHtmlPath;
-    DrawTextW(hdc, shownPath.c_str(), -1, &pathValueRc, DT_CENTER | DT_TOP | DT_WORDBREAK | DT_END_ELLIPSIS);
-
-    RECT dbg1 = inner;
-    dbg1.left += 40;
-    dbg1.right -= 40;
-    dbg1.top = pathValueRc.bottom + 10;
-    dbg1.bottom = dbg1.top + 18;
-    SetTextColor(hdc, RGB(145, 170, 200));
-    std::wstring line1 =
-        L"Env: " + std::wstring(gSplashEnvCreated ? L"yes" : L"no") +
-        L" | Controller: " + std::wstring(gSplashControllerCreated ? L"yes" : L"no") +
-        L" | Core: " + std::wstring(gSplashCoreAcquired ? L"yes" : L"no");
-    DrawTextW(hdc, line1.c_str(), -1, &dbg1, DT_CENTER | DT_TOP | DT_SINGLELINE);
-
-    RECT dbg2 = inner;
-    dbg2.left += 40;
-    dbg2.right -= 40;
-    dbg2.top = dbg1.bottom + 6;
-    dbg2.bottom = dbg2.top + 18;
-    std::wstring line2 =
-        L"Build called: " + std::wstring(gSplashBuildCalled ? L"yes" : L"no") +
-        L" | Nav completed: " + std::wstring(gSplashNavCompleted ? L"yes" : L"no") +
-        L" | success: " + std::wstring(gSplashNavSuccess ? L"yes" : L"no");
-    DrawTextW(hdc, line2.c_str(), -1, &dbg2, DT_CENTER | DT_TOP | DT_SINGLELINE);
-
-    RECT dbg3 = inner;
-    dbg3.left += 40;
-    dbg3.right -= 40;
-    dbg3.top = dbg2.bottom + 6;
-    dbg3.bottom = dbg3.top + 18;
-    std::wstring line3 =
-        L"env hr: " + std::to_wstring((long)gSplashEnvHr) +
-        L" | ctl hr: " + std::to_wstring((long)gSplashControllerHr) +
-        L" | WebErrorStatus: " + std::to_wstring((int)gSplashWebErrorStatus);
-    DrawTextW(hdc, line3.c_str(), -1, &dbg3, DT_CENTER | DT_TOP | DT_SINGLELINE);
+    const wchar_t* statusText = gSplashHtmlReady
+        ? L"HTML splash loaded."
+        : L"Loading splash screen...";
+    DrawTextW(hdc, statusText, -1, &statusRc, DT_CENTER | DT_TOP | DT_SINGLELINE);
 
     SelectObject(hdc, oldFont);
     DeleteObject(titleFont);
@@ -551,9 +356,6 @@ void InitSplashWebView(HWND hwnd)
         nullptr, nullptr, nullptr,
         Microsoft::WRL::Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
             [hwnd](HRESULT envResult, ICoreWebView2Environment* env) -> HRESULT {
-                gSplashEnvHr = envResult;
-                gSplashEnvCreated = SUCCEEDED(envResult) && env != nullptr;
-
                 if (FAILED(envResult) || !env) {
                     InvalidateRect(hwnd, nullptr, TRUE);
                     return S_OK;
@@ -563,9 +365,6 @@ void InitSplashWebView(HWND hwnd)
                     hwnd,
                     Microsoft::WRL::Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
                         [hwnd](HRESULT ctlResult, ICoreWebView2Controller* controller) -> HRESULT {
-                            gSplashControllerHr = ctlResult;
-                            gSplashControllerCreated = SUCCEEDED(ctlResult) && controller != nullptr;
-
                             if (FAILED(ctlResult) || !controller) {
                                 InvalidateRect(hwnd, nullptr, TRUE);
                                 return S_OK;
@@ -576,7 +375,6 @@ void InitSplashWebView(HWND hwnd)
 
                             ICoreWebView2* core = nullptr;
                             gSplashWebController->get_CoreWebView2(&core);
-                            gSplashCoreAcquired = (core != nullptr);
                             if (!core) {
                                 InvalidateRect(hwnd, nullptr, TRUE);
                                 return S_OK;
@@ -614,31 +412,24 @@ void InitSplashWebView(HWND hwnd)
                                             args->get_WebErrorStatus(&webError);
                                         }
 
-                                        gSplashNavCompleted = true;
-                                        gSplashNavSuccess = (success == TRUE);
-                                        gSplashWebErrorStatus = webError;
-                                        gSplashHtmlReady = gSplashNavSuccess;
+                                        gSplashHtmlReady = (success == TRUE);
                                         if (gSplashWebController) {
                                             gSplashWebController->put_IsVisible(gSplashHtmlReady ? TRUE : FALSE);
                                         }
                                         InvalidateRect(hwnd, nullptr, TRUE);
                                         UpdateWindow(hwnd);
 
-                                        if (!gSplashHtmlReady && sender) {
-                                            // Keep native fallback visible; do not replace it with a second HTML fallback.
-                                        }
-
                                         if (gSplashHtmlReady && gPendingCloseAfterHtmlReady && gSplashWnd && IsWindow(gSplashWnd)) {
                                             gPendingCloseAfterHtmlReady = false;
                                             SetTimer(gSplashWnd, kCloseTimerId, kCloseDelayMs, nullptr);
                                         }
                                         return S_OK;
+
                                     }).Get(),
                                 nullptr);
 
                             ResizeSplashWebView();
 
-                            gSplashBuildCalled = true;
                             const std::wstring splashHtml = BuildSplashHtmlFromDisk();
                             if (!splashHtml.empty()) {
                                 gSplashWebView->NavigateToString(splashHtml.c_str());
@@ -742,25 +533,6 @@ bool Create(HINSTANCE hInstance, const wchar_t* displayName, const wchar_t* vers
     gVersionText = versionText ? versionText : L"";
     gLastSplashHtmlPath = GetSplashHtmlPath();
     gSplashHtmlReady = false;
-    gSplashNavCompleted = false;
-    gSplashNavSuccess = false;
-    gSplashWebErrorStatus = COREWEBVIEW2_WEB_ERROR_STATUS_UNKNOWN;
-
-    gSplashIndexExists = false;
-    gSplashIndexRawBytes = 0;
-    gSplashIndexChars = 0;
-    gSplashIndexOpenError = 0;
-    gSplashHtmlCharCount = 0;
-    gSplashRawByteCount = 0;
-    gSplashFileExists = false;
-
-    gSplashEnvCreated = false;
-    gSplashControllerCreated = false;
-    gSplashCoreAcquired = false;
-    gSplashBuildCalled = false;
-    gSplashEnvHr = S_OK;
-    gSplashControllerHr = S_OK;
-
     gPendingCloseAfterHtmlReady = false;
 
     if (gSplashWnd && IsWindow(gSplashWnd)) {
