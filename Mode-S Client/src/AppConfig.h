@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <cstdio>
 #include "json.hpp"
+#include "log/UiLog.h"
 
 struct AppConfig
 {
@@ -70,62 +71,76 @@ static std::wstring ConfigPath()
     return ResolveConfigPathForWrite();
 }
 
-    static void DebugLogConfigLookup(const wchar_t* action, const std::wstring& path)
-    {
-        // Log to both debugger output (Visual Studio Output window) and stderr.
-        // This helps diagnose "works in Release, not in Debug" issues where the working directory differs.
-        wchar_t buf[2048] = {0};
-        _snwprintf_s(buf, _countof(buf), _TRUNCATE, L"[AppConfig] %s config.json at: %s\n", action ? action : L"Looking for", path.c_str());
-        OutputDebugStringW(buf);
-        fwprintf(stderr, L"%s", buf);
+static void DebugLogConfigLookup(const wchar_t* action, const std::wstring& path)
+{
+#ifdef _DEBUG
+    wchar_t buf[2048] = { 0 };
+
+    _snwprintf_s(
+        buf,
+        _countof(buf),
+        _TRUNCATE,
+        L"[AppConfig] %s config.json at: %s",
+        action ? action : L"Looking for",
+        path.c_str()
+    );
+
+    OutputDebugStringW(buf);
+#endif
+}
+
+bool Load()
+{
+    const auto path = ResolveConfigPathForRead();
+    DebugLogConfigLookup(L"Looking for", path);
+
+    FILE* f = nullptr;
+    _wfopen_s(&f, path.c_str(), L"rb");
+    if (f) { s_last_loaded_path = path; }
+
+    if (!f) {
+        const DWORD err = GetLastError();
+        wchar_t buf[256] = { 0 };
+        _snwprintf_s(
+            buf,
+            _countof(buf),
+            _TRUNCATE,
+            L"[AppConfig] Failed to open config.json (err=%lu)",
+            (unsigned long)err
+        );
+        LogLine(buf);
+        return false;
     }
 
-    bool Load()
-    {
-        const auto path = ResolveConfigPathForRead();
-        DebugLogConfigLookup(L"Looking for", path);
-        FILE* f = nullptr;
-        _wfopen_s(&f, path.c_str(), L"rb");
-        if (f) { s_last_loaded_path = path; }
-        if (!f) {
-            // Helpful: log last error so we know whether it's simply missing vs permissions, etc.
-            const DWORD err = GetLastError();
-            wchar_t buf[256] = {0};
-            _snwprintf_s(buf, _countof(buf), _TRUNCATE, L"[AppConfig] Failed to open config.json (err=%lu)\n", (unsigned long)err);
-            OutputDebugStringW(buf);
-            fwprintf(stderr, L"%s", buf);
-            return false;
-        }
+    fseek(f, 0, SEEK_END);
+    long sz = ftell(f);
+    fseek(f, 0, SEEK_SET);
 
-        fseek(f, 0, SEEK_END);
-        long sz = ftell(f);
-        fseek(f, 0, SEEK_SET);
+    std::string data;
+    data.resize(sz > 0 ? (size_t)sz : 0);
+    if (sz > 0) fread(data.data(), 1, (size_t)sz, f);
+    fclose(f);
 
-        std::string data;
-        data.resize(sz > 0 ? (size_t)sz : 0);
-        if (sz > 0) fread(data.data(), 1, (size_t)sz, f);
-        fclose(f);
-
-        try {
-            auto j = nlohmann::json::parse(data);
-            tiktok_unique_id = j.value("tiktok_unique_id", tiktok_unique_id);
-            twitch_login = j.value("twitch_login", twitch_login);
-            twitch_client_id = j.value("twitch_client_id", twitch_client_id);
-            twitch_client_secret = j.value("twitch_client_secret", twitch_client_secret);
-            metrics_json_path = j.value("metrics_json_path", metrics_json_path);
-            youtube_handle = j.value("youtube_handle", youtube_handle);
-            tiktok_sessionid = j.value("tiktok_sessionid", tiktok_sessionid);
-            tiktok_sessionid_ss = j.value("tiktok_sessionid_ss", tiktok_sessionid_ss);
-            tiktok_tt_target_idc = j.value("tiktok_tt_target_idc", tiktok_tt_target_idc);
-            overlay_font_family = j.value("overlay_font_family", overlay_font_family);
-            overlay_font_size = j.value("overlay_font_size", overlay_font_size);
-            overlay_text_shadow = j.value("overlay_text_shadow", overlay_text_shadow);
-            return true;
+    try {
+        auto j = nlohmann::json::parse(data);
+        tiktok_unique_id = j.value("tiktok_unique_id", tiktok_unique_id);
+        twitch_login = j.value("twitch_login", twitch_login);
+        twitch_client_id = j.value("twitch_client_id", twitch_client_id);
+        twitch_client_secret = j.value("twitch_client_secret", twitch_client_secret);
+        metrics_json_path = j.value("metrics_json_path", metrics_json_path);
+        youtube_handle = j.value("youtube_handle", youtube_handle);
+        tiktok_sessionid = j.value("tiktok_sessionid", tiktok_sessionid);
+        tiktok_sessionid_ss = j.value("tiktok_sessionid_ss", tiktok_sessionid_ss);
+        tiktok_tt_target_idc = j.value("tiktok_tt_target_idc", tiktok_tt_target_idc);
+        overlay_font_family = j.value("overlay_font_family", overlay_font_family);
+        overlay_font_size = j.value("overlay_font_size", overlay_font_size);
+        overlay_text_shadow = j.value("overlay_text_shadow", overlay_text_shadow);
+        return true;
         }
         catch (...) {
             return false;
         }
-    }
+}
 
     bool Save() const
     {

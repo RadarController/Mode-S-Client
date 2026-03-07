@@ -25,3 +25,5 @@ void UiLog_AppendOnUiThread(const std::wstring& s);
 
 // WM_APP_LOG handler helper (owns deleting the heap string).
 void UiLog_HandleAppLogMessage(LPARAM lParam);
+
+// Update

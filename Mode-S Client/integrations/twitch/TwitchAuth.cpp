@@ -1,4 +1,21 @@
+#include <cctype>
+#include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
+#include <random>
+#include <sstream>
+#include <vector>
+#include <cstdio>
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <windows.h>
+#endif
+
 #include "TwitchAuth.h"
+#include "core/StringUtil.h"
+#include "log/UiLog.h"
 
 // This translation unit uses cpp-httplib + nlohmann::json.
 // Keep these includes near the top so early functions compile regardless of include order.
@@ -63,21 +80,6 @@ bool TwitchAuth::ValidateAndLogToken(const std::string& access_token, std::strin
     }
 }
 
-#include <cctype>
-#include <chrono>
-#include <filesystem>
-#include <fstream>
-#include <iomanip>
-#include <random>
-#include <sstream>
-#include <vector>
-#include <cstdio>
-#ifdef _WIN32
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#include <windows.h>
-#endif
-
 // (httplib/json includes and json alias are declared at top of file)
 
 // Hardcoded scope list (already URL-encoded).
@@ -116,12 +118,18 @@ static std::string MaskToken(const std::string& t) {
 }
 
 static void DebugLog(const std::string& msg) {
-    const std::string line = "TWITCHAUTH: " + msg + "\n";
+    const std::wstring wline = L"TWITCHAUTH: " + ToW(msg);
+
 #ifdef _WIN32
-    OutputDebugStringA(line.c_str());
+    OutputDebugStringW((wline + L"\n").c_str());
 #endif
-    std::fprintf(stderr, "%s", line.c_str());
-    std::fflush(stderr);
+
+    try {
+        LogLine(wline);
+    }
+    catch (...) {
+        // Never allow logging failures to break auth flow
+    }
 }
 
 static std::string TrimAscii(std::string s) {

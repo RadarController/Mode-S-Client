@@ -102,3 +102,5 @@ void LogLine(const std::wstring& s)
 
     UiLog_AppendOnUiThread(s);
 }
+
+// Update
