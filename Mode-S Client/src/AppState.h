@@ -1,4 +1,5 @@
 #pragma once
+#include <cstddef>
 #include <mutex>
 #include <deque>
 #include <string>
@@ -186,22 +187,21 @@ public:
     BotSettings bot_settings_snapshot() const;
 
 
-// --- Overlay header (stream title/subtitle shown in overlays) ---
-struct OverlayHeader {
-    std::string title;
-    std::string subtitle;
-};
+    // --- Overlay header (stream title/subtitle shown in overlays) ---
+    struct OverlayHeader {
+        std::string title;
+        std::string subtitle;
+    };
 
-// Storage path should be set once at startup (utf-8 path). If empty, header is in-memory only.
-void set_overlay_header_storage_path(const std::string& path_utf8);
-// Returns true if header was loaded.
-bool load_overlay_header_from_disk();
+    // Storage path should be set once at startup (utf-8 path). If empty, header is in-memory only.
+    void set_overlay_header_storage_path(const std::string& path_utf8);
+    bool load_overlay_header_from_disk();
 
-// Replace header (and persist best-effort).
-// Accepts JSON object: {"title":"...","subtitle":"..."}
-bool set_overlay_header(const nlohmann::json& header_obj, std::string* err = nullptr);
-nlohmann::json overlay_header_json() const;
-OverlayHeader overlay_header_snapshot() const;
+    // Replace header (and persist best-effort).
+    // Accepts JSON object: {"title":"...","subtitle":"..."}
+    bool set_overlay_header(const nlohmann::json& header_obj, std::string* err = nullptr);
+    nlohmann::json overlay_header_json() const;
+    OverlayHeader overlay_header_snapshot() const;
 
 
     // -----------------------------------------------------------------
@@ -239,7 +239,7 @@ private:
 
     static std::string make_alert_history_id_(std::uint64_t seq);
 
-    static constexpr size_t kAlertsHistoryMax_ = 5000;
+    static constexpr std::size_t kAlertsHistoryMax_ = 5000;
     mutable std::mutex alerts_history_mu_;
     std::deque<AlertHistoryItem> alerts_history_;
     std::uint64_t alerts_history_seq_ = 0;

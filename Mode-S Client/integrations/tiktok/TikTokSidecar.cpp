@@ -1,5 +1,6 @@
 #include "TikTokSidecar.h"
 #include <vector>
+#include "log/UiLog.h"
 
 TikTokSidecar::~TikTokSidecar() { stop(); }
 
