@@ -1,3 +1,18 @@
+#include <cctype>
+#include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
+#include <random>
+#include <sstream>
+#include <vector>
+#include <cstdio>
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <windows.h>
+#endif
+
 #include "TwitchAuth.h"
 #include "core/StringUtil.h"
 #include "log/UiLog.h"
@@ -64,21 +79,6 @@ bool TwitchAuth::ValidateAndLogToken(const std::string& access_token, std::strin
         return false;
     }
 }
-
-#include <cctype>
-#include <chrono>
-#include <filesystem>
-#include <fstream>
-#include <iomanip>
-#include <random>
-#include <sstream>
-#include <vector>
-#include <cstdio>
-#ifdef _WIN32
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#include <windows.h>
-#endif
 
 // (httplib/json includes and json alias are declared at top of file)
 
