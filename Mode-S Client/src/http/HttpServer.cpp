@@ -153,7 +153,6 @@ namespace {
 
         return true;
     }
-}
 
 
 static double JsonGetDoublePath(const nlohmann::json& j, std::initializer_list<const char*> path, double fallback = 0.0, bool* out_ok = nullptr) {
@@ -276,18 +275,6 @@ static std::string Trim(const std::string& s) {
     return s.substr(a, b - a);
 }
 
-static bool ReplaceAll(std::string& s, const std::string& from, const std::string& to) {
-    if (from.empty()) return false;
-    bool changed = false;
-    size_t pos = 0;
-    while ((pos = s.find(from, pos)) != std::string::npos) {
-        s.replace(pos, from.size(), to);
-        pos += to.size();
-        changed = true;
-    }
-    return changed;
-}
-
 static std::string ReadFileUtf8(const std::filesystem::path& p) {
     std::ifstream f(p, std::ios::binary);
     if (!f) return {};
@@ -367,6 +354,7 @@ void HttpServer::Start() {
             HttpLog(log_, L"Server thread crashed");
         }
         });
+}
 
 void HttpServer::Stop() {
     if (!svr_) return;
@@ -593,20 +581,14 @@ void HttpServer::ApplyOverlayTokens(std::string& html)
         }
     }
 
-    // 2) Token replacement (support both token naming schemes) — NO RECURSION
-    // Add/adjust tokens to match what your overlay uses.
-    bool changed = false;
+    ReplaceAll(html, "{{FONT_STACK}}", fontStack);
+    ReplaceAll(html, "{FONT_STACK}", fontStack);
 
-    // Font stack tokens (example: old + new names)
-    changed |= ReplaceAll(html, "{{FONT_STACK}}", fontStack);
-    changed |= ReplaceAll(html, "{FONT_STACK}", fontStack);
+    ReplaceAll(html, "{{TEXT_SHADOW_STYLE}}", shadow);
+    ReplaceAll(html, "{TEXT_SHADOW_STYLE}", shadow);
 
-    // Text shadow style tokens
-    changed |= ReplaceAll(html, "{{TEXT_SHADOW_STYLE}}", shadow);
-    changed |= ReplaceAll(html, "{TEXT_SHADOW_STYLE}", shadow);
-
-    // If you also have placeholders like --font-stack in CSS, you can do:
-    // changed |= ReplaceAll(html, "%%FONT_STACK%%", fontStack);
+    // If you also have placeholders like %%FONT_STACK%% in CSS, you can do:
+    // ReplaceAll(html, "%%FONT_STACK%%", fontStack);
 
     // Overlay header tokens (instant render before JS polling kicks in)
     {
@@ -636,8 +618,6 @@ void HttpServer::ApplyOverlayTokens(std::string& html)
         ReplaceAll(html, "{{HEADER_SUBTITLE}}", s);
         ReplaceAll(html, "{HEADER_SUBTITLE}", s);
     }
-
-    (void)changed; // keep if you don't use it; helps debugging if you later add a loop
 }
 
 void HttpServer::RegisterRoutes() {
@@ -1269,40 +1249,41 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
             res.set_header("Location", url);
             });
 
-        if (!opt_.twitch_auth_handle_callback) {
-            TwitchHttpLog(log_, L"OAuth callback requested but routes are not enabled");
-            res.status = 404;
-            res.set_content("not wired", "text/plain; charset=utf-8");
-            return;
-        }
+        svr.Get("/auth/twitch/callback", [&](const httplib::Request& req, httplib::Response& res) {
+            if (!opt_.twitch_auth_handle_callback) {
+                TwitchHttpLog(log_, L"OAuth callback requested but routes are not enabled");
+                res.status = 404;
+                res.set_content("not wired", "text/plain; charset=utf-8");
+                return;
+            }
 
-        const std::string code = req.get_param_value("code");
-        const std::string state = req.get_param_value("state");
+            const std::string code = req.get_param_value("code");
+            const std::string state = req.get_param_value("state");
 
-        std::string host = req.get_header_value("Host");
-        if (host.empty()) host = "localhost:" + std::to_string(opt_.port);
+            std::string host = req.get_header_value("Host");
+            if (host.empty()) host = "localhost:" + std::to_string(opt_.port);
 
-        const std::string redirect_uri =
-            std::string("http://") + host + "/auth/twitch/callback";
+            const std::string redirect_uri =
+                std::string("http://") + host + "/auth/twitch/callback";
 
-        std::string err;
-        const bool ok = opt_.twitch_auth_handle_callback(code, state, redirect_uri, &err);
+            std::string err;
+            const bool ok = opt_.twitch_auth_handle_callback(code, state, redirect_uri, &err);
 
-        if (!ok) {
-            TwitchHttpLog(log_, L"OAuth callback token exchange failed: " + ToW(err));
+            if (!ok) {
+                TwitchHttpLog(log_, L"OAuth callback token exchange failed: " + ToW(err));
+                res.status = 500;
+                res.set_content(std::string("OAuth callback failed: ") + err,
+                    "text/plain; charset=utf-8");
+                return;
+            }
 
-            res.status = 500;
-            res.set_content(std::string("OAuth callback failed: ") + err,
-                "text/plain; charset=utf-8");
-            return;
-        }
+            TwitchHttpLog(log_, L"OAuth callback completed successfully");
 
-        TwitchHttpLog(log_, L"OAuth callback completed successfully");
-
-        res.set_content(
-            "OK - Twitch auth completed. You can close this tab.",
-            "text/plain; charset=utf-8"
-        );
+            res.set_content(
+                "OK - Twitch auth completed. You can close this tab.",
+                "text/plain; charset=utf-8"
+            );
+            });
 
         // --- YouTube OAuth (interactive) ---
         // Start:
@@ -2285,13 +2266,6 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
         }
         res.set_content(std::move(bytes), ContentTypeFor(rel));
         });
-
-
-    inline void PlatformHttpLog(std::function<void(const std::wstring&)>& log,
-        const std::wstring& msg)
-    {
-        SafeOutputLog(log, L"[HttpServer][Platform] " + msg);
-    }
 
     // Root -> overlay
     svr.Get("/", [&](const httplib::Request&, httplib::Response& res) {
