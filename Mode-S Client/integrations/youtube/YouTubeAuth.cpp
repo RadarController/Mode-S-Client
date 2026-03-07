@@ -499,6 +499,7 @@ bool YouTubeAuth::RefreshWithGoogle(std::string* out_error) {
         if (out_error) *out_error = msg;
         return false;
     }
+}
 
 // ---- validate ----
 bool YouTubeAuth::ValidateAndLogToken(const std::string& access_token, std::string* out_scope_joined, std::string* out_channel_id) {
@@ -510,7 +511,7 @@ bool YouTubeAuth::ValidateAndLogToken(const std::string& access_token, std::stri
     httplib::SSLClient cli("www.googleapis.com", 443);
     cli.set_follow_location(true);
 #else
-    DebugLog("YTAUTH: validate FAILED (CPPHTTPLIB_OPENSSL_SUPPORT not enabled)");
+    DebugLog("validate FAILED (CPPHTTPLIB_OPENSSL_SUPPORT not enabled)");
     return false;
 #endif
 
@@ -522,12 +523,14 @@ bool YouTubeAuth::ValidateAndLogToken(const std::string& access_token, std::stri
     if (!res || res->status != 200) {
         DebugLog("tokeninfo failed");
         // continue anyway; token may still work for API calls
-    } else {
+    }
+    else {
         try {
             json j = json::parse(res->body);
             const std::string scope = j.value("scope", "");
             if (out_scope_joined) *out_scope_joined = scope;
-        } catch (...) {}
+        }
+        catch (...) {}
     }// Try to resolve channel id (best-effort)
     httplib::SSLClient api("www.googleapis.com", 443);
     api.set_follow_location(true);
@@ -566,6 +569,7 @@ bool YouTubeAuth::ValidateAndLogToken(const std::string& access_token, std::stri
     }
 
     return true;
+}
 
 // ---- config io ----
 bool YouTubeAuth::LoadFromConfig(std::string* out_error) {

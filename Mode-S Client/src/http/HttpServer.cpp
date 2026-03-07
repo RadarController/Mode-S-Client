@@ -1,6 +1,6 @@
 #include "HttpServer.h"
-#include "UiLog.h"
-#include "StringUtil.h"
+#include "log/UiLog.h"
+#include "core/StringUtil.h"
 #include <Windows.h>
 
 #include <fstream>
