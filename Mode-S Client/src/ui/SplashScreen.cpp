@@ -1,6 +1,7 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include "SplashScreen.h"
+#include "ui/WebViewHost.h"
 
 #include <windows.h>
 #include <string>
@@ -20,6 +21,7 @@ namespace SplashScreen {
         std::wstring gDisplayName;
         std::wstring gVersionText;
         std::wstring gLastSplashHtmlPath;
+        std::wstring gSplashHtmlContent;
 
         bool gSplashHtmlReady = false;
         bool gPendingCloseAfterHtmlReady = false;
@@ -29,7 +31,7 @@ namespace SplashScreen {
         ComPtr<ICoreWebView2>           gSplashWebView;
 
         constexpr UINT_PTR kCloseTimerId = 1001;
-        constexpr UINT kCloseDelayMs = 1800;
+        constexpr UINT kCloseDelayMs = 1400;
         const wchar_t* kSplashClassName = L"ModeSClientHtmlSplash";
         constexpr UINT WM_APP_INIT_SPLASH_WEBVIEW = WM_APP + 301;
 
@@ -245,6 +247,7 @@ namespace SplashScreen {
             }
             gSplashWebView.Reset();
             gSplashWebController.Reset();
+            gSplashHtmlContent.clear();
             gSplashHtmlReady = false;
         }
 

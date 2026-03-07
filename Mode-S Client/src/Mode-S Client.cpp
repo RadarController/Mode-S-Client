@@ -986,6 +986,9 @@ static RECT CenteredWindowRect(int width, int height)
 }
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
+    HRESULT hrCom = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    const bool comInitialized = SUCCEEDED(hrCom) || hrCom == RPC_E_CHANGED_MODE;
+
     const DWORD uiThreadId = GetCurrentThreadId();
 
     const wchar_t CLASS_NAME[] = L"StreamHubWindow";
@@ -1017,7 +1020,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
         }
     }
 
-    HRESULT hrCom = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    WebViewHost::EnsureSharedEnvironment();
 
     // Splash screen shown while the main window initializes
     SplashScreen::Create(hInstance, kAppDisplayName, APP_VERSION_FILE_W);
