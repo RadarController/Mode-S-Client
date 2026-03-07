@@ -11,6 +11,16 @@ function fmtNum(n){
 
 function setText(id, v){ const el = document.getElementById(id); if (el) el.textContent = v; }
 
+function notifyNativeAppReady(){
+  try{
+    if (window.chrome?.webview?.postMessage) {
+      window.chrome.webview.postMessage({ type: "app-ready" });
+    }
+  }catch(_){
+    // ignore
+  }
+}
+
 function trim(s){ return String(s ?? "").trim(); }
 
 function sanitizeTikTok(input){
@@ -499,10 +509,18 @@ document.addEventListener("DOMContentLoaded", async () => {
   wireTwitchOAuthPage();
   wireOverlayTitlePage();
   wireActions();
+
   await loadSettings();
   await pollMetrics();
-  setInterval(pollMetrics, 2000);
   await pollLog();
+
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      notifyNativeAppReady();
+    });
+  });
+
+  setInterval(pollMetrics, 2000);
   setInterval(pollLog, 1000);
 });
 

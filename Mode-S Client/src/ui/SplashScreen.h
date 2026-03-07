@@ -1,38 +1,19 @@
 #pragma once
 
 #include <windows.h>
-#include <string>
 
-class SplashScreen
-{
-public:
-    SplashScreen() = default;
-    ~SplashScreen() = default;
+namespace SplashScreen {
 
-    SplashScreen(const SplashScreen&) = delete;
-    SplashScreen& operator=(const SplashScreen&) = delete;
+// Creates and shows the splash window.
+// displayName and versionText are currently accepted for compatibility with
+// Mode-S Client.cpp, even though the new image-based splash does not need to
+// render them as text.
+bool Create(HINSTANCE hInstance, const wchar_t* displayName, const wchar_t* versionText);
 
-    HWND Create(HINSTANCE hInstance,
-        const wchar_t* appDisplayName,
-        const wchar_t* appVersionFile);
+// Called when the app is ready to reveal the main window.
+void OnAppReady(HWND mainWindow);
 
-    void Destroy();
-    void BeginCloseThenShowMain(HWND mainWnd, UINT delayMs);
-    bool IsWindowValid() const;
+// Destroys the splash window if it exists.
+void Destroy();
 
-    HWND GetHwnd() const noexcept { return m_hwnd; }
-    HWND GetLogHwnd() const noexcept { return m_logHwnd; }
-
-private:
-    static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
-    LRESULT HandleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
-
-private:
-    HWND m_hwnd = nullptr;
-    HWND m_logHwnd = nullptr;
-
-    const wchar_t* m_appDisplayName = L"";
-    const wchar_t* m_appVersionFile = L"";
-
-    static constexpr UINT_PTR kCloseTimerId = 1001;
-};
+} // namespace SplashScreen

@@ -44,23 +44,17 @@
 #include "floating/FloatingChat.h"
 #include "platform/PlatformControl.h"
 #include "log/UiLog.h"
+
 #include "ui/WebViewHost.h"
 #include "ui/SplashScreen.h"
 
-static std::atomic<bool> gHttpReady{ false };
 static const wchar_t* kModernUiUrl = L"http://127.0.0.1:17845/app";
-static std::unique_ptr<WebViewHost> gWebViewHost;
 
 // --------------------------- Globals (UI handles) ---------------------------
 static HWND gMainWnd = nullptr;
 static constexpr UINT WM_APP_LOG = WM_APP + 100;
-// Splash screen
-static std::unique_ptr<SplashScreen> gSplash;
 static constexpr UINT WM_APP_SPLASH_READY = WM_APP + 201;
-static constexpr UINT SPLASH_CLOSE_DELAY_MS = 1 * 1000;
-// App version
 static const wchar_t* kAppDisplayName = L"StreamingATC.Live Mode-S Client";
-static const wchar_t* kAppVersion = APP_VERSION_W; // auto-generated per build
 
 // Floating chat instance
 // Moved to FloatingChat class in src/floating/FloatingChat.*
@@ -94,10 +88,11 @@ static std::string ReadTwitchUserAccessToken()
             nlohmann::json j;
             f >> j;
             return j.value("twitch", nlohmann::json::object()).value("user_access_token", "");
-        } catch (...) {
+        }
+        catch (...) {
             return {};
         }
-    };
+        };
 
     // Prefer config.json next to the exe
     std::filesystem::path p1 = std::filesystem::path(GetExeDir()) / "config.json";
@@ -393,9 +388,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 /*set_followers*/[&](int /*f*/) {}
             }
         );
-    };
+        };
 
-switch (msg) {
+    switch (msg) {
 
     case WM_CREATE:
     {
@@ -439,23 +434,23 @@ switch (msg) {
         }
 
 
-// -----------------------------------------------------------------
-// Overlay header settings persistence
-// Store overlay_header.json next to the exe, and load it at startup.
-// -----------------------------------------------------------------
-try {
-    std::filesystem::path hdrPath = std::filesystem::path(GetExeDir()) / "overlay_header.json";
-    state.set_overlay_header_storage_path(ToUtf8(hdrPath.wstring()));
-    if (state.load_overlay_header_from_disk()) {
-        LogLine(L"OVERLAY: loaded header settings from overlay_header.json");
-    }
-    else {
-        LogLine(L"OVERLAY: no overlay_header.json found (or empty/invalid) - using defaults");
-    }
-}
-catch (...) {
-    LogLine(L"OVERLAY: failed to set/load overlay header settings path");
-}
+        // -----------------------------------------------------------------
+        // Overlay header settings persistence
+        // Store overlay_header.json next to the exe, and load it at startup.
+        // -----------------------------------------------------------------
+        try {
+            std::filesystem::path hdrPath = std::filesystem::path(GetExeDir()) / "overlay_header.json";
+            state.set_overlay_header_storage_path(ToUtf8(hdrPath.wstring()));
+            if (state.load_overlay_header_from_disk()) {
+                LogLine(L"OVERLAY: loaded header settings from overlay_header.json");
+            }
+            else {
+                LogLine(L"OVERLAY: no overlay_header.json found (or empty/invalid) - using defaults");
+            }
+        }
+        catch (...) {
+            LogLine(L"OVERLAY: failed to set/load overlay header settings path");
+        }
 
         // Allow LogLine() to feed the Web UI (/api/log)
         UiLog_SetWebLogState(&state);
@@ -473,7 +468,7 @@ catch (...) {
         //   are treated as false here. The test endpoint can simulate roles.
         if (!botSubscribed) {
             botSubscribed = true;
-            chat.Subscribe([pChat=&chat, pState=&state, pTwitch=&twitch, pTikTok = &tiktok](const ChatMessage& m) {
+            chat.Subscribe([pChat = &chat, pState = &state, pTwitch = &twitch, pTikTok = &tiktok](const ChatMessage& m) {
                 // Avoid responding to ourselves.
                 if (m.user == "StreamingATC.Bot") return;
                 if (m.message.size() < 2 || m.message[0] != '!') return;
@@ -482,7 +477,7 @@ catch (...) {
                     std::transform(s.begin(), s.end(), s.begin(),
                         [](unsigned char c) { return (char)std::tolower(c); });
                     return s;
-                };
+                    };
                 auto replace_all = [](std::string s, const std::string& from, const std::string& to) {
                     if (from.empty()) return s;
                     size_t pos = 0;
@@ -491,7 +486,7 @@ catch (...) {
                         pos += to.size();
                     }
                     return s;
-                };
+                    };
 
                 // Extract first token after '!'
                 size_t start = 1;
@@ -590,7 +585,7 @@ catch (...) {
                     }
                 }
 
-            });
+                });
         }
 
         // Log what AppConfig actually loaded (helps diagnose mismatched JSON keys vs. AppConfig mapping).
@@ -605,43 +600,36 @@ catch (...) {
             LogLine(snap.c_str());
         }
 
-            // Create a hidden log control so existing LogLine() plumbing still works (optional).
-            HWND hLog = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
-                WS_CHILD | ES_MULTILINE | ES_READONLY | WS_VSCROLL, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
-            UiLog_SetLogHwnd(hLog);
+        // Create a hidden log control so existing LogLine() plumbing still works (optional).
+        HWND hLog = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+            WS_CHILD | ES_MULTILINE | ES_READONLY | WS_VSCROLL, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
+        UiLog_SetLogHwnd(hLog);
 
-            if (!gFloatingChat) gFloatingChat = std::make_unique<FloatingChat>();
+        if (!gFloatingChat) gFloatingChat = std::make_unique<FloatingChat>();
 
-            if (!gWebViewHost) {
-                gWebViewHost = std::make_unique<WebViewHost>();
-            }
+        (void)WebViewHost::Create(
+            hwnd,
+            kModernUiUrl,
+            APP_VERSION_FILE_W,
+            [hwnd](HWND) {
+                if (gFloatingChat) gFloatingChat->Open(hwnd);
+            });
 
-            const HRESULT hr = gWebViewHost->Create(
-                hwnd,
-                APP_VERSION_FILE_W,
-                [hwnd]() {
-                    if (gFloatingChat) {
-                        gFloatingChat->Open(hwnd);
-                    }
-                });
+        LogLine(L"Starting Mode-S Client overlay");
+        LogLine(L"Overlay: http://localhost:17845/overlay/chat.html");
+        LogLine(L"Metrics: http://localhost:17845/api/metrics");
 
-            (void)hr;
-
-            LogLine(L"Starting Mode-S Client overlay");
-            LogLine(L"Overlay: http://localhost:17845/overlay/chat.html");
-            LogLine(L"Metrics: http://localhost:17845/api/metrics");
-
-            if (config.tiktok_unique_id.empty() && config.twitch_login.empty() && config.youtube_handle.empty()) {
-                LogLine(L"No config.json found yet. Configure your platform details in the Settings page.");
-            }
-            else {
-                LogLine(L"Loaded config.json");
-            }
-
-            PostMessageW(hwnd, WM_APP + 1, 0, 0);
-            return 0;
+        if (config.tiktok_unique_id.empty() && config.twitch_login.empty() && config.youtube_handle.empty()) {
+            LogLine(L"No config.json found yet. Configure your platform details in the Settings page.");
         }
+        else {
+            LogLine(L"Loaded config.json");
+        }
+
+        PostMessageW(hwnd, WM_APP + 1, 0, 0);
         return 0;
+    }
+    return 0;
 
     case WM_APP + 1:
     {
@@ -666,11 +654,11 @@ catch (...) {
                     GetExeDir(),
                     config.tiktok_unique_id,
                     [](const std::wstring& s) { LogLine(s); });
-            };
+                };
             opt.stop_tiktok = [&]() -> bool {
                 PlatformControl::StopTikTok(tiktok, state, [](const std::wstring& s) { LogLine(s); });
                 return true;
-            };
+                };
 
             opt.start_twitch = [&]() -> bool {
                 config.twitch_login = SanitizeTwitchLogin(config.twitch_login);
@@ -726,7 +714,7 @@ catch (...) {
             opt.stop_twitch = [&]() -> bool {
                 PlatformControl::StopTwitch(twitch, state, [](const std::wstring& s) { LogLine(s); });
                 return true;
-            };
+                };
 
             opt.start_youtube = [&]() -> bool {
                 config.youtube_handle = SanitizeYouTubeHandle(config.youtube_handle);
@@ -754,7 +742,7 @@ catch (...) {
                 PlatformControl::StopYouTube(youtube, state, [](const std::wstring& s) { LogLine(s); });
                 youtubeChat.stop();
                 return true;
-            };
+                };
 
             // Twitch OAuth (interactive) endpoints
             // Provides /auth/twitch/start and /auth/twitch/callback so you can (re)authorize with chat:read/chat:edit.
@@ -766,20 +754,20 @@ catch (...) {
                     LogLine(ToW(std::string("TWITCHAUTH: BuildAuthorizeUrl failed: ") + err));
                 }
                 return url;
-            };
+                };
 
             opt.twitch_auth_handle_callback = [&](const std::string& code,
-                                                  const std::string& state,
-                                                  const std::string& redirect_uri,
-                                                  std::string* out_error) -> bool {
-                 std::string err;
-                 const bool ok = twitchAuth.HandleOAuthCallback(code, state, redirect_uri, &err);
-                if (!ok) {
-                    if (out_error) *out_error = err;
-                    LogLine(ToW(std::string("TWITCHAUTH: OAuth callback failed: ") + err));
-                }
-                return ok;
-            };
+                const std::string& state,
+                const std::string& redirect_uri,
+                std::string* out_error) -> bool {
+                    std::string err;
+                    const bool ok = twitchAuth.HandleOAuthCallback(code, state, redirect_uri, &err);
+                    if (!ok) {
+                        if (out_error) *out_error = err;
+                        LogLine(ToW(std::string("TWITCHAUTH: OAuth callback failed: ") + err));
+                    }
+                    return ok;
+                };
 
             // YouTube OAuth (interactive) endpoints
             // Provides /auth/youtube/start and /auth/youtube/callback so you can authorize YouTube Data API access.
@@ -791,25 +779,25 @@ catch (...) {
                     LogLine(ToW(std::string("YTAUTH: BuildAuthorizeUrl failed: ") + err));
                 }
                 return url;
-            };
+                };
 
             opt.youtube_auth_handle_callback = [&](const std::string& code,
-                                                   const std::string& state,
-                                                   const std::string& redirect_uri,
-                                                   std::string* out_error) -> bool {
-                std::string err;
-                const bool ok = youtubeAuth.HandleOAuthCallback(code, state, redirect_uri, &err);
-                if (!ok) {
-                    if (out_error) *out_error = err;
-                    LogLine(ToW(std::string("YTAUTH: OAuth callback failed: ") + err));
-                }
-                return ok;
-            };
+                const std::string& state,
+                const std::string& redirect_uri,
+                std::string* out_error) -> bool {
+                    std::string err;
+                    const bool ok = youtubeAuth.HandleOAuthCallback(code, state, redirect_uri, &err);
+                    if (!ok) {
+                        if (out_error) *out_error = err;
+                        LogLine(ToW(std::string("YTAUTH: OAuth callback failed: ") + err));
+                    }
+                    return ok;
+                };
 
             // YouTube access token provider (used by /api/youtube/vod/* endpoints)
             opt.youtube_get_access_token = []() -> std::optional<std::string> {
                 return youtubeAuth.GetAccessToken();
-            };
+                };
 
             // YouTube OAuth status (read-only): used by the UI to show "connected" vs "not connected".
             // IMPORTANT: Do not return tokens here; only booleans + non-sensitive metadata.
@@ -821,16 +809,16 @@ catch (...) {
 
                 const auto snap = youtubeAuth.GetTokenSnapshot();
                 j["has_refresh_token"] = snap.has_value() && !snap->refresh_token.empty();
-                j["has_access_token"]  = snap.has_value() && !snap->access_token.empty();
-                j["expires_at_unix"]   = snap.has_value() ? snap->expires_at_unix : 0;
-                j["scope"]             = snap.has_value() ? snap->scope_joined : "";
-                j["channel_id"]        = youtubeAuth.GetChannelId().value_or("");
+                j["has_access_token"] = snap.has_value() && !snap->access_token.empty();
+                j["expires_at_unix"] = snap.has_value() ? snap->expires_at_unix : 0;
+                j["scope"] = snap.has_value() ? snap->scope_joined : "";
+                j["channel_id"] = youtubeAuth.GetChannelId().value_or("");
 
                 // Keep existing fields for callers that display scopes (and for debug).
                 j["scopes_readable"] = std::string(YouTubeAuth::RequiredScopeReadable());
                 j["scopes_encoded"] = std::string(YouTubeAuth::RequiredScopeEncoded());
                 return j.dump(2);
-            };
+                };
 
 
             gHttp = std::make_unique<HttpServer>(state, chat, euroscope, config, opt,
@@ -840,10 +828,7 @@ catch (...) {
         }
 
         // Signal that the HTTP server is ready for WebView2 navigation.
-        gHttpReady = true;
-        if (gWebViewHost) {
-            gWebViewHost->Navigate(kModernUiUrl);
-        }
+        WebViewHost::SetHttpReadyAndNavigate(kModernUiUrl);
 
         metricsThread = std::thread([&]() {
             while (gRunning) {
@@ -854,18 +839,19 @@ catch (...) {
             }
             });
 
-        
-            if (!youtubeAuth.Start()) {
-                LogLine(L"YOUTUBE: OAuth token refresh/start failed (check config: youtube.client_id / youtube.client_secret / youtube.refresh_token)");
-            } else {
-                LogLine(L"YOUTUBE: OAuth token refresh/start OK");
-            }
 
-LogLine(L"TWITCH: starting Helix poller thread");
+        if (!youtubeAuth.Start()) {
+            LogLine(L"YOUTUBE: OAuth token refresh/start failed (check config: youtube.client_id / youtube.client_secret / youtube.refresh_token)");
+        }
+        else {
+            LogLine(L"YOUTUBE: OAuth token refresh/start OK");
+        }
+
+        LogLine(L"TWITCH: starting Helix poller thread");
 
         // Bind the poller to the current config.twitch_login.
         RestartTwitchHelixPoller("init");
-LogLine(L"TIKTOK: starting followers poller thread");
+        LogLine(L"TIKTOK: starting followers poller thread");
         tiktokFollowersThread = StartTikTokFollowersPoller(
             config,
             state,
@@ -932,7 +918,8 @@ LogLine(L"TIKTOK: starting followers poller thread");
 
             if (!twitchAuth.Start()) {
                 LogLine(L"TWITCH: OAuth token refresh/start failed (check config: twitch_client_id / twitch_client_secret / twitch.user_refresh_token)");
-            } else {
+            }
+            else {
                 LogLine(L"TWITCH: OAuth token refresh worker started");
             }
         }
@@ -951,35 +938,26 @@ LogLine(L"TIKTOK: starting followers poller thread");
 
     case WM_APP_SPLASH_READY:
     {
-        if (gSplash) {
-            gSplash->BeginCloseThenShowMain(hwnd, SPLASH_CLOSE_DELAY_MS);
-        }
-        else {
-            ShowWindow(hwnd, SW_SHOWDEFAULT);
-            UpdateWindow(hwnd);
-            SetForegroundWindow(hwnd);
-        }
+        SplashScreen::OnAppReady(hwnd);
         return 0;
     }
 
-case WM_CLOSE:
-    BeginShutdown(hwnd);
-    return 0;
+    case WM_CLOSE:
+        BeginShutdown(hwnd);
+        return 0;
 
-case WM_SIZE:
-    if (gWebViewHost) {
-        gWebViewHost->Resize();
-    }
-    return 0;
+    case WM_SIZE:
+        WebViewHost::ResizeToClient(hwnd);
+        return 0;
 
-case WM_DESTROY:
-    // Safety net: if we somehow got here without WM_CLOSE
-    UiLog_SetLogHwnd(nullptr);
-    gWebViewHost.reset();
-    gSplash.reset();
-    BeginShutdown(nullptr);
-    PostQuitMessage(0);
-    return 0;
+    case WM_DESTROY:
+        // Safety net: if we somehow got here without WM_CLOSE
+        UiLog_SetLogHwnd(nullptr);
+        SplashScreen::Destroy();
+        WebViewHost::Destroy();
+        BeginShutdown(nullptr);
+        PostQuitMessage(0);
+        return 0;
 
     default:
         break;
@@ -1021,10 +999,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
     }
 
     // Splash screen shown while the main window initializes
-    if (!gSplash) {
-        gSplash = std::make_unique<SplashScreen>();
-    }
-    gSplash->Create(hInstance, kAppDisplayName, APP_VERSION_FILE_W);
+    SplashScreen::Create(hInstance, kAppDisplayName, APP_VERSION_FILE_W);
 
     // Process any pending messages so the splash paints immediately.
     MSG sm{};
