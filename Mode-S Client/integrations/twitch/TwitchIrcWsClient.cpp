@@ -8,6 +8,8 @@
 #include <algorithm>
 #include <chrono>
 #include "chat/ChatAggregator.h"
+#include "log/UiLog.h"
+
 // ChatMessage is defined in AppState.h (shared between platform adapters).
 // Depending on include order/build layout, ChatAggregator.h may not bring it in.
 #include "AppState.h"
@@ -139,7 +141,7 @@ bool TwitchIrcWsClient::StartAuthenticated(const std::string& login,
     // Fall back to starting without aggregation.
     std::string ch = channel;
     if (login.empty() || access_token.empty() || ch.empty()) {
-        OutputDebugStringA("TWITCH IRC: missing login/token/channel, refusing to start\n");
+        LogLine(L"[TwitchIRC] Missing login, token, or channel; refusing to start");
         return false;
     }
     m_login = login;
@@ -159,7 +161,7 @@ bool TwitchIrcWsClient::StartAuthenticated(const std::string& login,
 {
     std::string ch = channel;
     if (login.empty() || access_token.empty() || ch.empty()) {
-        OutputDebugStringA("TWITCH IRC: missing login/token/channel, refusing to start\n");
+        LogLine(L"[TwitchIRC] Missing login, token, or channel; refusing to start");
         return false;
     }
     m_login = login;

@@ -1291,7 +1291,15 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
         DWORD e = GetLastError();
         if (e != ERROR_CLASS_ALREADY_EXISTS) {
             wchar_t buf[256];
-            wsprintfW(buf, L"RegisterClassW failed. GetLastError=%lu", e);
+            _snwprintf_s(
+                buf,
+                _countof(buf),
+                _TRUNCATE,
+                L"[Startup] RegisterClassW failed. GetLastError=%lu",
+                e
+            );
+
+            LogLine(buf);
             MessageBoxW(nullptr, buf, L"Mode-S Client", MB_ICONERROR);
             return 0;
         }
@@ -1327,7 +1335,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
     if (!hwnd) {
         DWORD e = GetLastError();
         wchar_t buf[256];
-        wsprintfW(buf, L"CreateWindowExW failed. GetLastError=%lu", e);
+        _snwprintf_s(
+            buf,
+            _countof(buf),
+            _TRUNCATE,
+            L"[Startup] CreateWindowExW failed. GetLastError=%lu",
+            e
+        );
+        LogLine(buf);
         MessageBoxW(nullptr, buf, L"Mode-S Client", MB_ICONERROR);
         return 0;
     }

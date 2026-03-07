@@ -1,4 +1,6 @@
 #include "HttpServer.h"
+#include "UiLog.h"
+#include "StringUtil.h"
 #include <Windows.h>
 
 #include <fstream>
@@ -19,8 +21,11 @@
 #include "../AppConfig.h"
 
 namespace {
-    inline void SafeOutputLog(std::function<void(const std::wstring&)>& log, const std::wstring& msg) {
-        ::OutputDebugStringW((msg + L"\n").c_str());
+
+    inline void SafeOutputLog(std::function<void(const std::wstring&)>& log,
+        const std::wstring& msg)
+    {
+        if (!log) return;
         try {
             log(msg);
         }
@@ -28,6 +33,68 @@ namespace {
             // Never allow logging to break server threads
         }
     }
+
+    inline void HttpLog(std::function<void(const std::wstring&)>& log,
+        const std::wstring& msg)
+    {
+        SafeOutputLog(log, L"[HttpServer] " + msg);
+    }
+
+    inline void TwitchHttpLog(std::function<void(const std::wstring&)>& log,
+        const std::wstring& msg)
+    {
+        SafeOutputLog(log, L"[HttpServer][Twitch] " + msg);
+    }
+
+    inline void YouTubeHttpLog(std::function<void(const std::wstring&)>& log,
+        const std::wstring& msg)
+    {
+        SafeOutputLog(log, L"[HttpServer][YouTube] " + msg);
+    }
+
+    inline void SettingsHttpLog(std::function<void(const std::wstring&)>& log,
+        const std::wstring& msg)
+    {
+        SafeOutputLog(log, L"[HttpServer][Settings] " + msg);
+    }
+
+    inline void EuroScopeHttpLog(std::function<void(const std::wstring&)>& log,
+        const std::wstring& msg)
+    {
+        SafeOutputLog(log, L"[HttpServer][EuroScope] " + msg);
+    }
+
+    inline void SecurityHttpLog(std::function<void(const std::wstring&)>& log,
+        const std::wstring& msg)
+    {
+        SafeOutputLog(log, L"[HttpServer][Security] " + msg);
+    }
+
+    inline void BotHttpLog(std::function<void(const std::wstring&)>& log,
+        const std::wstring& msg)
+    {
+        SafeOutputLog(log, L"[HttpServer][Bot] " + msg);
+    }
+
+    inline void OverlayHttpLog(std::function<void(const std::wstring&)>& log,
+        const std::wstring& msg)
+    {
+        SafeOutputLog(log, L"[HttpServer][Overlay] " + msg);
+    }
+
+    inline void ChatHttpLog(std::function<void(const std::wstring&)>& log,
+        const std::wstring& msg)
+    {
+        SafeOutputLog(log, L"[HttpServer][Chat] " + msg);
+    }
+
+    inline void PlatformHttpLog(std::function<void(const std::wstring&)>& log,
+        const std::wstring& msg)
+    {
+        SafeOutputLog(log, L"[HttpServer][Platform] " + msg);
+    }
+
+} // namespace
 
     static std::int64_t NowUnixSeconds() {
         using namespace std::chrono;
@@ -290,14 +357,16 @@ void HttpServer::Start() {
 
     thread_ = std::thread([this]() {
         try {
-            SafeOutputLog(log_, L"HTTP: listening on http://127.0.0.1:" + std::to_wstring(opt_.port));
-            svr_->listen(opt_.bind_host.c_str(), opt_.port);
+            HttpLog(log_, L"Listening on http://" + ToW(opt_.bind_host) + L":" + std::to_wstring(opt_.port));
+            const bool ok = svr_->listen(opt_.bind_host.c_str(), opt_.port);
+            if (!ok) {
+                HttpLog(log_, L"Listen returned false");
+            }
         }
         catch (...) {
-            SafeOutputLog(log_, L"HTTP: server thread crashed");
+            HttpLog(log_, L"Server thread crashed");
         }
         });
-}
 
 void HttpServer::Stop() {
     if (!svr_) return;
@@ -817,44 +886,52 @@ void HttpServer::RegisterRoutes() {
     // POST /api/twitch/streaminfo/apply (apply to Twitch now)
     svr.Post("/api/twitch/streaminfo/apply", [&](const httplib::Request&, httplib::Response& res) {
         try {
+            const auto d = state_.twitch_stream_draft_snapshot();
 
-        const auto d = state_.twitch_stream_draft_snapshot();
+            TwitchHttpLog(log_,
+                L"Applying stream info: title=" + ToW(d.title) +
+                L" category_name=" + ToW(d.category_name) +
+                L" category_id=" + ToW(d.category_id)
+            );
 
-        SafeOutputLog(log_,
-            L"TWITCH APPLY: title=" + std::wstring(d.title.begin(), d.title.end()) +
-            L" category_name=" + std::wstring(d.category_name.begin(), d.category_name.end()) +
-            L" category_id=" + std::wstring(d.category_id.begin(), d.category_id.end())
-        );
+            std::string err;
+            if (!TwitchHelixUpdateChannelInfo(
+                config_,
+                d.title,
+                d.category_id,
+                &err))
+            {
+                TwitchHttpLog(log_, L"Apply stream info failed: " + ToW(err));
 
-        std::string err;
-        if (!TwitchHelixUpdateChannelInfo(
-            config_,
-            d.title,
-            d.category_id,   // <-- MUST be ID
-            &err))
-        {
-            nlohmann::json out = { {"ok", false}, {"error", err} };
-            res.status = 500;
+                nlohmann::json out = { {"ok", false}, {"error", err} };
+                res.status = 500;
+                res.set_content(out.dump(), "application/json; charset=utf-8");
+                return;
+            }
+
+            TwitchHttpLog(log_, L"Apply stream info succeeded");
+
+            nlohmann::json out = { {"ok", true} };
             res.set_content(out.dump(), "application/json; charset=utf-8");
-            return;
+            res.status = 200;
         }
+        catch (const std::exception& e) {
+            TwitchHttpLog(log_, L"Apply stream info exception: " + ToW(e.what()));
 
-        nlohmann::json out = { {"ok", true} };
-        res.set_content(out.dump(), "application/json; charset=utf-8");
-        res.status = 200;
-    
-        } catch (const std::exception& e) {
             nlohmann::json out = { {"ok", false}, {"error", "exception"}, {"what", e.what()} };
             res.status = 500;
             res.set_content(out.dump(2), "application/json; charset=utf-8");
             return;
-        } catch (...) {
+        }
+        catch (...) {
+            TwitchHttpLog(log_, L"Apply stream info unknown exception");
+
             nlohmann::json out = { {"ok", false}, {"error", "unknown_exception"} };
             res.status = 500;
             res.set_content(out.dump(2), "application/json; charset=utf-8");
             return;
         }
-});
+        });
 
 svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Response& res) {
         auto j = state_.twitch_eventsub_status_json();
@@ -1153,48 +1230,47 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
     // Callback (handled automatically by browser):
     //   http://localhost:17845/auth/twitch/callback
     
-    // --- API: Twitch OAuth info (for Settings UI) ---
-    // GET /api/twitch/auth/info
-    svr.Get("/api/twitch/auth/info", [&](const httplib::Request& /*req*/, httplib::Response& res) {
-        nlohmann::json j;
-        j["ok"] = true;
-        j["start_url"] = "/auth/twitch/start";
-        j["oauth_routes_wired"] = (bool)opt_.twitch_auth_build_authorize_url && (bool)opt_.twitch_auth_handle_callback;
-        j["scopes_readable"] = std::string(TwitchAuth::RequiredScopeReadable());
-        j["scopes_encoded"] = std::string(TwitchAuth::RequiredScopeEncoded());
-        res.status = 200;
-        res.set_content(j.dump(2), "application/json; charset=utf-8");
-    });
+// --- API: Twitch OAuth info (for Settings UI) ---
+// GET /api/twitch/auth/info
+        svr.Get("/api/twitch/auth/info", [&](const httplib::Request& /*req*/, httplib::Response& res) {
+            nlohmann::json j;
+            j["ok"] = true;
+            j["start_url"] = "/auth/twitch/start";
+            j["oauth_routes_wired"] = (bool)opt_.twitch_auth_build_authorize_url && (bool)opt_.twitch_auth_handle_callback;
+            j["scopes_readable"] = std::string(TwitchAuth::RequiredScopeReadable());
+            j["scopes_encoded"] = std::string(TwitchAuth::RequiredScopeEncoded());
+            res.status = 200;
+            res.set_content(j.dump(2), "application/json; charset=utf-8");
+            });
 
-svr.Get("/auth/twitch/start", [&](const httplib::Request& req, httplib::Response& res) {
-        if (!opt_.twitch_auth_build_authorize_url) {
-            SafeOutputLog(log_, L"HTTP: Twitch OAuth routes NOT enabled (callbacks not wired)");
-            res.status = 404;
-            res.set_content("not wired", "text/plain; charset=utf-8");
-            return;
-        }
+        svr.Get("/auth/twitch/start", [&](const httplib::Request& req, httplib::Response& res) {
+            if (!opt_.twitch_auth_build_authorize_url) {
+                TwitchHttpLog(log_, L"OAuth start requested but routes are not enabled");
+                res.status = 404;
+                res.set_content("not wired", "text/plain; charset=utf-8");
+                return;
+            }
 
-        // Canonical redirect URI: always use localhost to match Twitch dev console exactly.
-        const std::string redirect_uri =
-            std::string("http://localhost:") + std::to_string(opt_.port) + "/auth/twitch/callback";
+            // Canonical redirect URI: always use localhost to match Twitch dev console exactly.
+            const std::string redirect_uri =
+                std::string("http://localhost:") + std::to_string(opt_.port) + "/auth/twitch/callback";
 
-        std::string err;
-        const std::string url = opt_.twitch_auth_build_authorize_url(redirect_uri, &err);
-        if (url.empty()) {
-            SafeOutputLog(log_, L"HTTP: /auth/twitch/start failed to build authorize URL");
-            res.status = 500;
-            res.set_content(std::string("BuildAuthorizeUrl failed: ") + err, "text/plain; charset=utf-8");
-            return;
-        }
+            std::string err;
+            const std::string url = opt_.twitch_auth_build_authorize_url(redirect_uri, &err);
+            if (url.empty()) {
+                TwitchHttpLog(log_, L"OAuth start failed to build authorize URL: " + ToW(err));
+                res.status = 500;
+                res.set_content(std::string("BuildAuthorizeUrl failed: ") + err, "text/plain; charset=utf-8");
+                return;
+            }
 
-        // Redirect the browser to Twitch.
-        res.status = 302;
-        res.set_header("Location", url);
-    });
+            TwitchHttpLog(log_, L"OAuth start redirecting browser to Twitch");
+            res.status = 302;
+            res.set_header("Location", url);
+            });
 
-    svr.Get("/auth/twitch/callback", [&](const httplib::Request& req, httplib::Response& res) {
         if (!opt_.twitch_auth_handle_callback) {
-            SafeOutputLog(log_, L"HTTP: Twitch OAuth routes NOT enabled (callbacks not wired)");
+            TwitchHttpLog(log_, L"OAuth callback requested but routes are not enabled");
             res.status = 404;
             res.set_content("not wired", "text/plain; charset=utf-8");
             return;
@@ -1205,157 +1281,132 @@ svr.Get("/auth/twitch/start", [&](const httplib::Request& req, httplib::Response
 
         std::string host = req.get_header_value("Host");
         if (host.empty()) host = "localhost:" + std::to_string(opt_.port);
-        const std::string redirect_uri = std::string("http://") + host + "/auth/twitch/callback";
+
+        const std::string redirect_uri =
+            std::string("http://") + host + "/auth/twitch/callback";
 
         std::string err;
         const bool ok = opt_.twitch_auth_handle_callback(code, state, redirect_uri, &err);
+
         if (!ok) {
-            SafeOutputLog(log_, L"HTTP: /auth/twitch/callback token exchange failed");
+            TwitchHttpLog(log_, L"OAuth callback token exchange failed: " + ToW(err));
+
             res.status = 500;
-            res.set_content(std::string("OAuth callback failed: ") + err, "text/plain; charset=utf-8");
+            res.set_content(std::string("OAuth callback failed: ") + err,
+                "text/plain; charset=utf-8");
             return;
         }
 
-        res.set_content("OK - Twitch auth completed. You can close this tab.", "text/plain; charset=utf-8");
-    });
+        TwitchHttpLog(log_, L"OAuth callback completed successfully");
 
-    // --- API: YouTube OAuth info (for Settings UI) ---
-    // GET /api/youtube/auth/info
-    svr.Get("/api/youtube/auth/info", [&](const httplib::Request& /*req*/, httplib::Response& res) {
-        // If main app provided a detailed status JSON, prefer that.
-        if (opt_.youtube_auth_info_json) {
-            res.status = 200;
-            res.set_content(opt_.youtube_auth_info_json(), "application/json; charset=utf-8");
-            return;
-        }
+        res.set_content(
+            "OK - Twitch auth completed. You can close this tab.",
+            "text/plain; charset=utf-8"
+        );
 
-        // Fallback: basic wiring/scopes/start URL only.
-        nlohmann::json j;
-        j["ok"] = true;
-        j["start_url"] = "/auth/youtube/start";
-        j["oauth_routes_wired"] = (bool)opt_.youtube_auth_build_authorize_url && (bool)opt_.youtube_auth_handle_callback;
-        j["scopes_readable"] = std::string(YouTubeAuth::RequiredScopeReadable());
-        j["scopes_encoded"] = std::string(YouTubeAuth::RequiredScopeEncoded());
-        res.status = 200;
-        res.set_content(j.dump(2), "application/json; charset=utf-8");
-    });
-
-    // --- YouTube OAuth (interactive) ---
-    // Start:
-    //   http://localhost:17845/auth/youtube/start
-    // Callback:
-    //   http://localhost:17845/auth/youtube/callback
-    svr.Get("/auth/youtube/start", [&](const httplib::Request& /*req*/, httplib::Response& res) {
-        if (!opt_.youtube_auth_build_authorize_url) {
-            SafeOutputLog(log_, L"HTTP: YouTube OAuth routes NOT enabled (callbacks not wired)");
-            res.status = 404;
-            res.set_content("not wired", "text/plain; charset=utf-8");
-            return;
-        }
-
-        // Canonical redirect URI: localhost + port.
-        const std::string redirect_uri =
-            std::string("http://localhost:") + std::to_string(opt_.port) + "/auth/youtube/callback";
-
-        std::string err;
-        const std::string url = opt_.youtube_auth_build_authorize_url(redirect_uri, &err);
-        if (url.empty()) {
-            SafeOutputLog(log_, L"HTTP: /auth/youtube/start failed to build authorize URL");
-            res.status = 500;
-            res.set_content(std::string("BuildAuthorizeUrl failed: ") + err, "text/plain; charset=utf-8");
-            return;
-        }
-
-        res.status = 302;
-        res.set_header("Location", url);
-    });
-
-    svr.Get("/auth/youtube/callback", [&](const httplib::Request& req, httplib::Response& res) {
-        if (!opt_.youtube_auth_handle_callback) {
-            SafeOutputLog(log_, L"HTTP: YouTube OAuth routes NOT enabled (callbacks not wired)");
-            res.status = 404;
-            res.set_content("not wired", "text/plain; charset=utf-8");
-            return;
-        }
-
-        const std::string code = req.get_param_value("code");
-        const std::string state = req.get_param_value("state");
-
-        std::string host = req.get_header_value("Host");
-        if (host.empty()) host = "localhost:" + std::to_string(opt_.port);
-        const std::string redirect_uri = std::string("http://") + host + "/auth/youtube/callback";
-
-        std::string err;
-        const bool ok = opt_.youtube_auth_handle_callback(code, state, redirect_uri, &err);
-        if (!ok) {
-            SafeOutputLog(log_, L"HTTP: /auth/youtube/callback token exchange failed");
-            res.status = 500;
-            res.set_content(std::string("OAuth callback failed: ") + err, "text/plain; charset=utf-8");
-            return;
-        }
-
-        res.set_content("OK - YouTube auth completed. You can close this tab.", "text/plain; charset=utf-8");
-    });
-
-
-    // --- API: settings save (used by /app UI) ---
-    // Accept both legacy and newer paths.
-    auto handle_settings_save = [&](const httplib::Request& req, httplib::Response& res) {
-        // If the UI sends a JSON body, apply it to config_ before saving.
-        if (!req.body.empty()) {
-            try {
-                auto j = json::parse(req.body);
-
-                if (j.contains("tiktok_unique_id"))      config_.tiktok_unique_id = j.value("tiktok_unique_id", config_.tiktok_unique_id);
-                if (j.contains("twitch_login"))          config_.twitch_login = j.value("twitch_login", config_.twitch_login);
-                if (j.contains("twitch_client_id"))      config_.twitch_client_id = j.value("twitch_client_id", config_.twitch_client_id);
-                if (j.contains("twitch_client_secret"))  config_.twitch_client_secret = j.value("twitch_client_secret", config_.twitch_client_secret);
-                if (j.contains("youtube_handle"))        config_.youtube_handle = j.value("youtube_handle", config_.youtube_handle);
-
-                // TikTok cookie/session fields (optional)
-                if (j.contains("tiktok_sessionid"))      config_.tiktok_sessionid = j.value("tiktok_sessionid", config_.tiktok_sessionid);
-                if (j.contains("tiktok_sessionid_ss"))   config_.tiktok_sessionid_ss = j.value("tiktok_sessionid_ss", config_.tiktok_sessionid_ss);
-                if (j.contains("tiktok_tt_target_idc"))  config_.tiktok_tt_target_idc = j.value("tiktok_tt_target_idc", config_.tiktok_tt_target_idc);
-
-                // Overlay styling fields (optional)
-                if (j.contains("overlay_font_family"))   config_.overlay_font_family = j.value("overlay_font_family", config_.overlay_font_family);
-                if (j.contains("overlay_font_size"))     config_.overlay_font_size = j.value("overlay_font_size", config_.overlay_font_size);
-                if (j.contains("overlay_text_shadow"))   config_.overlay_text_shadow = j.value("overlay_text_shadow", config_.overlay_text_shadow);
-
-                if (j.contains("metrics_json_path"))     config_.metrics_json_path = j.value("metrics_json_path", config_.metrics_json_path);
-            }
-            catch (...) {
-                res.status = 400;
-                res.set_content(R"({"ok":false,"error":"invalid_json"})", "application/json; charset=utf-8");
+        // --- YouTube OAuth (interactive) ---
+        // Start:
+        //   http://localhost:17845/auth/youtube/start
+        // Callback:
+        //   http://localhost:17845/auth/youtube/callback
+        svr.Get("/auth/youtube/callback", [&](const httplib::Request& req, httplib::Response& res) {
+            if (!opt_.youtube_auth_handle_callback) {
+                YouTubeHttpLog(log_, L"OAuth callback requested but routes are not enabled");
+                res.status = 404;
+                res.set_content("not wired", "text/plain; charset=utf-8");
                 return;
             }
-        }
 
-        const std::wstring cfg_path_w = AppConfig::ConfigPath();
-        const std::string  cfg_path = WideToUtf8(cfg_path_w);
+            const std::string code = req.get_param_value("code");
+            const std::string state = req.get_param_value("state");
 
-        if (!config_.Save()) {
-            SafeOutputLog(log_, L"settingssave: FAILED writing " + cfg_path_w);
-            res.status = 500;
+            std::string host = req.get_header_value("Host");
+            if (host.empty()) host = "localhost:" + std::to_string(opt_.port);
+            const std::string redirect_uri = std::string("http://") + host + "/auth/youtube/callback";
+
+            YouTubeHttpLog(log_, L"OAuth callback received");
+
+            std::string err;
+            const bool ok = opt_.youtube_auth_handle_callback(code, state, redirect_uri, &err);
+            if (!ok) {
+                YouTubeHttpLog(log_, L"OAuth callback token exchange failed: " + ToW(err));
+                res.status = 500;
+                res.set_content(std::string("OAuth callback failed: ") + err, "text/plain; charset=utf-8");
+                return;
+            }
+
+            YouTubeHttpLog(log_, L"OAuth callback completed successfully");
+
+            res.set_content("OK - YouTube auth completed. You can close this tab.", "text/plain; charset=utf-8");
+            });
+
+
+        // --- API: settings save (used by /app UI) ---
+        // Accept both legacy and newer paths.
+        auto handle_settings_save = [&](const httplib::Request& req, httplib::Response& res) {
+            // If the UI sends a JSON body, apply it to config_ before saving.
+            if (!req.body.empty()) {
+                try {
+                    auto j = json::parse(req.body);
+
+                    if (j.contains("tiktok_unique_id"))      config_.tiktok_unique_id = j.value("tiktok_unique_id", config_.tiktok_unique_id);
+                    if (j.contains("twitch_login"))          config_.twitch_login = j.value("twitch_login", config_.twitch_login);
+                    if (j.contains("twitch_client_id"))      config_.twitch_client_id = j.value("twitch_client_id", config_.twitch_client_id);
+                    if (j.contains("twitch_client_secret"))  config_.twitch_client_secret = j.value("twitch_client_secret", config_.twitch_client_secret);
+                    if (j.contains("youtube_handle"))        config_.youtube_handle = j.value("youtube_handle", config_.youtube_handle);
+
+                    // TikTok cookie/session fields (optional)
+                    if (j.contains("tiktok_sessionid"))      config_.tiktok_sessionid = j.value("tiktok_sessionid", config_.tiktok_sessionid);
+                    if (j.contains("tiktok_sessionid_ss"))   config_.tiktok_sessionid_ss = j.value("tiktok_sessionid_ss", config_.tiktok_sessionid_ss);
+                    if (j.contains("tiktok_tt_target_idc"))  config_.tiktok_tt_target_idc = j.value("tiktok_tt_target_idc", config_.tiktok_tt_target_idc);
+
+                    // Overlay styling fields (optional)
+                    if (j.contains("overlay_font_family"))   config_.overlay_font_family = j.value("overlay_font_family", config_.overlay_font_family);
+                    if (j.contains("overlay_font_size"))     config_.overlay_font_size = j.value("overlay_font_size", config_.overlay_font_size);
+                    if (j.contains("overlay_text_shadow"))   config_.overlay_text_shadow = j.value("overlay_text_shadow", config_.overlay_text_shadow);
+
+                    if (j.contains("metrics_json_path"))     config_.metrics_json_path = j.value("metrics_json_path", config_.metrics_json_path);
+                }
+                catch (const std::exception& e) {
+                    SettingsHttpLog(log_, L"Save request rejected: invalid JSON: " + ToW(e.what()));
+                    res.status = 400;
+                    res.set_content(R"({"ok":false,"error":"invalid_json"})", "application/json; charset=utf-8");
+                    return;
+                }
+                catch (...) {
+                    SettingsHttpLog(log_, L"Save request rejected: invalid JSON");
+                    res.status = 400;
+                    res.set_content(R"({"ok":false,"error":"invalid_json"})", "application/json; charset=utf-8");
+                    return;
+                }
+            }
+
+            const std::wstring cfg_path_w = AppConfig::ConfigPath();
+            const std::string  cfg_path = WideToUtf8(cfg_path_w);
+
+            if (!config_.Save()) {
+                SettingsHttpLog(log_, L"Save failed for " + cfg_path_w);
+
+                res.status = 500;
+                json out;
+                out["ok"] = false;
+                out["error"] = "save_failed";
+                out["path"] = cfg_path;
+                res.set_content(out.dump(2), "application/json; charset=utf-8");
+                return;
+            }
+
+            SettingsHttpLog(log_, L"Saved settings to " + cfg_path_w);
+
             json out;
-            out["ok"] = false;
-            out["error"] = "save_failed";
+            out["ok"] = true;
             out["path"] = cfg_path;
+            res.set_header("X-Config-Path", cfg_path.c_str());
             res.set_content(out.dump(2), "application/json; charset=utf-8");
-            return;
-        }
+            };
 
-        SafeOutputLog(log_, L"settingssave: wrote " + cfg_path_w);
-
-        json out;
-        out["ok"] = true;
-        out["path"] = cfg_path;
-        res.set_header("X-Config-Path", cfg_path.c_str());
-        res.set_content(out.dump(2), "application/json; charset=utf-8");
-        };
-
-    svr.Post("/api/settingssave", handle_settings_save);
-    svr.Post("/api/settings/save", handle_settings_save);
+        svr.Post("/api/settingssave", handle_settings_save);
+        svr.Post("/api/settings/save", handle_settings_save);
 
     // --- API: settings (read) ---
     // The /app UI calls this to populate the username fields on load.
@@ -1416,6 +1467,20 @@ svr.Get("/auth/twitch/start", [&](const httplib::Request& req, httplib::Response
 
         res.set_content(j["euroscope"].dump(2), "application/json; charset=utf-8");
         });
+
+    svr.Post("/api/euroscope", [&](const httplib::Request& req, httplib::Response& res) {
+        std::string err;
+        if (!euroscope_.Ingest(req.body, err)) {
+            EuroScopeHttpLog(log_, L"Ingest failed: " + ToW(err));
+            res.status = 400;
+            res.set_content(std::string(R"({"ok":false,"error":")") + err + R"("})",
+                "application/json; charset=utf-8");
+            return;
+        }
+
+        res.set_content(R"({"ok":true})", "application/json; charset=utf-8");
+        });
+
 // --- API: chat (stable shape) ---
     auto handle_chat_recent = [&](const httplib::Request& req, httplib::Response& res) {
         int limit = 200;
@@ -1474,10 +1539,16 @@ svr.Get("/auth/twitch/start", [&](const httplib::Request& req, httplib::Response
 
     auto require_local = [&](const httplib::Request& req, httplib::Response& res) -> bool {
         if (is_local_request(req)) return true;
+
+        SecurityHttpLog(
+            log_,
+            L"Blocked non-local request to " + ToW(req.path) + L" from " + ToW(req.remote_addr)
+        );
+
         res.status = 403;
         res.set_content(R"({"ok":false,"error":"forbidden"})", "application/json; charset=utf-8");
         return false;
-    };
+        };
 
     // --- API: bot commands ---
     // GET  /api/bot/commands  -> current command list
@@ -1511,10 +1582,19 @@ svr.Get("/auth/twitch/start", [&](const httplib::Request& req, httplib::Response
 
     svr.Post("/api/bot/settings", [&](const httplib::Request& req, httplib::Response& res) {
         if (!require_local(req, res)) return;
+
         json body;
         try {
             body = json::parse(req.body);
-        } catch (...) {
+        }
+        catch (const std::exception& e) {
+            BotHttpLog(log_, L"Bot settings update rejected: bad JSON: " + ToW(e.what()));
+            res.status = 400;
+            res.set_content(R"({"ok":false,"error":"bad_json"})", "application/json; charset=utf-8");
+            return;
+        }
+        catch (...) {
+            BotHttpLog(log_, L"Bot settings update rejected: bad JSON");
             res.status = 400;
             res.set_content(R"({"ok":false,"error":"bad_json"})", "application/json; charset=utf-8");
             return;
@@ -1525,6 +1605,7 @@ svr.Get("/auth/twitch/start", [&](const httplib::Request& req, httplib::Response
 
         std::string err;
         if (!state_.set_bot_settings(settings, &err)) {
+            BotHttpLog(log_, L"Bot settings update failed: " + ToW(err.empty() ? "invalid_settings" : err));
             res.status = 400;
             json out;
             out["ok"] = false;
@@ -1534,20 +1615,31 @@ svr.Get("/auth/twitch/start", [&](const httplib::Request& req, httplib::Response
             return;
         }
 
+        BotHttpLog(log_, L"Bot settings updated successfully");
+
         json out;
         out["ok"] = true;
         out["settings"] = state_.bot_settings_json();
         res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
         res.set_header("Pragma", "no-cache");
         res.set_content(out.dump(2), "application/json; charset=utf-8");
-    });
+        });
 
     svr.Post("/api/bot/commands", [&](const httplib::Request& req, httplib::Response& res) {
         if (!require_local(req, res)) return;
+
         json body;
         try {
             body = json::parse(req.body);
-        } catch (...) {
+        }
+        catch (const std::exception& e) {
+            BotHttpLog(log_, L"Bot commands update rejected: bad JSON: " + ToW(e.what()));
+            res.status = 400;
+            res.set_content(R"({"ok":false,"error":"bad_json"})", "application/json; charset=utf-8");
+            return;
+        }
+        catch (...) {
+            BotHttpLog(log_, L"Bot commands update rejected: bad JSON");
             res.status = 400;
             res.set_content(R"({"ok":false,"error":"bad_json"})", "application/json; charset=utf-8");
             return;
@@ -1558,13 +1650,15 @@ svr.Get("/auth/twitch/start", [&](const httplib::Request& req, httplib::Response
 
         state_.set_bot_commands(commands);
 
+        BotHttpLog(log_, L"Bot commands replaced successfully");
+
         json out;
         out["ok"] = true;
         out["commands"] = state_.bot_commands_json();
         res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
         res.set_header("Pragma", "no-cache");
         res.set_content(out.dump(2), "application/json; charset=utf-8");
-    });
+        });
 
     auto url_decode = [](const std::string& in) -> std::string {
         std::string out;
@@ -1592,7 +1686,7 @@ svr.Get("/auth/twitch/start", [&](const httplib::Request& req, httplib::Response
         return out;
     };
 
-    // --- API: overlay header ---
+// --- API: overlay header ---
 // GET  /api/overlay/header -> {"ok":true,"title":"...","subtitle":"..."}
 // POST /api/overlay/header -> set {"title":"...","subtitle":"..."}
     svr.Get("/api/overlay/header", [&](const httplib::Request&, httplib::Response& res) {
@@ -1616,18 +1710,25 @@ svr.Get("/auth/twitch/start", [&](const httplib::Request& req, httplib::Response
         try {
             body = nlohmann::json::parse(req.body);
         }
+        catch (const std::exception& e) {
+            OverlayHttpLog(log_, L"Overlay header update rejected: bad JSON: " + ToW(e.what()));
+            res.status = 400;
+            res.set_content(R"({"ok":false,"error":"bad_json"})", "application/json; charset=utf-8");
+            return;
+        }
         catch (...) {
+            OverlayHttpLog(log_, L"Overlay header update rejected: bad JSON");
             res.status = 400;
             res.set_content(R"({"ok":false,"error":"bad_json"})", "application/json; charset=utf-8");
             return;
         }
 
-        // Accept either {"title":"..","subtitle":".."} OR {"header":{...}}
         nlohmann::json header = body;
         if (body.is_object() && body.contains("header")) header = body["header"];
 
         std::string err;
         if (!state_.set_overlay_header(header, &err)) {
+            OverlayHttpLog(log_, L"Overlay header update failed: " + ToW(err.empty() ? "invalid_header" : err));
             res.status = 400;
             nlohmann::json out;
             out["ok"] = false;
@@ -1636,6 +1737,8 @@ svr.Get("/auth/twitch/start", [&](const httplib::Request& req, httplib::Response
             res.set_content(out.dump(2), "application/json; charset=utf-8");
             return;
         }
+
+        OverlayHttpLog(log_, L"Overlay header updated successfully");
 
         nlohmann::json out;
         out["ok"] = true;
@@ -1652,11 +1755,19 @@ svr.Get("/auth/twitch/start", [&](const httplib::Request& req, httplib::Response
     // Body: {"command":"help","response":"...","enabled":true,"cooldown_ms":3000,"scope":"all"}
     svr.Post("/api/bot/commands/upsert", [&](const httplib::Request& req, httplib::Response& res) {
         if (!require_local(req, res)) return;
+
         json body;
         try {
             body = json::parse(req.body);
         }
+        catch (const std::exception& e) {
+            BotHttpLog(log_, L"Bot command upsert rejected: bad JSON: " + ToW(e.what()));
+            res.status = 400;
+            res.set_content(R"({"ok":false,"error":"bad_json"})", "application/json; charset=utf-8");
+            return;
+        }
         catch (...) {
+            BotHttpLog(log_, L"Bot command upsert rejected: bad JSON");
             res.status = 400;
             res.set_content(R"({"ok":false,"error":"bad_json"})", "application/json; charset=utf-8");
             return;
@@ -1664,6 +1775,7 @@ svr.Get("/auth/twitch/start", [&](const httplib::Request& req, httplib::Response
 
         std::string err;
         if (!state_.bot_upsert_command(body, &err)) {
+            BotHttpLog(log_, L"Bot command upsert failed: " + ToW(err.empty() ? "invalid_command" : err));
             res.status = 400;
             json out;
             out["ok"] = false;
@@ -1672,13 +1784,15 @@ svr.Get("/auth/twitch/start", [&](const httplib::Request& req, httplib::Response
             return;
         }
 
+        BotHttpLog(log_, L"Bot command upserted successfully");
+
         json out;
         out["ok"] = true;
         out["commands"] = state_.bot_commands_json();
         res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
         res.set_header("Pragma", "no-cache");
         res.set_content(out.dump(2), "application/json; charset=utf-8");
-    });
+        });
 
     // Delete a single command.
     // Supports both:
@@ -1686,7 +1800,14 @@ svr.Get("/auth/twitch/start", [&](const httplib::Request& req, httplib::Response
     //  - DELETE /api/bot/commands?command=<command>
     auto handle_bot_delete = [&](const std::string& cmd_raw, httplib::Response& res) {
         const std::string cmd = url_decode(cmd_raw);
-        bool removed = state_.bot_delete_command(cmd);
+        const bool removed = state_.bot_delete_command(cmd);
+
+        if (removed) {
+            BotHttpLog(log_, L"Bot command deleted: " + ToW(cmd));
+        }
+        else {
+            BotHttpLog(log_, L"Bot command delete requested but not found: " + ToW(cmd));
+        }
 
         json out;
         out["ok"] = removed;
@@ -1696,28 +1817,33 @@ svr.Get("/auth/twitch/start", [&](const httplib::Request& req, httplib::Response
         res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
         res.set_header("Pragma", "no-cache");
         res.set_content(out.dump(2), "application/json; charset=utf-8");
-    };
+        };
 
     svr.Delete(R"(/api/bot/commands/(.+))", [&](const httplib::Request& req, httplib::Response& res) {
         if (!require_local(req, res)) return;
+
         if (req.matches.size() >= 2) {
             handle_bot_delete(req.matches[1].str(), res);
         }
         else {
+            BotHttpLog(log_, L"Bot command delete rejected: missing command");
             res.status = 400;
             res.set_content(R"({"ok":false,"error":"missing_command"})", "application/json; charset=utf-8");
         }
-    });
+        });
 
     svr.Delete("/api/bot/commands", [&](const httplib::Request& req, httplib::Response& res) {
         if (!require_local(req, res)) return;
+
         if (!req.has_param("command")) {
+            BotHttpLog(log_, L"Bot command delete rejected: missing command");
             res.status = 400;
             res.set_content(R"({"ok":false,"error":"missing_command"})", "application/json; charset=utf-8");
             return;
         }
+
         handle_bot_delete(req.get_param_value("command"), res);
-    });
+        });
 
     // --- API: bot test inject ---
     // POST /api/bot/test
@@ -1726,11 +1852,19 @@ svr.Get("/auth/twitch/start", [&](const httplib::Request& req, httplib::Response
     // The normal bot pipeline (already in your app) should create the single bot reply.
     svr.Post("/api/bot/test", [&](const httplib::Request& req, httplib::Response& res) {
         if (!require_local(req, res)) return;
+
         json body;
         try {
             body = json::parse(req.body);
         }
+        catch (const std::exception& e) {
+            BotHttpLog(log_, L"Bot test inject rejected: bad JSON: " + ToW(e.what()));
+            res.status = 400;
+            res.set_content(R"({"ok":false,"error":"bad_json"})", "application/json; charset=utf-8");
+            return;
+        }
         catch (...) {
+            BotHttpLog(log_, L"Bot test inject rejected: bad JSON");
             res.status = 400;
             res.set_content(R"({"ok":false,"error":"bad_json"})", "application/json; charset=utf-8");
             return;
@@ -1759,12 +1893,10 @@ svr.Get("/auth/twitch/start", [&](const httplib::Request& req, httplib::Response
             return s;
             };
 
-        // Prepare response JSON (best-effort preview of what the bot WILL say)
         json out;
         out["ok"] = true;
         out["ts_ms"] = now_ms_ll;
 
-        // Determine if it looks like a command and (optionally) preview reply from current state_
         std::string cmd_lc;
         if (!message.empty() && message.size() >= 2 && message[0] == '!') {
             size_t start = 1;
@@ -1779,7 +1911,6 @@ svr.Get("/auth/twitch/start", [&](const httplib::Request& req, httplib::Response
             out["note"] = "not_a_command";
         }
         else {
-            // For test endpoint, allow role simulation via request body
             bool is_mod = body.value("is_mod", false);
             bool is_broadcaster = body.value("is_broadcaster", false);
 
@@ -1811,13 +1942,14 @@ svr.Get("/auth/twitch/start", [&](const httplib::Request& req, httplib::Response
                     if (bs.max_reply_len > 0 && reply.size() > bs.max_reply_len) {
                         reply.resize(bs.max_reply_len);
                     }
-                out["matched"] = true;
-                out["command"] = cmd_lc;
-                out["reply"] = reply;
-                out["note"] = bs.silent_mode ? "silent_mode_reply_preview" : "reply_preview_only"; // actual injection happens via normal pipeline
+                    out["matched"] = true;
+                    out["command"] = cmd_lc;
+                    out["reply"] = reply;
+                    out["note"] = bs.silent_mode ? "silent_mode_reply_preview" : "reply_preview_only";
                 }
             }
         }
+
 
         // Inject ONLY the user message (this should trigger your existing bot logic exactly once)
         if (!message.empty()) {
@@ -1827,12 +1959,22 @@ svr.Get("/auth/twitch/start", [&](const httplib::Request& req, httplib::Response
             m.message = message;
             m.ts_ms = now_ms_ll;
             chat_.Add(std::move(m));
+
+            BotHttpLog(
+                log_,
+                L"Bot test inject accepted: platform=" + ToW(platform) +
+                L" user=" + ToW(user) +
+                (out.value("matched", false) ? L" matched=yes" : L" matched=no")
+            );
+        }
+        else {
+            BotHttpLog(log_, L"Bot test inject requested with empty message");
         }
 
         res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
         res.set_header("Pragma", "no-cache");
         res.set_content(out.dump(2), "application/json; charset=utf-8");
-        });
+});
 
     // --- API: chat diagnostics ---
     // Returns address of the ChatAggregator instance and current buffered count.
@@ -1855,8 +1997,8 @@ svr.Get("/auth/twitch/start", [&](const httplib::Request& req, httplib::Response
         });
 
     // --- API: chat test inject (debug) ---
-// Example:
-//   /api/chat/test?platform=twitch&user=Test&message=Hello
+    // Example:
+    //   /api/chat/test?platform=twitch&user=Test&message=Hello
     svr.Get("/api/chat/test", [&](const httplib::Request& req, httplib::Response& res) {
         ChatMessage m{};
         m.platform = req.has_param("platform") ? req.get_param_value("platform") : "test";
@@ -1870,6 +2012,12 @@ svr.Get("/auth/twitch/start", [&](const httplib::Request& req, httplib::Response
         // Add into aggregator for overlays that read it
         chat_.Add(m);
         // Backward AppState sink removed: ChatAggregator is now the source-of-truth for overlays.
+
+        ChatHttpLog(
+            log_,
+            L"Test chat injected: platform=" + ToW(m.platform) +
+            L" user=" + ToW(m.user)
+        );
 
         res.set_content(R"({"ok":true})", "application/json; charset=utf-8");
         });
@@ -2139,57 +2287,11 @@ svr.Get("/auth/twitch/start", [&](const httplib::Request& req, httplib::Response
         });
 
 
-    // --- API: platform control (start/stop) ---
-    // Called by the modern Web UI (e.g. "Start All" button)
-    // POST /api/platform/{tiktok|twitch|youtube}/{start|stop}
-    svr.Post(R"(/api/platform/(tiktok|twitch|youtube)/(start|stop))",
-        [&](const httplib::Request& req, httplib::Response& res) {
-
-            const std::string platform = req.matches[1];
-            const std::string action = req.matches[2];
-
-            std::function<bool(void)> fn;
-
-            if (platform == "tiktok") {
-                fn = (action == "start") ? opt_.start_tiktok : opt_.stop_tiktok;
-            }
-            else if (platform == "twitch") {
-                fn = (action == "start") ? opt_.start_twitch : opt_.stop_twitch;
-            }
-            else if (platform == "youtube") {
-                fn = (action == "start") ? opt_.start_youtube : opt_.stop_youtube;
-            }
-
-            if (!fn) {
-                res.status = 404;
-                res.set_content(R"({"ok":false,"error":"not_implemented"})", "application/json");
-                return;
-            }
-
-            bool ok = false;
-            try {
-                ok = fn();
-            }
-            catch (...) {
-                res.status = 500;
-                res.set_content(R"({"ok":false,"error":"exception"})", "application/json");
-                return;
-            }
-
-            if (!ok) {
-                res.status = 500;
-                res.set_content(R"({"ok":false,"error":"failed"})", "application/json");
-                return;
-            }
-
-            const std::string state = (action == "start") ? "started" : "stopped";
-            std::string body = std::string(R"({"ok":true,"platform":")") + platform +
-                R"(","action":")" + action +
-                R"(","state":")" + state +
-                R"("})";
-
-            res.set_content(body, "application/json");
-        });
+    inline void PlatformHttpLog(std::function<void(const std::wstring&)>& log,
+        const std::wstring& msg)
+    {
+        SafeOutputLog(log, L"[HttpServer][Platform] " + msg);
+    }
 
     // Root -> overlay
     svr.Get("/", [&](const httplib::Request&, httplib::Response& res) {

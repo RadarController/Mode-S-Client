@@ -1,4 +1,6 @@
 #include "TwitchAuth.h"
+#include "core/StringUtil.h"
+#include "log/UiLog.h"
 
 // This translation unit uses cpp-httplib + nlohmann::json.
 // Keep these includes near the top so early functions compile regardless of include order.
@@ -116,12 +118,18 @@ static std::string MaskToken(const std::string& t) {
 }
 
 static void DebugLog(const std::string& msg) {
-    const std::string line = "TWITCHAUTH: " + msg + "\n";
+    const std::wstring wline = L"TWITCHAUTH: " + ToW(msg);
+
 #ifdef _WIN32
-    OutputDebugStringA(line.c_str());
+    OutputDebugStringW((wline + L"\n").c_str());
 #endif
-    std::fprintf(stderr, "%s", line.c_str());
-    std::fflush(stderr);
+
+    try {
+        LogLine(wline);
+    }
+    catch (...) {
+        // Never allow logging failures to break auth flow
+    }
 }
 
 static std::string TrimAscii(std::string s) {

@@ -41,12 +41,12 @@ bool TikTokSidecar::start(const std::wstring& pythonExe,
         wchar_t buf[1024];
         swprintf_s(
             buf,
-            L"CreateProcessW failed. GetLastError=%lu\n  pythonExe=%s\n  scriptPath=%s\n  cmd=%s\n",
+            L"[TikTokSidecar] CreateProcessW failed. GetLastError=%lu | pythonExe=%s | scriptPath=%s | cmd=%s",
             err,
             pythonExe.c_str(),
             scriptPath.c_str(),
             cmd.c_str());
-        OutputDebugStringW(buf);
+        LogLine(buf);
 
         if (hStdOutRd_) { CloseHandle(hStdOutRd_); hStdOutRd_ = nullptr; }
         if (hStdOutWr_) { CloseHandle(hStdOutWr_); hStdOutWr_ = nullptr; }

@@ -95,7 +95,7 @@ std::int64_t NowUnix() {
 
 void YouTubeAuth::LogUi(const std::string& msg) {
     if (!ui_log_) return;
-    ui_log_(ToW(msg));
+    ui_log_(L"[YouTubeAuth] " + ToW(msg));
 }
 // ---- scopes ----
 const char* YouTubeAuth::RequiredScopeReadable() {
@@ -114,14 +114,15 @@ bool YouTubeAuth::Start() {
 
     std::string err;
     if (!LoadFromConfig(&err)) {
-        DebugLog("YTAUTH: load config failed: " + err);
+        DebugLog("load config failed: " + err);
         // Still start background loop so user can complete OAuth later.
     }
+
     // Best-effort: if we already have a refresh token, refresh immediately if needed.
     (void)RefreshNow(&err);
 
     bg_ = std::thread([this]() {
-        DebugLog("YTAUTH: background refresh loop started");
+        DebugLog("background refresh loop started");
         while (running_.load()) {
             std::this_thread::sleep_for(std::chrono::seconds(10));
             const auto now = NowUnix();
@@ -133,12 +134,12 @@ bool YouTubeAuth::Start() {
             if (need) {
                 std::string e;
                 if (!RefreshWithGoogle(&e)) {
-                    DebugLog("YTAUTH: refresh failed: " + e);
+                    DebugLog("refresh failed: " + e);
                 }
             }
         }
-        DebugLog("YTAUTH: background refresh loop stopped");
-    });
+        DebugLog("background refresh loop stopped");
+        });
 
     return true;
 }
@@ -275,6 +276,8 @@ bool YouTubeAuth::HandleOAuthCallback(const std::string& code,
     }
 
     // Exchange code for tokens
+    DebugLog("Starting OAuth token exchange");
+
     std::string body;
     body += "code=" + UrlEncode(code);
     body += "&client_id=" + UrlEncode(client_id_);
@@ -288,7 +291,12 @@ bool YouTubeAuth::HandleOAuthCallback(const std::string& code,
         &status, &err);
 
     if (resp.empty() || status < 200 || status >= 300) {
-        if (out_error) *out_error = err.empty() ? ("token exchange failed http=" + std::to_string(status)) : err;
+        const std::string msg =
+            err.empty()
+            ? ("token exchange failed http=" + std::to_string(status))
+            : ("token exchange failed: " + err + " (http=" + std::to_string(status) + ")");
+        DebugLog(msg);
+        if (out_error) *out_error = msg;
         return false;
     }
 
@@ -303,6 +311,7 @@ bool YouTubeAuth::HandleOAuthCallback(const std::string& code,
         snap.scope_joined = j.value("scope", "");
 
         if (snap.access_token.empty()) {
+            DebugLog("token exchange returned empty access_token");
             if (out_error) *out_error = "token exchange returned empty access_token";
             return false;
         }
@@ -310,12 +319,16 @@ bool YouTubeAuth::HandleOAuthCallback(const std::string& code,
         // If refresh_token wasn't returned (common if previously consented), keep existing refresh_token.
         {
             std::lock_guard<std::mutex> lock(mu_);
-            if (snap.refresh_token.empty()) snap.refresh_token = tokens_.refresh_token;
+            if (snap.refresh_token.empty()) {
+                DebugLog("token exchange returned no refresh_token; keeping existing refresh_token");
+                snap.refresh_token = tokens_.refresh_token;
+            }
             tokens_ = snap;
         }
 
         std::string scopes, channel;
         if (!ValidateAndLogToken(snap.access_token, &scopes, &channel)) {
+            DebugLog("token validation failed");
             if (out_error) *out_error = "token validation failed";
             return false;
         }
@@ -326,15 +339,22 @@ bool YouTubeAuth::HandleOAuthCallback(const std::string& code,
             channel_id_ = channel;
         }
 
-        if (!SaveToConfig(tokens_, out_error)) return false;
+        if (!SaveToConfig(tokens_, out_error)) {
+            DebugLog("failed to save updated tokens to config");
+            return false;
+        }
 
-        if (on_tokens_updated) on_tokens_updated(tokens_.access_token, tokens_.refresh_token, channel_id_);
+        if (on_tokens_updated) {
+            on_tokens_updated(tokens_.access_token, tokens_.refresh_token, channel_id_);
+        }
 
-        DebugLog("YTAUTH: OAuth callback success (channel_id=" + channel_id_ + ")");
+        DebugLog("OAuth callback success (channel_id=" + channel_id_ + ")");
         return true;
     }
     catch (const std::exception& e) {
-        if (out_error) *out_error = std::string("token JSON parse failed: ") + e.what();
+        const std::string msg = std::string("token JSON parse failed: ") + e.what();
+        DebugLog(msg);
+        if (out_error) *out_error = msg;
         return false;
     }
 }
@@ -381,7 +401,8 @@ bool YouTubeAuth::RefreshWithGoogle(std::string* out_error) {
             json ej = json::parse(resp);
             const std::string e = ej.value("error", "");
             if (e == "invalid_grant") {
-                std::string desc = ej.value("error_description", "");
+                const std::string desc = ej.value("error_description", "");
+
                 {
                     std::lock_guard<std::mutex> lock(mu_);
                     tokens_.access_token.clear();
@@ -391,18 +412,33 @@ bool YouTubeAuth::RefreshWithGoogle(std::string* out_error) {
                     tokens_.scope_joined.clear();
                     channel_id_.clear();
                 }
+
                 // Persist the cleared state so we don't keep failing on restart.
                 std::string save_err;
-                (void)SaveToConfig(tokens_, &save_err);
+                const bool saved = SaveToConfig(tokens_, &save_err);
 
-                const std::string msg = "refresh token invalid_grant (expired or revoked)" +
-                    (desc.empty() ? std::string() : (": " + desc)) +
-                    "; cleared stored YouTube tokens - re-authorisation required.";
-                DebugLog("YTAUTH: " + msg);
+                std::string msg = "refresh token invalid_grant (expired or revoked)";
+                if (!desc.empty()) {
+                    msg += ": " + desc;
+                }
+
+                if (saved) {
+                    msg += "; cleared stored YouTube tokens - re-authorisation required";
+                }
+                else {
+                    msg += "; cleared in-memory tokens but failed to persist cleared state";
+                    if (!save_err.empty()) {
+                        msg += ": " + save_err;
+                    }
+                }
+
+                DebugLog(msg);
+
                 if (out_error) *out_error = msg;
                 return false;
             }
-        } catch (...) {
+        }
+        catch (...) {
             // fall through to generic error handling below
         }
     }
@@ -420,6 +456,7 @@ bool YouTubeAuth::RefreshWithGoogle(std::string* out_error) {
         const std::string scope = j.value("scope", "");
 
         if (access.empty()) {
+            DebugLog("refresh returned empty access_token");
             if (out_error) *out_error = "refresh returned empty access_token";
             return false;
         }
@@ -444,18 +481,24 @@ bool YouTubeAuth::RefreshWithGoogle(std::string* out_error) {
             if (!channel.empty()) channel_id_ = channel;
         }
 
-        if (!SaveToConfig(tokens_, out_error)) return false;
+        if (!SaveToConfig(tokens_, out_error)) {
+            DebugLog("refresh succeeded but failed to save updated tokens to config");
+            return false;
+        }
 
-        if (on_tokens_updated) on_tokens_updated(tokens_.access_token, tokens_.refresh_token, channel_id_);
+        if (on_tokens_updated) {
+            on_tokens_updated(tokens_.access_token, tokens_.refresh_token, channel_id_);
+        }
 
-        DebugLog("YTAUTH: refresh ok (expires_at=" + std::to_string(tokens_.expires_at_unix) + ")");
+        DebugLog("refresh ok (expires_at=" + std::to_string(tokens_.expires_at_unix) + ")");
         return true;
     }
     catch (const std::exception& e) {
-        if (out_error) *out_error = std::string("refresh JSON parse failed: ") + e.what();
+        const std::string msg = std::string("refresh JSON parse failed: ") + e.what();
+        DebugLog(msg);
+        if (out_error) *out_error = msg;
         return false;
     }
-}
 
 // ---- validate ----
 bool YouTubeAuth::ValidateAndLogToken(const std::string& access_token, std::string* out_scope_joined, std::string* out_channel_id) {
@@ -477,7 +520,7 @@ bool YouTubeAuth::ValidateAndLogToken(const std::string& access_token, std::stri
 
     auto res = cli.Get("/oauth2/v3/tokeninfo?access_token=" + UrlEncode(access_token), headers);
     if (!res || res->status != 200) {
-        DebugLog("YTAUTH: tokeninfo failed");
+        DebugLog("tokeninfo failed");
         // continue anyway; token may still work for API calls
     } else {
         try {
@@ -485,25 +528,44 @@ bool YouTubeAuth::ValidateAndLogToken(const std::string& access_token, std::stri
             const std::string scope = j.value("scope", "");
             if (out_scope_joined) *out_scope_joined = scope;
         } catch (...) {}
-    }
-
-    // Try to resolve channel id (best-effort)
+    }// Try to resolve channel id (best-effort)
     httplib::SSLClient api("www.googleapis.com", 443);
     api.set_follow_location(true);
     auto res2 = api.Get("/youtube/v3/channels?part=id&mine=true", headers);
+
     if (res2 && res2->status == 200) {
         try {
             json j = json::parse(res2->body);
             if (j.contains("items") && j["items"].is_array() && !j["items"].empty()) {
                 const auto& it = j["items"][0];
                 std::string id = it.value("id", "");
-                if (out_channel_id) *out_channel_id = id;
+                if (!id.empty()) {
+                    if (out_channel_id) *out_channel_id = id;
+                    DebugLog("resolved channel_id successfully");
+                }
+                else {
+                    DebugLog("channel id lookup returned no id");
+                }
             }
-        } catch (...) {}
+            else {
+                DebugLog("channel id lookup returned no items");
+            }
+        }
+        catch (const std::exception& e) {
+            DebugLog(std::string("channel id lookup JSON parse failed: ") + e.what());
+        }
+        catch (...) {
+            DebugLog("channel id lookup JSON parse failed: unknown exception");
+        }
+    }
+    else if (res2) {
+        DebugLog("channel id lookup failed with HTTP status " + std::to_string(res2->status));
+    }
+    else {
+        DebugLog("channel id lookup failed: no HTTP response");
     }
 
     return true;
-}
 
 // ---- config io ----
 bool YouTubeAuth::LoadFromConfig(std::string* out_error) {
@@ -543,9 +605,11 @@ bool YouTubeAuth::LoadFromConfig(std::string* out_error) {
 
 bool YouTubeAuth::SaveToConfig(const TokenSnapshot& snap, std::string* out_error) {
     if (out_error) out_error->clear();
+
     const auto p = FindConfigPath();
     json root;
     std::string err;
+
     if (!ReadJsonFile(p, &root, &err)) {
         // If config doesn't exist, we can create a new one.
         root = json::object();
@@ -566,10 +630,12 @@ bool YouTubeAuth::SaveToConfig(const TokenSnapshot& snap, std::string* out_error
     root["youtube"] = yt;
 
     if (!WriteJsonFile(p, root, &err)) {
+        DebugLog("failed to save tokens to " + p.string() + ": " + err);
         if (out_error) *out_error = err;
         return false;
     }
-    DebugLog("YTAUTH: saved tokens to " + p.string());
+
+    DebugLog("saved tokens to " + p.string());
     return true;
 }
 
@@ -648,8 +714,11 @@ std::string YouTubeAuth::RandomHex(size_t bytes) {
 
 // ---- debug log ----
 static void DebugLog(const std::string& msg) {
+    const std::string line = "[YouTubeAuth] " + msg;
+
 #ifdef _WIN32
-    OutputDebugStringW((L"YTAUTH: " + ToW(msg) + L"\n").c_str());
+    OutputDebugStringW((ToW(line) + L"\n").c_str());
 #endif
-    YouTubeAuth::LogUi(msg);
+
+    YouTubeAuth::LogUi(line);
 }
