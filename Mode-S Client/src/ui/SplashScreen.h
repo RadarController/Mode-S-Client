@@ -4,10 +4,8 @@
 
 namespace SplashScreen {
 
-// Creates and shows the splash window.
-// displayName and versionText are currently accepted for compatibility with
-// Mode-S Client.cpp, even though the new image-based splash does not need to
-// render them as text.
+// Creates and shows the splash window. The splash is a local HTML/CSS/JS page
+// hosted inside its own WebView2 instance and does not depend on the HTTP server.
 bool Create(HINSTANCE hInstance, const wchar_t* displayName, const wchar_t* versionText);
 
 // Called when the app is ready to reveal the main window.

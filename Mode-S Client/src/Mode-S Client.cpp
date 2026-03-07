@@ -6,6 +6,7 @@
 #include <windows.h>
 #include <wininet.h>
 #include <winhttp.h>
+#include <objbase.h>
 #pragma comment(lib, "winhttp.lib")
 
 #include <string>
@@ -966,6 +967,24 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     return DefWindowProc(hwnd, msg, wParam, lParam);
 }
 
+
+static RECT CenteredWindowRect(int width, int height)
+{
+    RECT wa{};
+    SystemParametersInfoW(SPI_GETWORKAREA, 0, &wa, 0);
+
+    RECT rc{ 0, 0, width, height };
+    AdjustWindowRectEx(&rc, WS_OVERLAPPEDWINDOW, FALSE, 0);
+
+    const int windowWidth = rc.right - rc.left;
+    const int windowHeight = rc.bottom - rc.top;
+
+    const int x = wa.left + ((wa.right - wa.left) - windowWidth) / 2;
+    const int y = wa.top + ((wa.bottom - wa.top) - windowHeight) / 2;
+
+    return RECT{ x, y, x + windowWidth, y + windowHeight };
+}
+
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
     const DWORD uiThreadId = GetCurrentThreadId();
 
@@ -998,6 +1017,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
         }
     }
 
+    HRESULT hrCom = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+
     // Splash screen shown while the main window initializes
     SplashScreen::Create(hInstance, kAppDisplayName, APP_VERSION_FILE_W);
 
@@ -1008,10 +1029,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
         DispatchMessageW(&sm);
     }
 
+    RECT mainRc = CenteredWindowRect(1440, 900);
+
     HWND hwnd = CreateWindowExW(
         0, CLASS_NAME, kAppDisplayName,
         WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT, 1440, 900,
+        mainRc.left, mainRc.top,
+        mainRc.right - mainRc.left,
+        mainRc.bottom - mainRc.top,
         nullptr, nullptr, hInstance, nullptr
     );
 
@@ -1051,6 +1076,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
     while (GetMessageW(&msg, nullptr, 0, 0)) {
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
+    }
+
+    if (SUCCEEDED(hrCom)) {
+        CoUninitialize();
     }
 
     return 0;

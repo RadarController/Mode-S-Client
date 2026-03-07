@@ -1,62 +1,699 @@
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
 #include "SplashScreen.h"
 
 #include <windows.h>
 #include <string>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
+
+#include <wrl.h>
+#include "WebView2.h"
+
+using Microsoft::WRL::ComPtr;
 
 namespace SplashScreen {
 namespace {
 
 HWND gSplashWnd = nullptr;
 HWND gMainWnd = nullptr;
+
+std::wstring gDisplayName;
+std::wstring gVersionText;
+std::wstring gLastSplashHtmlPath;
+
+bool gSplashHtmlReady = false;
+bool gSplashNavCompleted = false;
+bool gSplashNavSuccess = false;
+
+COREWEBVIEW2_WEB_ERROR_STATUS gSplashWebErrorStatus = COREWEBVIEW2_WEB_ERROR_STATUS_UNKNOWN;
+std::wstring gSplashDebugHtmlPath;
+
+bool gSplashFileExists = false;
+size_t gSplashRawByteCount = 0;
+size_t gSplashHtmlCharCount = 0;
+
+bool gSplashIndexExists = false;
+size_t gSplashIndexRawBytes = 0;
+size_t gSplashIndexChars = 0;
+
+DWORD gSplashIndexOpenError = 0;
+
+bool gSplashEnvCreated = false;
+bool gSplashControllerCreated = false;
+bool gSplashCoreAcquired = false;
+bool gSplashBuildCalled = false;
+
+bool gPendingCloseAfterHtmlReady = false;
+
+HRESULT gSplashEnvHr = S_OK;
+HRESULT gSplashControllerHr = S_OK;
+
+ComPtr<ICoreWebView2Controller> gSplashWebController;
+ComPtr<ICoreWebView2>           gSplashWebView;
+
 constexpr UINT_PTR kCloseTimerId = 1001;
-constexpr UINT kCloseDelayMs = 1000;
-const wchar_t* kSplashClassName = L"ModeSClientImageSplash";
+constexpr UINT kCloseDelayMs = 2200;
+const wchar_t* kSplashClassName = L"ModeSClientHtmlSplash";
+constexpr UINT WM_APP_INIT_SPLASH_WEBVIEW = WM_APP + 301;
+
+std::wstring GetExeDir()
+{
+    wchar_t path[MAX_PATH]{};
+    GetModuleFileNameW(nullptr, path, MAX_PATH);
+    std::wstring p = path;
+    const size_t pos = p.find_last_of(L"\\/");
+    return (pos == std::wstring::npos) ? L"." : p.substr(0, pos);
+}
+
+std::wstring GetSplashHtmlPath()
+{
+    return GetExeDir() + L"\\assets\\app\\splash\\index.html";
+}
+
+std::wstring GetSplashAssetDir()
+{
+    return GetExeDir() + L"\\assets\\app\\splash";
+}
+
+std::wstring GetSplashDebugHtmlPath()
+{
+    return GetExeDir() + L"\\assets\\app\\splash\\_debug_composed.html";
+}
+
+bool WriteUtf8File(const std::filesystem::path& path, const std::wstring& text)
+{
+    const int needed = WideCharToMultiByte(CP_UTF8, 0, text.c_str(), (int)text.size(), nullptr, 0, nullptr, nullptr);
+    if (needed <= 0) return false;
+
+    std::string bytes;
+    bytes.resize(needed);
+    WideCharToMultiByte(CP_UTF8, 0, text.c_str(), (int)text.size(), bytes.data(), needed, nullptr, nullptr);
+
+    std::ofstream f(path, std::ios::binary);
+    if (!f.is_open()) return false;
+
+    const unsigned char bom[3] = { 0xEF, 0xBB, 0xBF };
+    f.write(reinterpret_cast<const char*>(bom), 3);
+    f.write(bytes.data(), bytes.size());
+    return f.good();
+}
+
+std::wstring ReadUtf8File(const std::filesystem::path& path)
+{
+    gSplashFileExists = std::filesystem::exists(path);
+    gSplashRawByteCount = 0;
+
+    HANDLE hFile = CreateFileW(
+        path.c_str(),
+        GENERIC_READ,
+        FILE_SHARE_READ,
+        nullptr,
+        OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL,
+        nullptr);
+
+    if (hFile == INVALID_HANDLE_VALUE) {
+        return L"";
+    }
+
+    LARGE_INTEGER size{};
+    if (!GetFileSizeEx(hFile, &size) || size.QuadPart <= 0 || size.QuadPart > 16 * 1024 * 1024) {
+        CloseHandle(hFile);
+        return L"";
+    }
+
+    std::string bytes;
+    bytes.resize(static_cast<size_t>(size.QuadPart));
+
+    DWORD bytesRead = 0;
+    if (!ReadFile(hFile, bytes.data(), static_cast<DWORD>(bytes.size()), &bytesRead, nullptr)) {
+        CloseHandle(hFile);
+        return L"";
+    }
+
+    CloseHandle(hFile);
+
+    bytes.resize(bytesRead);
+    gSplashRawByteCount = bytes.size();
+
+    if (bytes.empty()) {
+        return L"";
+    }
+
+    // Strip UTF-8 BOM if present
+    if (bytes.size() >= 3 &&
+        static_cast<unsigned char>(bytes[0]) == 0xEF &&
+        static_cast<unsigned char>(bytes[1]) == 0xBB &&
+        static_cast<unsigned char>(bytes[2]) == 0xBF) {
+        bytes.erase(0, 3);
+    }
+
+    // Try UTF-8 first
+    int needed = MultiByteToWideChar(
+        CP_UTF8,
+        MB_ERR_INVALID_CHARS,
+        bytes.data(),
+        static_cast<int>(bytes.size()),
+        nullptr,
+        0);
+
+    if (needed > 0) {
+        std::wstring out;
+        out.resize(needed);
+        MultiByteToWideChar(
+            CP_UTF8,
+            MB_ERR_INVALID_CHARS,
+            bytes.data(),
+            static_cast<int>(bytes.size()),
+            out.data(),
+            needed);
+        return out;
+    }
+
+    // Fallback to system ANSI code page
+    needed = MultiByteToWideChar(
+        CP_ACP,
+        0,
+        bytes.data(),
+        static_cast<int>(bytes.size()),
+        nullptr,
+        0);
+
+    if (needed <= 0) {
+        return L"";
+    }
+
+    std::wstring out;
+    out.resize(needed);
+    MultiByteToWideChar(
+        CP_ACP,
+        0,
+        bytes.data(),
+        static_cast<int>(bytes.size()),
+        out.data(),
+        needed);
+
+    return out;
+}
+
+std::wstring ReplaceAll(std::wstring text, const std::wstring& from, const std::wstring& to)
+{
+    if (from.empty()) return text;
+
+    size_t pos = 0;
+    while ((pos = text.find(from, pos)) != std::wstring::npos) {
+        text.replace(pos, from.size(), to);
+        pos += to.size();
+    }
+    return text;
+}
+
+std::wstring BuildSplashHtmlFromDisk()
+{
+    const std::filesystem::path dir = GetSplashAssetDir();
+    const std::filesystem::path htmlPath = dir / "index.html";
+    const std::filesystem::path cssPath = dir / "splash.css";
+    const std::filesystem::path jsPath = dir / "splash.js";
+
+    gLastSplashHtmlPath = htmlPath.wstring();
+
+    gSplashIndexExists = false;
+    gSplashIndexRawBytes = 0;
+    gSplashIndexChars = 0;
+    gSplashIndexOpenError = 0;
+
+    HANDLE hFile = CreateFileW(
+        htmlPath.c_str(),
+        GENERIC_READ,
+        FILE_SHARE_READ,
+        nullptr,
+        OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL,
+        nullptr);
+
+    if (hFile == INVALID_HANDLE_VALUE) {
+        gSplashIndexOpenError = GetLastError();
+        return L"";
+    }
+
+    gSplashIndexExists = true;
+    gSplashIndexOpenError = 0;
+
+    LARGE_INTEGER size{};
+    if (!GetFileSizeEx(hFile, &size) || size.QuadPart <= 0 || size.QuadPart > 16 * 1024 * 1024) {
+        CloseHandle(hFile);
+        return L"";
+    }
+
+    std::string htmlBytes;
+    htmlBytes.resize(static_cast<size_t>(size.QuadPart));
+
+    DWORD bytesRead = 0;
+    if (!ReadFile(hFile, htmlBytes.data(), static_cast<DWORD>(htmlBytes.size()), &bytesRead, nullptr)) {
+        CloseHandle(hFile);
+        return L"";
+    }
+
+    CloseHandle(hFile);
+
+    htmlBytes.resize(bytesRead);
+    gSplashIndexRawBytes = htmlBytes.size();
+
+    if (htmlBytes.empty()) {
+        return L"";
+    }
+
+    if (htmlBytes.size() >= 3 &&
+        static_cast<unsigned char>(htmlBytes[0]) == 0xEF &&
+        static_cast<unsigned char>(htmlBytes[1]) == 0xBB &&
+        static_cast<unsigned char>(htmlBytes[2]) == 0xBF) {
+        htmlBytes.erase(0, 3);
+    }
+
+    int needed = MultiByteToWideChar(
+        CP_UTF8,
+        MB_ERR_INVALID_CHARS,
+        htmlBytes.data(),
+        static_cast<int>(htmlBytes.size()),
+        nullptr,
+        0);
+
+    std::wstring html;
+    if (needed > 0) {
+        html.resize(needed);
+        MultiByteToWideChar(
+            CP_UTF8,
+            MB_ERR_INVALID_CHARS,
+            htmlBytes.data(),
+            static_cast<int>(htmlBytes.size()),
+            html.data(),
+            needed);
+    }
+    else {
+        needed = MultiByteToWideChar(
+            CP_ACP,
+            0,
+            htmlBytes.data(),
+            static_cast<int>(htmlBytes.size()),
+            nullptr,
+            0);
+
+        if (needed <= 0) {
+            return L"";
+        }
+
+        html.resize(needed);
+        MultiByteToWideChar(
+            CP_ACP,
+            0,
+            htmlBytes.data(),
+            static_cast<int>(htmlBytes.size()),
+            html.data(),
+            needed);
+    }
+
+    gSplashIndexChars = html.size();
+
+    const std::wstring css = ReadUtf8File(cssPath);
+    const std::wstring js = ReadUtf8File(jsPath);
+
+    if (html.empty()) {
+        return L"";
+    }
+
+    if (!css.empty()) {
+        html = ReplaceAll(html, L"<link rel=\"stylesheet\" href=\"./splash.css\">", L"<style>\n" + css + L"\n</style>");
+        html = ReplaceAll(html, L"<link rel=\"stylesheet\" href=\"./splash.css\" />", L"<style>\n" + css + L"\n</style>");
+        html = ReplaceAll(html, L"<link rel=\"stylesheet\" href=\"./splash.css\"/>", L"<style>\n" + css + L"\n</style>");
+        html = ReplaceAll(html, L"<link rel=\"stylesheet\" href='./splash.css'>", L"<style>\n" + css + L"\n</style>");
+        html = ReplaceAll(html, L"<link rel=\"stylesheet\" href='./splash.css' />", L"<style>\n" + css + L"\n</style>");
+        html = ReplaceAll(html, L"<link rel=\"stylesheet\" href='./splash.css'/>", L"<style>\n" + css + L"\n</style>");
+    }
+
+    if (!js.empty()) {
+        html = ReplaceAll(html, L"<script src=\"./splash.js\"></script>", L"<script>\n" + js + L"\n</script>");
+        html = ReplaceAll(html, L"<script src='./splash.js'></script>", L"<script>\n" + js + L"\n</script>");
+    }
+
+    return html;
+}
+
+std::wstring EscapeForJsSingleQuoted(const std::wstring& s)
+{
+    std::wstring out;
+    out.reserve(s.size() + 16);
+    for (wchar_t ch : s) {
+        switch (ch) {
+        case L'\\': out += L"\\\\"; break;
+        case L'\'': out += L"\\'"; break;
+        case L'\r': break;
+        case L'\n': out += L"\\n"; break;
+        default: out += ch; break;
+        }
+    }
+    return out;
+}
+
+void CenterWindowToWorkArea(HWND hwnd)
+{
+    if (!hwnd || !IsWindow(hwnd)) return;
+
+    RECT rc{};
+    GetWindowRect(hwnd, &rc);
+
+    RECT wa{};
+    SystemParametersInfoW(SPI_GETWORKAREA, 0, &wa, 0);
+
+    const int w = rc.right - rc.left;
+    const int h = rc.bottom - rc.top;
+    const int x = wa.left + ((wa.right - wa.left) - w) / 2;
+    const int y = wa.top + ((wa.bottom - wa.top) - h) / 2;
+
+    SetWindowPos(hwnd, nullptr, x, y, 0, 0, SWP_NOACTIVATE | SWP_NOSIZE | SWP_NOZORDER);
+}
+
+void ShowMainWindowCentered()
+{
+    if (!gMainWnd || !IsWindow(gMainWnd)) return;
+    CenterWindowToWorkArea(gMainWnd);
+    ShowWindow(gMainWnd, SW_SHOWDEFAULT);
+    UpdateWindow(gMainWnd);
+    SetForegroundWindow(gMainWnd);
+}
+
+void ResizeSplashWebView()
+{
+    if (!gSplashWnd || !gSplashWebController) return;
+
+    RECT rc{};
+    GetClientRect(gSplashWnd, &rc);
+    gSplashWebController->put_Bounds(rc);
+}
+
+void DestroySplashWebView()
+{
+    if (gSplashWebController) {
+        gSplashWebController->Close();
+    }
+    gSplashWebView.Reset();
+    gSplashWebController.Reset();
+    gSplashHtmlReady = false;
+}
+
+void PaintFallbackSplash(HWND hwnd, HDC hdc)
+
+{
+    RECT rc{};
+    GetClientRect(hwnd, &rc);
+
+    HBRUSH bg = CreateSolidBrush(RGB(7, 12, 18));
+    FillRect(hdc, &rc, bg);
+    DeleteObject(bg);
+
+    RECT inner = rc;
+    InflateRect(&inner, -24, -24);
+    HBRUSH panel = CreateSolidBrush(RGB(16, 24, 36));
+    FillRect(hdc, &inner, panel);
+    DeleteObject(panel);
+
+    HPEN pen = CreatePen(PS_SOLID, 1, RGB(30, 109, 255));
+    HGDIOBJ oldPen = SelectObject(hdc, pen);
+    HGDIOBJ oldBrush = SelectObject(hdc, GetStockObject(HOLLOW_BRUSH));
+    RoundRect(hdc, inner.left, inner.top, inner.right, inner.bottom, 28, 28);
+    SelectObject(hdc, oldBrush);
+    SelectObject(hdc, oldPen);
+    DeleteObject(pen);
+
+    SetBkMode(hdc, TRANSPARENT);
+
+    HFONT titleFont = CreateFontW(
+        -34, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+        DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+    HFONT metaFont = CreateFontW(
+        -18, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+        DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+    HFONT monoFont = CreateFontW(
+        -15, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+        DEFAULT_PITCH | FF_DONTCARE, L"Consolas");
+
+    HFONT oldFont = (HFONT)SelectObject(hdc, titleFont);
+    SetTextColor(hdc, RGB(232, 238, 247));
+
+    RECT titleRc = inner;
+    titleRc.top += 84;
+    titleRc.bottom = titleRc.top + 50;
+    std::wstring title = gDisplayName.empty() ? L"StreamingATC.Live" : gDisplayName;
+    DrawTextW(hdc, title.c_str(), -1, &titleRc, DT_CENTER | DT_TOP | DT_SINGLELINE);
+
+    SelectObject(hdc, metaFont);
+    SetTextColor(hdc, RGB(145, 170, 200));
+    RECT subRc = inner;
+    subRc.top = titleRc.bottom + 8;
+    subRc.bottom = subRc.top + 26;
+    const wchar_t* subtitle = gSplashHtmlReady
+        ? L"HTML splash loaded."
+        : L"Initialising local services and preparing the control room...";
+    DrawTextW(hdc, subtitle, -1, &subRc, DT_CENTER | DT_TOP | DT_SINGLELINE);
+
+    RECT barOuter = inner;
+    barOuter.left += 140;
+    barOuter.right -= 140;
+    barOuter.top = subRc.bottom + 34;
+    barOuter.bottom = barOuter.top + 18;
+
+    HBRUSH barBg = CreateSolidBrush(RGB(20, 32, 46));
+    FillRect(hdc, &barOuter, barBg);
+    DeleteObject(barBg);
+
+    RECT barFill = barOuter;
+    const int pct = gSplashHtmlReady ? 100 : 61;
+    barFill.right = barFill.left + ((barOuter.right - barOuter.left) * pct / 100);
+    HBRUSH barFg = CreateSolidBrush(RGB(30, 109, 255));
+    FillRect(hdc, &barFill, barFg);
+    DeleteObject(barFg);
+
+    SelectObject(hdc, monoFont);
+    SetTextColor(hdc, RGB(124, 145, 170));
+    RECT footRc = inner;
+    footRc.top = barOuter.bottom + 18;
+    footRc.bottom = footRc.top + 20;
+    std::wstring foot = gSplashHtmlReady ? L"HTML SPLASH LIVE" : L"RADARCONTROLLER // STARTUP";
+    DrawTextW(hdc, foot.c_str(), -1, &footRc, DT_CENTER | DT_TOP | DT_SINGLELINE);
+
+    RECT pathLabelRc = inner;
+    pathLabelRc.left += 40;
+    pathLabelRc.right -= 40;
+    pathLabelRc.top = footRc.bottom + 14;
+    pathLabelRc.bottom = pathLabelRc.top + 18;
+    SetTextColor(hdc, RGB(145, 170, 200));
+    DrawTextW(hdc, L"Attempted splash HTML path:", -1, &pathLabelRc, DT_CENTER | DT_TOP | DT_SINGLELINE);
+
+    RECT pathValueRc = inner;
+    pathValueRc.left += 60;
+    pathValueRc.right -= 60;
+    pathValueRc.top = pathLabelRc.bottom + 6;
+    pathValueRc.bottom = pathValueRc.top + 38; // fixed height: max ~2 lines
+    SetTextColor(hdc, RGB(232, 238, 247));
+    std::wstring shownPath = gLastSplashHtmlPath.empty() ? GetSplashHtmlPath() : gLastSplashHtmlPath;
+    DrawTextW(hdc, shownPath.c_str(), -1, &pathValueRc, DT_CENTER | DT_TOP | DT_WORDBREAK | DT_END_ELLIPSIS);
+
+    RECT dbg1 = inner;
+    dbg1.left += 40;
+    dbg1.right -= 40;
+    dbg1.top = pathValueRc.bottom + 10;
+    dbg1.bottom = dbg1.top + 18;
+    SetTextColor(hdc, RGB(145, 170, 200));
+    std::wstring line1 =
+        L"Env: " + std::wstring(gSplashEnvCreated ? L"yes" : L"no") +
+        L" | Controller: " + std::wstring(gSplashControllerCreated ? L"yes" : L"no") +
+        L" | Core: " + std::wstring(gSplashCoreAcquired ? L"yes" : L"no");
+    DrawTextW(hdc, line1.c_str(), -1, &dbg1, DT_CENTER | DT_TOP | DT_SINGLELINE);
+
+    RECT dbg2 = inner;
+    dbg2.left += 40;
+    dbg2.right -= 40;
+    dbg2.top = dbg1.bottom + 6;
+    dbg2.bottom = dbg2.top + 18;
+    std::wstring line2 =
+        L"Build called: " + std::wstring(gSplashBuildCalled ? L"yes" : L"no") +
+        L" | Nav completed: " + std::wstring(gSplashNavCompleted ? L"yes" : L"no") +
+        L" | success: " + std::wstring(gSplashNavSuccess ? L"yes" : L"no");
+    DrawTextW(hdc, line2.c_str(), -1, &dbg2, DT_CENTER | DT_TOP | DT_SINGLELINE);
+
+    RECT dbg3 = inner;
+    dbg3.left += 40;
+    dbg3.right -= 40;
+    dbg3.top = dbg2.bottom + 6;
+    dbg3.bottom = dbg3.top + 18;
+    std::wstring line3 =
+        L"env hr: " + std::to_wstring((long)gSplashEnvHr) +
+        L" | ctl hr: " + std::to_wstring((long)gSplashControllerHr) +
+        L" | WebErrorStatus: " + std::to_wstring((int)gSplashWebErrorStatus);
+    DrawTextW(hdc, line3.c_str(), -1, &dbg3, DT_CENTER | DT_TOP | DT_SINGLELINE);
+
+    SelectObject(hdc, oldFont);
+    DeleteObject(titleFont);
+    DeleteObject(metaFont);
+    DeleteObject(monoFont);
+}
+
+void InitSplashWebView(HWND hwnd)
+{
+    gLastSplashHtmlPath = GetSplashHtmlPath();
+    gSplashHtmlReady = false;
+
+    CreateCoreWebView2EnvironmentWithOptions(
+        nullptr, nullptr, nullptr,
+        Microsoft::WRL::Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
+            [hwnd](HRESULT envResult, ICoreWebView2Environment* env) -> HRESULT {
+                gSplashEnvHr = envResult;
+                gSplashEnvCreated = SUCCEEDED(envResult) && env != nullptr;
+
+                if (FAILED(envResult) || !env) {
+                    InvalidateRect(hwnd, nullptr, TRUE);
+                    return S_OK;
+                }
+
+                return env->CreateCoreWebView2Controller(
+                    hwnd,
+                    Microsoft::WRL::Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
+                        [hwnd](HRESULT ctlResult, ICoreWebView2Controller* controller) -> HRESULT {
+                            gSplashControllerHr = ctlResult;
+                            gSplashControllerCreated = SUCCEEDED(ctlResult) && controller != nullptr;
+
+                            if (FAILED(ctlResult) || !controller) {
+                                InvalidateRect(hwnd, nullptr, TRUE);
+                                return S_OK;
+                            }
+
+                            gSplashWebController = controller;
+                            gSplashWebController->put_IsVisible(FALSE);
+
+                            ICoreWebView2* core = nullptr;
+                            gSplashWebController->get_CoreWebView2(&core);
+                            gSplashCoreAcquired = (core != nullptr);
+                            if (!core) {
+                                InvalidateRect(hwnd, nullptr, TRUE);
+                                return S_OK;
+                            }
+
+                            gSplashWebView.Attach(core);
+
+                            ICoreWebView2Settings* settings = nullptr;
+                            gSplashWebView->get_Settings(&settings);
+                            if (settings) {
+                                settings->put_IsStatusBarEnabled(FALSE);
+                                settings->put_AreDefaultContextMenusEnabled(FALSE);
+                                settings->put_AreDevToolsEnabled(FALSE);
+                                settings->put_AreDefaultScriptDialogsEnabled(FALSE);
+                                settings->put_IsZoomControlEnabled(FALSE);
+                                settings->Release();
+                            }
+
+                            std::wstring js = L"window.__SPLASH_DISPLAY_NAME='" + EscapeForJsSingleQuoted(gDisplayName) + L"';"
+                                              L"window.__SPLASH_VERSION='" + EscapeForJsSingleQuoted(gVersionText) + L"';"
+                                              L"window.__SPLASH_READY = false;"
+                                              L"document.addEventListener('DOMContentLoaded',function(){"
+                                              L"if(window.__setSplashMeta){window.__setSplashMeta(window.__SPLASH_DISPLAY_NAME, window.__SPLASH_VERSION);}"
+                                              L"});";
+                            gSplashWebView->AddScriptToExecuteOnDocumentCreated(js.c_str(), nullptr);
+
+                            gSplashWebView->add_NavigationCompleted(
+                                Microsoft::WRL::Callback<ICoreWebView2NavigationCompletedEventHandler>(
+                                    [hwnd](ICoreWebView2* sender, ICoreWebView2NavigationCompletedEventArgs* args) -> HRESULT {
+                                        BOOL success = FALSE;
+                                        COREWEBVIEW2_WEB_ERROR_STATUS webError = COREWEBVIEW2_WEB_ERROR_STATUS_UNKNOWN;
+
+                                        if (args) {
+                                            args->get_IsSuccess(&success);
+                                            args->get_WebErrorStatus(&webError);
+                                        }
+
+                                        gSplashNavCompleted = true;
+                                        gSplashNavSuccess = (success == TRUE);
+                                        gSplashWebErrorStatus = webError;
+                                        gSplashHtmlReady = gSplashNavSuccess;
+                                        if (gSplashWebController) {
+                                            gSplashWebController->put_IsVisible(gSplashHtmlReady ? TRUE : FALSE);
+                                        }
+                                        InvalidateRect(hwnd, nullptr, TRUE);
+                                        UpdateWindow(hwnd);
+
+                                        if (!gSplashHtmlReady && sender) {
+                                            // Keep native fallback visible; do not replace it with a second HTML fallback.
+                                        }
+
+                                        if (gSplashHtmlReady && gPendingCloseAfterHtmlReady && gSplashWnd && IsWindow(gSplashWnd)) {
+                                            gPendingCloseAfterHtmlReady = false;
+                                            SetTimer(gSplashWnd, kCloseTimerId, kCloseDelayMs, nullptr);
+                                        }
+                                        return S_OK;
+                                    }).Get(),
+                                nullptr);
+
+                            ResizeSplashWebView();
+
+                            gSplashBuildCalled = true;
+                            const std::wstring splashHtml = BuildSplashHtmlFromDisk();
+                            if (!splashHtml.empty()) {
+                                gSplashWebView->NavigateToString(splashHtml.c_str());
+                            }
+                            else {
+                                gSplashHtmlReady = false;
+                                InvalidateRect(hwnd, nullptr, TRUE);
+                                UpdateWindow(hwnd);
+                            }
+
+                            return S_OK;
+                        }).Get());
+            }).Get());
+}
 
 LRESULT CALLBACK SplashWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     switch (msg) {
     case WM_CREATE:
+        PostMessageW(hwnd, WM_APP_INIT_SPLASH_WEBVIEW, 0, 0);
+        return 0;
+
+    case WM_APP_INIT_SPLASH_WEBVIEW:
+        InitSplashWebView(hwnd);
+        return 0;
+
+    case WM_SIZE:
+        ResizeSplashWebView();
         return 0;
 
     case WM_ERASEBKGND:
-    {
-        RECT rc{};
-        GetClientRect(hwnd, &rc);
-        HBRUSH bg = CreateSolidBrush(RGB(10, 15, 22));
-        FillRect(reinterpret_cast<HDC>(wParam), &rc, bg);
-        DeleteObject(bg);
-
-        // Simple centered "image-like" panel so the file compiles cleanly even
-        // before a bitmap-loading version is swapped in.
-        RECT inner = rc;
-        InflateRect(&inner, -24, -24);
-        HBRUSH panel = CreateSolidBrush(RGB(18, 28, 40));
-        FillRect(reinterpret_cast<HDC>(wParam), &inner, panel);
-        DeleteObject(panel);
-
-        SetBkMode(reinterpret_cast<HDC>(wParam), TRANSPARENT);
-        SetTextColor(reinterpret_cast<HDC>(wParam), RGB(225, 235, 245));
-        std::wstring text = L"Starting StreamingATC.Live";
-        DrawTextW(reinterpret_cast<HDC>(wParam), text.c_str(), -1, &inner,
-                  DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        PaintFallbackSplash(hwnd, reinterpret_cast<HDC>(wParam));
         return 1;
+
+    case WM_PAINT:
+    {
+        PAINTSTRUCT ps{};
+        HDC hdc = BeginPaint(hwnd, &ps);
+        if (!gSplashHtmlReady) {
+            PaintFallbackSplash(hwnd, hdc);
+        }
+        EndPaint(hwnd, &ps);
+        return 0;
     }
 
     case WM_TIMER:
         if (wParam == kCloseTimerId) {
             KillTimer(hwnd, kCloseTimerId);
             Destroy();
-            if (gMainWnd && IsWindow(gMainWnd)) {
-                ShowWindow(gMainWnd, SW_SHOWDEFAULT);
-                UpdateWindow(gMainWnd);
-                SetForegroundWindow(gMainWnd);
-            }
+            ShowMainWindowCentered();
             return 0;
         }
         break;
 
     case WM_CLOSE:
-        // Treat closing the splash as closing the app during startup.
         if (gMainWnd && IsWindow(gMainWnd)) {
             DestroyWindow(gMainWnd);
         }
@@ -68,6 +705,7 @@ LRESULT CALLBACK SplashWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         if (hwnd == gSplashWnd) {
             gSplashWnd = nullptr;
         }
+        DestroySplashWebView();
         return 0;
     }
 
@@ -87,7 +725,7 @@ bool RegisterSplashClass(HINSTANCE hInstance)
     wc.hbrBackground = nullptr;
     wc.style = CS_HREDRAW | CS_VREDRAW;
 
-    ATOM atom = RegisterClassW(&wc);
+    const ATOM atom = RegisterClassW(&wc);
     if (!atom && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
         return false;
     }
@@ -100,8 +738,30 @@ bool RegisterSplashClass(HINSTANCE hInstance)
 
 bool Create(HINSTANCE hInstance, const wchar_t* displayName, const wchar_t* versionText)
 {
-    (void)displayName;
-    (void)versionText;
+    gDisplayName = displayName ? displayName : L"StreamingATC.Live";
+    gVersionText = versionText ? versionText : L"";
+    gLastSplashHtmlPath = GetSplashHtmlPath();
+    gSplashHtmlReady = false;
+    gSplashNavCompleted = false;
+    gSplashNavSuccess = false;
+    gSplashWebErrorStatus = COREWEBVIEW2_WEB_ERROR_STATUS_UNKNOWN;
+
+    gSplashIndexExists = false;
+    gSplashIndexRawBytes = 0;
+    gSplashIndexChars = 0;
+    gSplashIndexOpenError = 0;
+    gSplashHtmlCharCount = 0;
+    gSplashRawByteCount = 0;
+    gSplashFileExists = false;
+
+    gSplashEnvCreated = false;
+    gSplashControllerCreated = false;
+    gSplashCoreAcquired = false;
+    gSplashBuildCalled = false;
+    gSplashEnvHr = S_OK;
+    gSplashControllerHr = S_OK;
+
+    gPendingCloseAfterHtmlReady = false;
 
     if (gSplashWnd && IsWindow(gSplashWnd)) {
         return true;
@@ -111,8 +771,8 @@ bool Create(HINSTANCE hInstance, const wchar_t* displayName, const wchar_t* vers
         return false;
     }
 
-    const int w = 720;
-    const int h = 405;
+    const int w = 960;
+    const int h = 540;
 
     RECT wa{};
     SystemParametersInfoW(SPI_GETWORKAREA, 0, &wa, 0);
@@ -123,7 +783,7 @@ bool Create(HINSTANCE hInstance, const wchar_t* displayName, const wchar_t* vers
         WS_EX_TOPMOST,
         kSplashClassName,
         L"Starting…",
-        WS_POPUP | WS_CAPTION | WS_SYSMENU,
+        WS_POPUP,
         x, y, w, h,
         nullptr, nullptr, hInstance, nullptr);
 
@@ -133,6 +793,7 @@ bool Create(HINSTANCE hInstance, const wchar_t* displayName, const wchar_t* vers
 
     ShowWindow(gSplashWnd, SW_SHOW);
     UpdateWindow(gSplashWnd);
+    InvalidateRect(gSplashWnd, nullptr, TRUE);
     return true;
 }
 
@@ -140,16 +801,23 @@ void OnAppReady(HWND mainWindow)
 {
     gMainWnd = mainWindow;
 
+    if (gSplashWebView && gSplashHtmlReady) {
+        gSplashWebView->ExecuteScript(
+            L"window.__SPLASH_READY = true; if (window.__onNativeReady) window.__onNativeReady();",
+            nullptr);
+    }
+
     if (gSplashWnd && IsWindow(gSplashWnd)) {
-        SetTimer(gSplashWnd, kCloseTimerId, kCloseDelayMs, nullptr);
+        if (gSplashHtmlReady) {
+            SetTimer(gSplashWnd, kCloseTimerId, kCloseDelayMs, nullptr);
+        }
+        else {
+            gPendingCloseAfterHtmlReady = true;
+        }
         return;
     }
 
-    if (gMainWnd && IsWindow(gMainWnd)) {
-        ShowWindow(gMainWnd, SW_SHOWDEFAULT);
-        UpdateWindow(gMainWnd);
-        SetForegroundWindow(gMainWnd);
-    }
+    ShowMainWindowCentered();
 }
 
 void Destroy()
@@ -158,6 +826,8 @@ void Destroy()
         HWND hwnd = gSplashWnd;
         gSplashWnd = nullptr;
         DestroyWindow(hwnd);
+    } else {
+        DestroySplashWebView();
     }
 }
 

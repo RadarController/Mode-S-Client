@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>StreamingATC.Live — Starting up</title>
+  <link rel="stylesheet" href="./splash.css" />
+</head>
+<body>
+  <div class="shell">
+    <div class="noise"></div>
+    <div class="frame">
+      <div class="hero">
+        <div class="hero__left">
+          <div class="badge">LOCAL STARTUP SEQUENCE</div>
+          <h1 class="title">
+            <span class="title__main">StreamingATC.Live</span>
+            <span class="title__sub">Mode-S Client</span>
+          </h1>
+
+          <p class="lede">
+            Initialising radar scope, platform links, and enough tiny goblins to make the UI feel expensive.
+          </p>
+
+          <div class="status-card">
+            <div class="status-row">
+              <span class="status-row__label">SYSTEM</span>
+              <span class="status-row__value" id="statusLine">Preparing local services</span>
+            </div>
+
+            <div class="progress" aria-hidden="true">
+              <div class="progress__bar" id="progressBar"></div>
+              <div class="progress__shine"></div>
+            </div>
+
+            <div class="stages" id="stages">
+              <div class="stage stage--active"><span class="stage__dot"></span><span>Loading shell</span></div>
+              <div class="stage"><span class="stage__dot"></span><span>Starting HTTP server</span></div>
+              <div class="stage"><span class="stage__dot"></span><span>Warming WebView</span></div>
+              <div class="stage"><span class="stage__dot"></span><span>Connecting systems</span></div>
+            </div>
+          </div>
+
+          <div class="meta">
+            <div class="meta__item">
+              <span class="meta__k">Build</span>
+              <span class="meta__v" id="buildText">—</span>
+            </div>
+            <div class="meta__item">
+              <span class="meta__k">Target</span>
+              <span class="meta__v">127.0.0.1:17845</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="hero__right">
+          <div class="radar-card">
+            <div class="radar">
+              <div class="radar__rings"></div>
+              <div class="radar__sweep"></div>
+              <div class="radar__grid"></div>
+              <div class="track track--a"></div>
+              <div class="track track--b"></div>
+              <div class="track track--c"></div>
+              <div class="track track--d"></div>
+              <div class="blip blip--1"></div>
+              <div class="blip blip--2"></div>
+              <div class="blip blip--3"></div>
+              <div class="blip blip--4"></div>
+            </div>
+            <div class="radar-caption">
+              <div class="radar-caption__title">RadarController startup scope</div>
+              <div class="radar-caption__sub">Synthetic activity for morale purposes only</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer">
+        <div class="footer__brand" id="displayNameText">StreamingATC.Live Mode-S Client</div>
+        <div class="footer__right">
+          <span class="footer__pill">OFFLINE SPLASH</span>
+          <span class="footer__pill footer__pill--live" id="readyPill">BOOTING</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="./splash.js"></script>
+</body>
+</html>
