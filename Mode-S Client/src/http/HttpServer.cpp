@@ -218,6 +218,102 @@ static bool WriteStreaminfoJson(const nlohmann::json& j) {
     return true;
 }
 
+static std::filesystem::path FindOverlayHeaderPath() {
+    std::vector<std::filesystem::path> candidates;
+    try { candidates.push_back(std::filesystem::current_path() / "overlay_header.json"); } catch (...) {}
+#ifdef _WIN32
+    wchar_t buf[MAX_PATH];
+    DWORD len = GetModuleFileNameW(nullptr, buf, MAX_PATH);
+    if (len > 0) {
+        std::filesystem::path exe = std::filesystem::path(buf).parent_path();
+        candidates.push_back(exe / "overlay_header.json");
+    }
+#endif
+    for (const auto& p : candidates) {
+        std::error_code ec;
+        if (std::filesystem::exists(p, ec) && !ec) return p;
+    }
+    return std::filesystem::path("overlay_header.json");
+}
+
+static bool ReadOverlayHeaderJson(nlohmann::json* out) {
+    const auto p = FindOverlayHeaderPath();
+    std::ifstream f(p, std::ios::in | std::ios::binary);
+    if (!f) { *out = nlohmann::json::object(); return false; }
+    std::stringstream ss; ss << f.rdbuf();
+    try { *out = nlohmann::json::parse(ss.str()); return true; }
+    catch (...) { *out = nlohmann::json::object(); return false; }
+}
+
+static bool WriteOverlayHeaderJson(const nlohmann::json& j) {
+    const auto p = FindOverlayHeaderPath();
+    std::ofstream f(p, std::ios::out | std::ios::binary | std::ios::trunc);
+    if (!f) return false;
+    f << j.dump(2);
+    return true;
+}
+
+static bool JsonBoolLoose(const nlohmann::json& j, const char* key, bool fallback) {
+    if (!j.is_object() || !j.contains(key)) return fallback;
+    const auto& v = j.at(key);
+    if (v.is_boolean()) return v.get<bool>();
+    if (v.is_number_integer()) return v.get<long long>() != 0;
+    if (v.is_string()) {
+        std::string s = v.get<std::string>();
+        std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return (char)std::tolower(c); });
+        if (s == "0" || s == "false" || s == "no" || s == "off") return false;
+        if (s == "1" || s == "true" || s == "yes" || s == "on") return true;
+    }
+    return fallback;
+}
+
+static std::string SanitizeOverlayCallsign(const std::string& in) {
+    std::string out;
+    out.reserve(in.size());
+    for (unsigned char ch : in) {
+        if (std::isalnum(ch) || ch == '-' || ch == '_') out.push_back((char)std::toupper(ch));
+        else if (std::isspace(ch)) continue;
+    }
+    return out;
+}
+
+static std::string SanitizeOverlayRouteText(const std::string& in) {
+    std::string out;
+    out.reserve(in.size());
+
+    bool last_was_space = false;
+    for (unsigned char ch : in) {
+        if (ch == '\r' || ch == '\n' || ch == '\t') {
+            ch = ' ';
+        }
+
+        if (std::iscntrl(ch)) {
+            continue;
+        }
+
+        if (std::isspace(ch)) {
+            if (!out.empty() && !last_was_space) {
+                out.push_back(' ');
+                last_was_space = true;
+            }
+            continue;
+        }
+
+        out.push_back((char)ch);
+        last_was_space = false;
+
+        if (out.size() >= 64) {
+            break;
+        }
+    }
+
+    while (!out.empty() && out.back() == ' ') {
+        out.pop_back();
+    }
+
+    return out;
+}
+
 static bool YouTubeApiGet(const std::string& path_with_query,
                           const std::string& access_token,
                           long* out_status,
@@ -1668,16 +1764,28 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
     };
 
 // --- API: overlay header ---
-// GET  /api/overlay/header -> {"ok":true,"title":"...","subtitle":"..."}
-// POST /api/overlay/header -> set {"title":"...","subtitle":"..."}
+// GET  /api/overlay/header -> single flat response shape
+// POST /api/overlay/header -> set title/subtitle plus SimBrief/manual route fields
     svr.Get("/api/overlay/header", [&](const httplib::Request&, httplib::Response& res) {
+        nlohmann::json persisted;
+        ReadOverlayHeaderJson(&persisted);
+
+        nlohmann::json header = state_.overlay_header_json();
+        if (!header.is_object()) header = nlohmann::json::object();
+
+        const bool use_simbrief = JsonBoolLoose(persisted, "use_simbrief", true);
+        const std::string manual_callsign = SanitizeOverlayCallsign(persisted.value("manual_callsign", ""));
+        const std::string manual_departure = SanitizeOverlayRouteText(persisted.value("manual_departure", ""));
+        const std::string manual_destination = SanitizeOverlayRouteText(persisted.value("manual_destination", ""));
+
         nlohmann::json out;
         out["ok"] = true;
-        out["header"] = state_.overlay_header_json();
-
-        // Also provide flat fields for convenience
-        out["title"] = out["header"].value("title", "");
-        out["subtitle"] = out["header"].value("subtitle", "");
+        out["title"] = header.value("title", "");
+        out["subtitle"] = header.value("subtitle", "");
+        out["use_simbrief"] = use_simbrief;
+        out["manual_callsign"] = manual_callsign;
+        out["manual_departure"] = manual_departure;
+        out["manual_destination"] = manual_destination;
 
         res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
         res.set_header("Pragma", "no-cache");
@@ -1704,18 +1812,42 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
             return;
         }
 
-        nlohmann::json header = body;
-        if (body.is_object() && body.contains("header")) header = body["header"];
+        nlohmann::json incoming = body;
+        if (body.is_object() && body.contains("header") && body["header"].is_object()) incoming = body["header"];
+        if (!incoming.is_object()) incoming = nlohmann::json::object();
+
+        const std::string title = incoming.value("title", "");
+        const std::string subtitle = incoming.value("subtitle", "");
+        const bool use_simbrief = JsonBoolLoose(incoming, "use_simbrief", true);
+        const std::string manual_callsign = SanitizeOverlayCallsign(incoming.value("manual_callsign", ""));
+        const std::string manual_departure = SanitizeOverlayRouteText(incoming.value("manual_departure", ""));
+        const std::string manual_destination = SanitizeOverlayRouteText(incoming.value("manual_destination", ""));
+
+        nlohmann::json title_header = nlohmann::json::object();
+        title_header["title"] = title;
+        title_header["subtitle"] = subtitle;
 
         std::string err;
-        if (!state_.set_overlay_header(header, &err)) {
+        if (!state_.set_overlay_header(title_header, &err)) {
             OverlayHttpLog(log_, L"Overlay header update failed: " + ToW(err.empty() ? "invalid_header" : err));
             res.status = 400;
             nlohmann::json out;
             out["ok"] = false;
             out["error"] = err.empty() ? "invalid_header" : err;
-            out["header"] = state_.overlay_header_json();
             res.set_content(out.dump(2), "application/json; charset=utf-8");
+            return;
+        }
+
+        nlohmann::json persisted = nlohmann::json::object();
+        persisted["use_simbrief"] = use_simbrief;
+        persisted["manual_callsign"] = manual_callsign;
+        persisted["manual_departure"] = manual_departure;
+        persisted["manual_destination"] = manual_destination;
+
+        if (!WriteOverlayHeaderJson(persisted)) {
+            OverlayHttpLog(log_, L"Overlay header update failed: write_failed");
+            res.status = 500;
+            res.set_content(R"({"ok":false,"error":"write_failed"})", "application/json; charset=utf-8");
             return;
         }
 
@@ -1723,14 +1855,18 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
 
         nlohmann::json out;
         out["ok"] = true;
-        out["header"] = state_.overlay_header_json();
-        out["title"] = out["header"].value("title", "");
-        out["subtitle"] = out["header"].value("subtitle", "");
+        out["title"] = title;
+        out["subtitle"] = subtitle;
+        out["use_simbrief"] = use_simbrief;
+        out["manual_callsign"] = manual_callsign;
+        out["manual_departure"] = manual_departure;
+        out["manual_destination"] = manual_destination;
 
         res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
         res.set_header("Pragma", "no-cache");
         res.set_content(out.dump(2), "application/json; charset=utf-8");
         });
+
 
     // Upsert a single command without replacing the full list.
     // Body: {"command":"help","response":"...","enabled":true,"cooldown_ms":3000,"scope":"all"}

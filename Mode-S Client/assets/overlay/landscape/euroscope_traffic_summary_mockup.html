@@ -1,0 +1,448 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>EuroScope Traffic Summary Mockup</title>
+
+  <style>
+    :root{
+      --blue:#1e6dff;
+      --panel: rgba(18,22,28,.72);
+      --panel-strong: rgba(18,22,28,.82);
+      --stroke: rgba(255,255,255,.12);
+      --stroke-soft: rgba(255,255,255,.08);
+      --text: rgba(233,238,247,.92);
+      --muted: rgba(233,238,247,.70);
+      --muted-soft: rgba(233,238,247,.54);
+      --ok: rgba(131,174,252,.95);
+      --ok-bg: rgba(131,174,252,.08);
+      --ok-br: rgba(131,174,252,.28);
+      --radius: 18px;
+
+      /* 1080p placement tuned to sit under a header / beside existing bars */
+      --pad: 16px;
+      --top-offset: 132px;
+      --card-w: 468px;
+      --card-h: 246px;
+    }
+
+    html,body{
+      width:100%;
+      height:100%;
+      margin:0;
+      background:transparent;
+      font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif;
+      overflow:hidden;
+    }
+
+    .stage{
+      position:relative;
+      width:100%;
+      height:100%;
+      overflow:hidden;
+      background:transparent;
+    }
+
+    .card{
+      position:absolute;
+      top:var(--top-offset);
+      right:var(--pad);
+      width:var(--card-w);
+      height:var(--card-h);
+      box-sizing:border-box;
+      border-radius:var(--radius);
+      background:linear-gradient(180deg, rgba(18,22,28,.82), rgba(18,22,28,.68));
+      border:1px solid var(--stroke);
+      box-shadow:0 18px 48px rgba(0,0,0,.35);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      color:var(--text);
+      overflow:hidden;
+      pointer-events:none;
+    }
+
+    .card::before{
+      content:"";
+      position:absolute;
+      inset:0;
+      border-radius:inherit;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,0) 40%),
+        radial-gradient(circle at top right, rgba(30,109,255,.16), transparent 34%);
+      pointer-events:none;
+    }
+
+    .top{
+      position:relative;
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:14px;
+      padding:14px 14px 12px 14px;
+      border-bottom:1px solid var(--stroke-soft);
+    }
+
+    .eyebrow{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      font-size:11px;
+      font-weight:750;
+      letter-spacing:.12em;
+      text-transform:uppercase;
+      color:var(--muted);
+      margin-bottom:6px;
+      white-space:nowrap;
+    }
+
+    .badge{
+      width:7px;
+      height:7px;
+      border-radius:50%;
+      background:rgba(30,109,255,.95);
+      box-shadow:0 0 0 3px rgba(30,109,255,.18);
+      flex:0 0 auto;
+    }
+
+    .title{
+      font-size:24px;
+      line-height:1;
+      font-weight:900;
+      letter-spacing:.02em;
+      margin:0 0 6px 0;
+    }
+
+    .sub{
+      display:flex;
+      flex-wrap:wrap;
+      align-items:center;
+      gap:8px;
+      font-size:12px;
+      color:var(--muted);
+    }
+
+    .pill{
+      display:inline-flex;
+      align-items:center;
+      gap:7px;
+      padding:6px 10px;
+      border-radius:999px;
+      background:var(--ok-bg);
+      border:1px solid var(--ok-br);
+      color:var(--ok);
+      font-size:10px;
+      font-weight:850;
+      letter-spacing:.10em;
+      text-transform:uppercase;
+      white-space:nowrap;
+    }
+
+    .pill .liveDot{
+      width:7px;
+      height:7px;
+      border-radius:50%;
+      background:rgba(30,109,255,.95);
+      box-shadow:0 0 0 0 rgba(30,109,255,.40);
+      animation:pulse 1.4s ease-out infinite;
+      flex:0 0 auto;
+    }
+
+    @keyframes pulse{
+      0%   { box-shadow: 0 0 0 0 rgba(30,109,255,.40); transform: scale(1); }
+      60%  { box-shadow: 0 0 0 8px rgba(30,109,255,0); transform: scale(1.04); }
+      100% { box-shadow: 0 0 0 0 rgba(30,109,255,0); transform: scale(1); }
+    }
+
+    .body{
+      position:relative;
+      padding:12px 14px 14px 14px;
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: auto 1fr;
+      gap:10px;
+      height:calc(100% - 76px);
+      box-sizing:border-box;
+    }
+
+    .statBar{
+      grid-column:1 / -1;
+      display:grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap:10px;
+    }
+
+    .stat{
+      min-width:0;
+      padding:10px 12px;
+      border-radius:14px;
+      background:rgba(10,14,18,.30);
+      border:1px solid var(--stroke-soft);
+    }
+
+    .statLabel{
+      font-size:10px;
+      font-weight:750;
+      letter-spacing:.10em;
+      text-transform:uppercase;
+      color:var(--muted);
+      margin-bottom:5px;
+      white-space:nowrap;
+    }
+
+    .statValue{
+      font-size:26px;
+      line-height:1;
+      font-weight:900;
+      letter-spacing:.02em;
+      color:var(--text);
+      white-space:nowrap;
+    }
+
+    .panel{
+      min-width:0;
+      border-radius:16px;
+      background:rgba(10,14,18,.26);
+      border:1px solid var(--stroke-soft);
+      padding:12px;
+      box-sizing:border-box;
+      display:flex;
+      flex-direction:column;
+      justify-content:flex-start;
+      gap:10px;
+    }
+
+    .panelHead{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+    }
+
+    .panelTitle{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      min-width:0;
+      font-size:12px;
+      font-weight:850;
+      letter-spacing:.12em;
+      text-transform:uppercase;
+      color:var(--text);
+      white-space:nowrap;
+    }
+
+    .panelTitle .miniDot{
+      width:6px;
+      height:6px;
+      border-radius:50%;
+      background:rgba(30,109,255,.95);
+      box-shadow:0 0 0 2px rgba(30,109,255,.18);
+      flex:0 0 auto;
+    }
+
+    .nextCallsign{
+      font-size:28px;
+      line-height:1;
+      font-weight:900;
+      letter-spacing:.02em;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+
+    .metaGrid{
+      display:grid;
+      grid-template-columns: repeat(2, minmax(0,1fr));
+      gap:8px 12px;
+    }
+
+    .kv{
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+      min-width:0;
+    }
+
+    .k{
+      font-size:10px;
+      line-height:1;
+      font-weight:750;
+      letter-spacing:.10em;
+      text-transform:uppercase;
+      color:var(--muted-soft);
+      white-space:nowrap;
+    }
+
+    .v{
+      font-size:17px;
+      line-height:1.1;
+      font-weight:800;
+      color:var(--text);
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+
+    .hint{
+      position:absolute;
+      left:14px;
+      right:14px;
+      bottom:10px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      font-size:11px;
+      color:var(--muted-soft);
+      letter-spacing:.04em;
+    }
+
+    .hint strong{
+      color:var(--muted);
+      font-weight:700;
+    }
+
+    .frameLabel{
+      position:absolute;
+      top:16px;
+      left:16px;
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding:8px 10px;
+      border-radius:14px;
+      background:var(--panel-strong);
+      border:1px solid var(--stroke);
+      color:var(--text);
+      font-size:12px;
+      font-weight:650;
+      letter-spacing:.08em;
+      text-transform:uppercase;
+      box-shadow:0 14px 40px rgba(0,0,0,.28);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      pointer-events:none;
+      opacity:.86;
+    }
+
+    @media (max-width: 1280px){
+      :root{
+        --card-w: 420px;
+        --card-h: 236px;
+      }
+      .title{ font-size:22px; }
+      .nextCallsign{ font-size:24px; }
+    }
+
+    @media (max-width: 900px){
+      :root{
+        --top-offset: 16px;
+        --card-w: calc(100vw - 32px);
+        --card-h: 252px;
+      }
+      .card{ left:16px; right:16px; width:auto; }
+    }
+  </style>
+</head>
+<body>
+  <div class="stage">
+    <div class="frameLabel">
+      <span class="badge"></span>
+      1920×1080 overlay mockup
+    </div>
+
+    <section class="card" aria-label="EuroScope traffic summary mockup">
+      <div class="top">
+        <div>
+          <div class="eyebrow"><span class="badge"></span> EuroScope traffic</div>
+          <h1 class="title">Manchester Director</h1>
+          <div class="sub">
+            <span>EGCC</span>
+            <span>•</span>
+            <span>Active runway 23R</span>
+            <span>•</span>
+            <span>VATSIM + EuroScope</span>
+          </div>
+        </div>
+
+        <div class="pill"><span class="liveDot"></span> live mockup</div>
+      </div>
+
+      <div class="body">
+        <div class="statBar">
+          <div class="stat">
+            <div class="statLabel">On frequency</div>
+            <div class="statValue">14</div>
+          </div>
+          <div class="stat">
+            <div class="statLabel">Arrivals</div>
+            <div class="statValue">8</div>
+          </div>
+          <div class="stat">
+            <div class="statLabel">Departures</div>
+            <div class="statValue">6</div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panelHead">
+            <div class="panelTitle"><span class="miniDot"></span> Next arrival</div>
+            <div class="pill">issue 17</div>
+          </div>
+          <div class="nextCallsign">RYR82KL</div>
+          <div class="metaGrid">
+            <div class="kv">
+              <div class="k">Distance</div>
+              <div class="v">12.4nm</div>
+            </div>
+            <div class="kv">
+              <div class="k">Altitude</div>
+              <div class="v">4,300ft</div>
+            </div>
+            <div class="kv">
+              <div class="k">From</div>
+              <div class="v">EIDW</div>
+            </div>
+            <div class="kv">
+              <div class="k">Stand / runway</div>
+              <div class="v">23R</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panelHead">
+            <div class="panelTitle"><span class="miniDot"></span> Next departure</div>
+            <div class="pill">issue 17</div>
+          </div>
+          <div class="nextCallsign">BAW197</div>
+          <div class="metaGrid">
+            <div class="kv">
+              <div class="k">Distance</div>
+              <div class="v">1.8nm</div>
+            </div>
+            <div class="kv">
+              <div class="k">Altitude</div>
+              <div class="v">2,100ft</div>
+            </div>
+            <div class="kv">
+              <div class="k">To</div>
+              <div class="v">EGKK</div>
+            </div>
+            <div class="kv">
+              <div class="k">Stand / runway</div>
+              <div class="v">23R</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="hint">
+          <span><strong>Intent:</strong> issue #17 = next arrival / departure, issue #18 = total arrivals / departures.</span>
+          <span>Placeholder data only</span>
+        </div>
+      </div>
+    </section>
+  </div>
+</body>
+</html>
