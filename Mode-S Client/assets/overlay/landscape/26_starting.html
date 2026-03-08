@@ -1,0 +1,497 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>RadarController – Starting</title>
+  <style>
+  :root{
+    --blue:#1e6dff;
+    --panel: rgba(18,22,28,.72);
+    --stroke: rgba(255,255,255,.12);
+    --text: rgba(233,238,247,.92);
+    --muted: rgba(233,238,247,.70);
+  }
+
+  html,body{
+    width:100%;
+    height:100%;
+    margin:0;
+    background:transparent;
+    font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif;
+    overflow:hidden;
+  }
+
+  .bar{
+    width:100%;
+    height:100%;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:0 18px;
+    box-sizing:border-box;
+    background:var(--panel);
+    backdrop-filter:blur(8px);
+    -webkit-backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--stroke);
+    pointer-events:none;
+  }
+
+  .left{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    min-width:0;
+  }
+
+  .badge{
+    width:8px;
+    height:8px;
+    border-radius:50%;
+    background:rgba(30,109,255,.95);
+    box-shadow:0 0 0 3px rgba(30,109,255,.18);
+    flex:0 0 auto;
+  }
+
+  .title{
+    font-weight:650;
+    letter-spacing:.08em;
+    text-transform:uppercase;
+    font-size:12px;
+    color:var(--text);
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    max-width:55vw;
+  }
+
+  .sub{
+    font-size:12px;
+    color:var(--muted);
+    white-space:nowrap;
+  }
+
+  .right{
+    display:flex;
+    align-items:center;
+    gap:14px;
+    flex:0 0 auto;
+  }
+
+  .stat{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    padding:6px 10px;
+    border-radius:12px;
+    background:rgba(10,14,18,.35);
+    border:1px solid rgba(255,255,255,.12);
+    font-size:11px;
+    font-weight:600;
+    color:var(--text);
+    white-space:nowrap;
+    min-width:92px;
+    justify-content:center;
+  }
+
+  .dot{
+    width:6px;
+    height:6px;
+    border-radius:50%;
+    background:rgba(30,109,255,.9);
+  }
+
+  .label{
+    color:var(--muted);
+    font-weight:650;
+    letter-spacing:.08em;
+    text-transform:uppercase;
+    font-size:10px;
+    margin-right:2px;
+  }
+
+  .bump{animation:bump .22s ease-out;}
+  @keyframes bump{
+    0%{transform:translateY(0)}
+    45%{transform:translateY(-1px)}
+    100%{transform:translateY(0)}
+  }
+
+  /* ===============================
+     < 1000px : stack stats below title
+     =============================== */
+  @media (max-width: 1000px) {
+    .bar{
+      flex-direction:column;
+      align-items:center;
+      gap:10px;
+      padding:10px 18px;
+    }
+
+    .left{
+      width:100%;
+      justify-content:center;
+      text-align:center;
+    }
+
+    .right{
+      width:100%;
+      justify-content:center; /* CENTER STATS */
+    }
+  }
+
+  /* ===============================
+     < 600px : stack stats vertically
+     =============================== */
+  @media (max-width: 600px) {
+    .right{
+      flex-direction:column;
+      align-items:center;
+      gap:8px;
+    }
+  }
+
+
+  /* ===== Starting scene layout (uses the same vars as your overlays) ===== */
+
+  .stage{
+    position: relative;
+    width:100%;
+    height:100%;
+  }
+
+  /* Glassy blue field behind content (transparent overall) */
+  .field{
+    position:absolute;
+    inset:0;
+    background:
+      radial-gradient(1100px 650px at 15% 55%, rgba(255,255,255,.08), transparent 60%),
+      radial-gradient(900px 540px at 78% 28%, rgba(255,255,255,.06), transparent 55%),
+      linear-gradient(180deg, rgba(0,0,0,.10), rgba(0,0,0,.22)),
+      linear-gradient(0deg, color-mix(in srgb, var(--blue) 75%, transparent), color-mix(in srgb, var(--blue) 75%, transparent));
+    pointer-events:none;
+  }
+
+  /* subtle scanlines */
+  .field::before{
+    content:"";
+    position:absolute;
+    inset:-40px;
+    opacity:.16;
+    background: repeating-linear-gradient(
+      to bottom,
+      rgba(255,255,255,.05) 0px,
+      rgba(255,255,255,.05) 1px,
+      transparent 2px,
+      transparent 7px
+    );
+    mix-blend-mode: overlay;
+    pointer-events:none;
+  }
+
+  /* Header wrapper: uses your existing .bar component unchanged */
+  .header{
+    position:absolute;
+    top:0; left:0; right:0;
+    height:74px;
+  }
+
+  .header .bar{
+    height:100%;
+    border-bottom:1px solid var(--stroke);
+  }
+
+  /* Social icons inside .stat */
+  .stat svg{
+    width:16px;
+    height:16px;
+    fill: var(--text);
+    opacity:.92;
+    flex:0 0 auto;
+  }
+
+  /* Main content below header */
+  .main{
+    position:absolute;
+    left: 26px;
+    right: 26px;
+    top: calc(74px + 28px);
+    bottom: 26px;
+
+    display:grid;
+    grid-template-columns: 1.35fr .65fr;
+    gap: 26px;
+    align-items:end;
+  }
+
+  .panel{
+    align-self:center;
+    max-width: 1100px;
+    padding: 26px 28px;
+    border-radius: 18px;
+    background: var(--panel);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid var(--stroke);
+    box-shadow: 0 24px 60px rgba(0,0,0,.22);
+  }
+
+  /* Big headline uses the same font stack from html/body */
+  .startTitle{
+    margin: 0 0 14px 0;
+    color: var(--text);
+    font-size: 92px;
+    line-height: .95;
+    font-weight: 850;
+    letter-spacing: .01em;
+    text-transform: uppercase;
+    text-shadow: 0 10px 40px rgba(0,0,0,.25);
+  }
+
+  .subline{
+    margin: 0 0 18px 0;
+    color: var(--muted);
+    font-size: 14px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    display:flex;
+    gap: 12px;
+    align-items:center;
+    flex-wrap:wrap;
+  }
+
+  .pill{
+    padding: 8px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--stroke);
+    background: rgba(10,14,18,.35);
+    color: var(--text);
+    font-weight: 650;
+    font-size: 11px;
+    letter-spacing:.10em;
+  }
+
+  /* Progress bar (renamed to avoid clashing with your .bar component) */
+  .progress{
+    position:relative;
+    height: 22px;
+    border-radius: 999px;
+    border: 2px solid rgba(255,255,255,.18);
+    background: rgba(10,14,18,.22);
+    overflow:hidden;
+  }
+
+  .progress::before{
+    content:"";
+    position:absolute;
+    inset:0;
+    background:
+      linear-gradient(90deg,
+        transparent 0%,
+        rgba(30,109,255,.00) 35%,
+        rgba(30,109,255,.45) 50%,
+        rgba(30,109,255,.00) 65%,
+        transparent 100%);
+    transform: translateX(-70%);
+    animation: sweep 2.3s linear infinite;
+    mix-blend-mode: screen;
+    opacity:.9;
+  }
+
+  .progressFill{
+    height:100%;
+    width: 38%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgba(233,238,247,.92), rgba(233,238,247,.55));
+    animation: fill 6.5s ease-in-out infinite;
+  }
+
+  @keyframes sweep{
+    to { transform: translateX(70%); }
+  }
+  @keyframes fill{
+    0% { width: 18%; }
+    45% { width: 72%; }
+    70% { width: 58%; }
+    100% { width: 86%; }
+  }
+
+  /* Footer / site line */
+  .footer{
+    margin-top: 18px;
+    display:flex;
+    align-items:center;
+    gap: 12px;
+    color: var(--text);
+    font-weight: 850;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    font-size: 18px;
+    opacity:.95;
+  }
+  .footer svg{ width: 30px; height: 30px; fill: var(--text); opacity:.95; }
+
+  /* Radar spinner uses --blue palette */
+  .radarSpinner{
+    justify-self:end;
+    align-self:end;
+    width: min(360px, 26vw);
+    height: min(360px, 26vw);
+    display:grid;
+    place-items:center;
+    opacity:.95;
+    filter: drop-shadow(0 18px 40px rgba(0,0,0,.22));
+  }
+
+  .radar-logo{
+    position: relative;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    background:
+      radial-gradient(circle at center,
+        rgba(30,109,255,.18) 0%,
+        rgba(30,109,255,.10) 35%,
+        transparent 38%
+      ),
+      repeating-radial-gradient(circle at center,
+        rgba(255,255,255,.16) 0px,
+        rgba(255,255,255,.16) 1px,
+        transparent 1px,
+        transparent 18px
+      );
+    border: 1px solid rgba(255,255,255,.20);
+    box-shadow:
+      0 0 18px rgba(30,109,255,.18),
+      inset 0 0 14px rgba(30,109,255,.16);
+    overflow:hidden;
+    background-color: rgba(10,14,18,.18);
+  }
+
+  .radar-logo .sweep{
+    position:absolute;
+    inset:-2px;
+    border-radius:50%;
+    background:
+      conic-gradient(
+        from 0deg,
+        rgba(30,109,255,0) 0deg,
+        rgba(30,109,255,0) 300deg,
+        rgba(30,109,255,.55) 340deg,
+        rgba(30,109,255,0) 360deg
+      );
+    animation: radar-spin 4.8s linear infinite;
+    mix-blend-mode: screen;
+    filter: blur(.4px);
+    opacity:.9;
+  }
+
+  .radar-logo::after{
+    content:"";
+    position:absolute;
+    width: 6px;
+    height: 6px;
+    border-radius:50%;
+    background: rgba(30,109,255,.9);
+    top:50%;
+    left:50%;
+    transform: translate(-50%, -50%);
+    box-shadow: 0 0 10px rgba(30,109,255,.85);
+  }
+
+  @keyframes radar-spin{
+    to { transform: rotate(360deg); }
+  }
+
+  /* Responsive safety */
+  @media (max-width: 1400px){
+    .startTitle{ font-size: 74px; }
+    .main{ grid-template-columns: 1.5fr .5fr; }
+  }
+  @media (max-width: 1100px){
+    .main{ grid-template-columns: 1fr; }
+    .radarSpinner{ display:none; }
+    .startTitle{ font-size: 66px; }
+  }
+
+</style>
+</head>
+
+<body>
+  <div class="stage">
+    <div class="field"></div>
+    <div class="header">
+      <div class="bar">
+        <div class="left">
+          <div class="badge"></div>
+          <div style="min-width:0">
+            <div class="title">WELCOME TO RADARCONTROLLER</div>
+            <div class="sub">THE STREAM IS STARTING…</div>
+          </div>
+        </div>
+        <div class="right">
+          <div class="stat">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3h18v11l-5 5h-5l-3 3H6v-3H4V3zm2 2v12h3v3l3-3h6l3-3V5H6zm10 3h2v6h-2V8zm-5 0h2v6h-2V8z"/></svg>
+            <span>Twitch</span>
+          </div>
+          <div class="stat">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21.6 7.2c-.2-1-1-1.8-2-2C17.8 4.8 12 4.8 12 4.8s-5.8 0-7.6.4c-1 .2-1.8 1-2 2C2 9 2 12 2 12s0 3 .4 4.8c.2 1 1 1.8 2 2 1.8.4 7.6.4 7.6.4s5.8 0 7.6-.4c1-.2 1.8-1 2-2 .4-1.8.4-4.8.4-4.8s0-3-.4-4.8zM10 15.5v-7l6 3.5-6 3.5z"/></svg>
+            <span>YouTube</span>
+          </div>
+          <div class="stat">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 3c.6 3.4 2.6 5.4 6 5.9V12c-2.3-.1-4.3-.9-6-2.4V16c0 4-3.1 7-7.1 7C5 23 2 19.9 2 16.1 2 12.3 5.1 9.2 8.9 9.2c.5 0 1 .1 1.5.2v3.8c-.4-.2-.9-.4-1.5-.4-1.8 0-3.1 1.4-3.1 3.3 0 1.9 1.4 3.3 3.2 3.3 1.8 0 3.5-1.2 3.5-4V3h3z"/></svg>
+            <span>TikTok</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="main">
+      <div class="panel">
+        <h1 class="startTitle">THE STREAM IS STARTING…</h1>
+
+        <div class="subline">
+          <span class="pill">STANDBY</span>
+          <span class="pill">RADAR CONTACT: PENDING</span>
+          <span class="pill">AUDIO CHECK</span>
+          <span class="pill">SCENE: MSFS</span>
+        </div>
+
+        <div class="progress" aria-label="Loading">
+          <div class="progressFill"></div>
+        </div>
+
+        <div class="footer">
+          <!-- gamepad icon -->
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M7 9h10a5 5 0 0 1 5 5v1a5 5 0 0 1-5 5h-2l-2-2H11l-2 2H7a5 5 0 0 1-5-5v-1a5 5 0 0 1 5-5zm2.2 5.2h-1.4V13H6.6v1.4H5.2v1.2h1.4V17h1.2v-1.4h1.4v-1.2zm9.2-.2a1 1 0 1 0 0 2 1 1 0 0 0 0-2zm-2.6 2a1 1 0 1 0 0 2 1 1 0 0 0 0-2z"/>
+          </svg>
+          <span>WWW.STREAMINGATC.LIVE</span>
+        </div>
+      </div>
+
+    <div class="radarSpinner" aria-hidden="true">
+  <div class="radar-logo">
+    <span class="sweep"></span>
+  </div>
+</div>
+    </div>
+  </div>
+
+  <script>
+    // Optional: rotate “status” pills for variety without any backend
+    const pills = [
+      ["STANDBY", "RADAR CONTACT: PENDING", "AUDIO CHECK", "SCENE: MSFS"],
+      ["STANDBY", "RADAR CONTACT: ESTABLISHING", "PRE-FLIGHT BRIEF", "CONNECTING CHAT"],
+      ["STANDBY", "RADAR CONTACT: ESTABLISHED", "CHECKLIST COMPLETE", "PUSHBACK APPROVED"]
+    ];
+    const el = document.querySelector(".subline");
+    let i = 0;
+
+    setInterval(() => {
+      i = (i + 1) % pills.length;
+      el.innerHTML = pills[i].map(t => `<span class="pill">${t}</span>`).join("");
+    }, 3500);
+  </script>
+</body>
+</html>
