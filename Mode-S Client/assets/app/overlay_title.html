@@ -43,6 +43,39 @@
           </div>
         </label>
 
+        <label class="field">
+          <span class="field__k">Use SimBrief for route details</span>
+          <div class="field__row" style="justify-content:flex-start;gap:12px;">
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+              <input type="checkbox" id="overlayUseSimBrief" checked />
+              <span>Yes</span>
+            </label>
+          </div>
+        </label>
+
+        <div id="overlayManualRouteFields">
+          <label class="field">
+            <span class="field__k">Manual Callsign</span>
+            <div class="field__row">
+              <input class="input" type="text" id="overlayManualCallsign" placeholder="e.g. BAW123" />
+            </div>
+          </label>
+
+          <label class="field">
+            <span class="field__k">Manual Departure ICAO</span>
+            <div class="field__row">
+              <input class="input" type="text" id="overlayManualDeparture" placeholder="e.g. EGCC" />
+            </div>
+          </label>
+
+          <label class="field">
+            <span class="field__k">Manual Destination ICAO</span>
+            <div class="field__row">
+              <input class="input" type="text" id="overlayManualDestination" placeholder="e.g. EGLL" />
+            </div>
+          </label>
+        </div>
+
         <div class="platform__actions" style="margin-top:12px;">
           <button class="btn btn--primary" id="btnSaveOverlayTitle">Save</button>
           <div id="overlayTitleStatus" class="overlay-title__status"></div>

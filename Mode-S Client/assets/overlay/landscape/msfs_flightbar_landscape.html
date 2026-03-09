@@ -261,9 +261,11 @@
     </div>
   </div>
 
+
 <script>
 (() => {
   const ENDPOINT = "/api/simbrief/flight";
+  const HEADER_ENDPOINT = "/api/overlay/header";
   const POLL_MS  = 900;
 
   const elCallsign = document.getElementById("callsign");
@@ -298,8 +300,40 @@
   }
 
   function safeIcao(s){
-    const t = (typeof s === "string") ? s.trim().toUpperCase() : "";
+    const t = (typeof s === "string") ? s.trim().toUpperCase().replace(/[^A-Z0-9]/g, "") : "";
     return t && /^[A-Z0-9]{3,5}$/.test(t) ? t : "----";
+  }
+
+  function safeRouteText(s){
+    if (typeof s !== "string") return "—";
+    const t = s
+      .replace(/[\x00-\x1F\x7F]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    return t || "—";
+  }
+
+  function safeCallsign(s){
+    const t = (typeof s === "string") ? s.trim().toUpperCase() : "";
+    return t || "—";
+  }
+
+  function normalizeHeaderConfig(data){
+    const src = data && typeof data === "object" ? data : {};
+    const useSimBriefRaw = src.use_simbrief;
+    return {
+      use_simbrief: !(useSimBriefRaw === false || useSimBriefRaw === 0 || useSimBriefRaw === "0" || useSimBriefRaw === "false"),
+      manual_callsign: safeCallsign(src.manual_callsign),
+      manual_departure: safeRouteText(src.manual_departure),
+      manual_destination: safeRouteText(src.manual_destination)
+    };
+  }
+
+  async function loadHeaderConfig(){
+    const r = await fetch(HEADER_ENDPOINT, { cache:"no-store" });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const j = await r.json();
+    return normalizeHeaderConfig(j || {});
   }
 
   function niceAge(seconds){
@@ -398,44 +432,37 @@
     return t * t * (3 - 2 * t);
   }
 
-    function setDash(el, len, pct) {
-        if (!el || !len) return;
+  function setDash(el, len, pct) {
+    if (!el || !len) return;
 
-        // Prevent tiny blue line/dot caused by round linecaps when the dash length is ~0
-        pct = clamp(pct, 0, 100);
-        const draw = len * (pct / 100.0);
+    pct = clamp(pct, 0, 100);
+    const draw = len * (pct / 100.0);
 
-        // If the drawn length is effectively zero, hide the stroke entirely
-        // so the rounded linecap cannot appear.
-        if (draw < 0.75) {   // roughly < 1px
-            el.style.strokeDasharray = `0 ${len}`;
-            el.style.opacity = "0";
-            return;
-        }
-
-        el.style.opacity = "1";
-        el.style.strokeDasharray = `${draw} ${Math.max(0, len - draw)}`;
+    if (draw < 0.75) {
+      el.style.strokeDasharray = `0 ${len}`;
+      el.style.opacity = "0";
+      return;
     }
 
-    function setProgressPct(pct) {
-        pct = clamp(pct, 0, 100);
+    el.style.opacity = "1";
+    el.style.strokeDasharray = `${draw} ${Math.max(0, len - draw)}`;
+  }
 
-        setDash(elBpFillTop, pathLenTop, pct);
-        setDash(elBpFillBot, pathLenBot, pct);
+  function setProgressPct(pct) {
+    pct = clamp(pct, 0, 100);
 
-        setDash(elBpFillLeft, pathLenLeft, pct);
+    setDash(elBpFillTop, pathLenTop, pct);
+    setDash(elBpFillBot, pathLenBot, pct);
+    setDash(elBpFillLeft, pathLenLeft, pct);
 
-        // Only draw the finish edge in the last 2% of the flight
-        const start = 98;
-        const span = 2;
+    const start = 98;
+    const span = 2;
+    const t = clamp((pct - start) / span, 0, 1);
+    const rightPct = easeInOut(t) * 100;
 
-        const t = clamp((pct - start) / span, 0, 1);
-        const rightPct = easeInOut(t) * 100;
+    setDash(elBpFillRight, pathLenRight, rightPct);
+  }
 
-        setDash(elBpFillRight, pathLenRight, rightPct);
-    }
-
-  // Build border path + keep it in sync
   setSvgPath();
   if (typeof ResizeObserver !== "undefined") {
     const ro = new ResizeObserver(() => { setSvgPath(); setProgressPct(smoothPct); });
@@ -449,23 +476,35 @@
   async function tick(){
     while(true){
       try{
-        const r = await fetch(ENDPOINT, { cache:"no-store" });
-        if(!r.ok) throw new Error(`HTTP ${r.status}`);
-        const j = await r.json();
+        const [headerResp, simbriefResp] = await Promise.all([
+          fetch(HEADER_ENDPOINT, { cache:"no-store" }),
+          fetch(ENDPOINT, { cache:"no-store" })
+        ]);
+
+        if(!headerResp.ok) throw new Error(`Header HTTP ${headerResp.status}`);
+        if(!simbriefResp.ok) throw new Error(`SimBrief HTTP ${simbriefResp.status}`);
+
+        const [headerJson, j] = await Promise.all([headerResp.json(), simbriefResp.json()]);
+        const header = normalizeHeaderConfig(headerJson || {});
+        const useSimBrief = header.use_simbrief;
 
         const ok = j && j.ok === true;
-        const cs = (j && typeof j.callsign === "string") ? j.callsign.trim() : "";
-        const dep = safeIcao(j && j.departure);
-        const dst = safeIcao(j && j.destination);
+        const cs = useSimBrief ? safeCallsign(j && j.callsign) : header.manual_callsign;
+        const dep = useSimBrief ? safeIcao(j && j.departure) : header.manual_departure;
+        const dst = useSimBrief ? safeIcao(j && j.destination) : header.manual_destination;
 
         const age = (j && typeof j.age_seconds === "number") ? j.age_seconds : null;
         const ageTxt = age != null ? `age ${niceAge(age)}` : "";
 
-        elPill.textContent = ok ? "PLAN" : "STALE";
-        if (ok) elStatus.textContent = ageTxt ? `SimBrief loaded • ${ageTxt}` : "SimBrief loaded";
-        else elStatus.textContent = (j && j.error) ? `SimBrief error: ${j.error}` : "SimBrief unavailable";
+        elPill.textContent = useSimBrief ? (ok ? "PLAN" : "STALE") : "MANUAL";
+        if (useSimBrief) {
+          if (ok) elStatus.textContent = ageTxt ? `SimBrief loaded • ${ageTxt}` : "SimBrief loaded";
+          else elStatus.textContent = (j && j.error) ? `SimBrief error: ${j.error}` : "SimBrief unavailable";
+        } else {
+          elStatus.textContent = "Manual route details";
+        }
 
-        if (cs && cs !== last.cs){ elCallsign.textContent = cs; bump(elCallsign); last.cs = cs; }
+        if (cs !== last.cs){ elCallsign.textContent = cs; bump(elCallsign); last.cs = cs; }
         if (dep !== last.dep){ elDep.textContent = dep; bump(elDep); last.dep = dep; }
         if (dst !== last.dst){ elDest.textContent = dst; bump(elDest); last.dst = dst; }
 

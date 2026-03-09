@@ -524,67 +524,127 @@ document.addEventListener("DOMContentLoaded", async () => {
   setInterval(pollLog, 1000);
 });
 
+function sanitizeOverlayCallsign(input){
+  return String(input ?? "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9_-]/g, "")
+    .trim();
+}
+
+function sanitizeOverlayRouteText(input){
+  return String(input ?? "")
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim()
+    .slice(0, 64);
+}
+
 function wireOverlayTitlePage() {
-    // overlay_title.html has these ids; if they exist, we are on that page.
-    const elTitle = document.getElementById("overlayTitle");
-    const elSub = document.getElementById("overlaySubtitle");
-    const elSave = document.getElementById("btnSaveOverlayTitle");
-    const elStatus = document.getElementById("overlayTitleStatus");
+  const elTitle = document.getElementById("overlayTitle");
+  const elSub = document.getElementById("overlaySubtitle");
+  const elUseSimBrief = document.getElementById("overlayUseSimBrief");
+  const elManualWrap = document.getElementById("overlayManualRouteFields");
+  const elManualCallsign = document.getElementById("overlayManualCallsign");
+  const elManualDeparture = document.getElementById("overlayManualDeparture");
+  const elManualDestination = document.getElementById("overlayManualDestination");
+  const elSave = document.getElementById("btnSaveOverlayTitle");
+  const elStatus = document.getElementById("overlayTitleStatus");
 
-    if (!elTitle || !elSub || !elSave) return;
+  if (!elTitle || !elSub || !elUseSimBrief || !elManualWrap || !elManualCallsign || !elManualDeparture || !elManualDestination || !elSave) {
+    return;
+  }
 
-    const setStatus = (t) => { if (elStatus) elStatus.textContent = t || ""; };
+  const setStatus = (t) => {
+    if (elStatus) elStatus.textContent = t || "";
+  };
 
-    async function load() {
-        setStatus("Loading…");
-        try {
-            const j = await apiGet("/api/overlay/header");
-            // Expecting: { title: "...", subtitle: "..." }
-            elTitle.value = (j && typeof j.title === "string") ? j.title : "";
-            elSub.value = (j && typeof j.subtitle === "string") ? j.subtitle : "";
-            setStatus("");
-        } catch (e) {
-            console.warn("Failed to load overlay header", e);
-            setStatus("Could not load current header");
-        }
-    }
-
-    async function save() {
-        setStatus("Saving…");
-        const body = { title: elTitle.value || "", subtitle: elSub.value || "" };
-
-        // Prefer the same route the overlay reads from.
-        // If your backend expects a different POST route, this fallback keeps it resilient.
-        try {
-            const j = await apiPost("/api/overlay/header", body);
-            if (j && j.ok === false) throw new Error(j.error || "ok=false");
-            setStatus("Saved");
-            return true;
-        } catch (e1) {
-            try {
-                // Fallback for older builds if you named it differently
-                const j = await apiPost("/api/overlay/header/save", body);
-                if (j && j.ok === false) throw new Error(j.error || "ok=false");
-                setStatus("Saved");
-                return true;
-            } catch (e2) {
-                console.error("Overlay header save failed", e1, e2);
-                setStatus("Error saving");
-                return false;
-            }
-        }
-    }
-
-    elSave.addEventListener("click", save);
-
-    // Optional QoL: Ctrl+Enter to save from an input
-    [elTitle, elSub].forEach(el => {
-        el.addEventListener("keydown", (ev) => {
-            if ((ev.ctrlKey || ev.metaKey) && ev.key === "Enter") save();
-        });
+  function syncManualUi(){
+    const manualMode = !elUseSimBrief.checked;
+    elManualWrap.style.display = manualMode ? "block" : "none";
+    [elManualCallsign, elManualDeparture, elManualDestination].forEach((el) => {
+      el.disabled = !manualMode;
     });
+  }
 
-    load();
+  function sanitizeManualInputs(){
+    elManualCallsign.value = sanitizeOverlayCallsign(elManualCallsign.value);
+    elManualDeparture.value = sanitizeOverlayRouteText(elManualDeparture.value);
+    elManualDestination.value = sanitizeOverlayRouteText(elManualDestination.value);
+  }
+
+  async function load() {
+    setStatus("Loading…");
+    try {
+      const j = await apiGet("/api/overlay/header");
+
+      elTitle.value = (j && typeof j.title === "string") ? j.title : "";
+      elSub.value = (j && typeof j.subtitle === "string") ? j.subtitle : "";
+      elUseSimBrief.checked = !(j && j.use_simbrief === false);
+      elManualCallsign.value = (j && typeof j.manual_callsign === "string") ? j.manual_callsign : "";
+      elManualDeparture.value = (j && typeof j.manual_departure === "string") ? j.manual_departure : "";
+      elManualDestination.value = (j && typeof j.manual_destination === "string") ? j.manual_destination : "";
+
+      sanitizeManualInputs();
+      syncManualUi();
+      setStatus("");
+    } catch (e) {
+      console.warn("Failed to load overlay header", e);
+      syncManualUi();
+      setStatus("Could not load current header");
+    }
+  }
+
+  async function save() {
+    setStatus("Saving…");
+    sanitizeManualInputs();
+
+    const body = {
+      title: elTitle.value || "",
+      subtitle: elSub.value || "",
+      use_simbrief: !!elUseSimBrief.checked,
+      manual_callsign: elManualCallsign.value || "",
+      manual_departure: elManualDeparture.value || "",
+      manual_destination: elManualDestination.value || ""
+    };
+
+    try {
+      const j = await apiPost("/api/overlay/header", body);
+      if (j && j.ok === false) throw new Error(j.error || "ok=false");
+
+      elTitle.value = (j && typeof j.title === "string") ? j.title : body.title;
+      elSub.value = (j && typeof j.subtitle === "string") ? j.subtitle : body.subtitle;
+      elUseSimBrief.checked = !(j && j.use_simbrief === false);
+      elManualCallsign.value = (j && typeof j.manual_callsign === "string") ? j.manual_callsign : body.manual_callsign;
+      elManualDeparture.value = (j && typeof j.manual_departure === "string") ? j.manual_departure : body.manual_departure;
+      elManualDestination.value = (j && typeof j.manual_destination === "string") ? j.manual_destination : body.manual_destination;
+
+      sanitizeManualInputs();
+      syncManualUi();
+      setStatus("Saved");
+      return true;
+    } catch (e) {
+      console.error("Overlay header save failed", e);
+      setStatus("Save failed");
+      return false;
+    }
+  }
+
+  elUseSimBrief.addEventListener("change", syncManualUi);
+  [elManualCallsign, elManualDeparture, elManualDestination].forEach((el) => {
+    el.addEventListener("input", sanitizeManualInputs);
+    el.addEventListener("blur", sanitizeManualInputs);
+  });
+
+  elSave.addEventListener("click", save);
+
+  [elTitle, elSub, elUseSimBrief, elManualCallsign, elManualDeparture, elManualDestination].forEach((el) => {
+    el.addEventListener("keydown", (ev) => {
+      if ((ev.ctrlKey || ev.metaKey) && ev.key === "Enter") save();
+    });
+  });
+
+  syncManualUi();
+  load();
 }
 
 function wireSettingsHubPage(){
