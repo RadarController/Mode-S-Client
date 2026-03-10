@@ -224,7 +224,8 @@ static bool ExtractJsonObjectAfterMarker(const std::string& hay,
             if (c == '\\') { esc = true; continue; }
             if (c == quote) { inStr = false; quote = 0; continue; }
             continue;
-        } else {
+        }
+        else {
             if (c == '"' || c == '\'') { inStr = true; quote = c; continue; }
             if (c == '{') { depth++; }
             else if (c == '}') {
@@ -250,12 +251,14 @@ static bool FindFirstStringByKeyRecursive(const json& j, const std::string& key,
             for (auto it2 = j.begin(); it2 != j.end(); ++it2) {
                 if (FindFirstStringByKeyRecursive(it2.value(), key, out)) return true;
             }
-        } else if (j.is_array()) {
+        }
+        else if (j.is_array()) {
             for (const auto& v : j) {
                 if (FindFirstStringByKeyRecursive(v, key, out)) return true;
             }
         }
-    } catch (...) {}
+    }
+    catch (...) {}
     return false;
 }
 
@@ -270,7 +273,8 @@ static bool ExtractYtCfg(const std::string& html, std::string& apiKey, std::stri
             clientVersion = cfg.value("INNERTUBE_CLIENT_VERSION", "");
             visitorData = cfg.value("VISITOR_DATA", "");
             return !apiKey.empty();
-        } catch (...) {
+        }
+        catch (...) {
             // fall through
         }
     }
@@ -317,7 +321,40 @@ static bool ExtractInitialContinuation(const std::string& html, std::string& con
 
 static bool LooksLikeConsentWall(const std::string& html) {
     return (html.find("consent.youtube.com") != std::string::npos) ||
-           (html.find("CONSENT") != std::string::npos && html.find("consent") != std::string::npos);
+        (html.find("CONSENT") != std::string::npos && html.find("consent") != std::string::npos);
+}
+
+static bool IsUpcomingStreamPage(const std::string& html) {
+    return html.find("\"isUpcoming\":true") != std::string::npos ||
+        html.find("\"upcomingEventData\"") != std::string::npos;
+}
+
+static bool IsLivePageHtml(const std::string& html) {
+    if (html.empty()) return false;
+    if (LooksLikeConsentWall(html)) return false;
+    if (IsUpcomingStreamPage(html)) return false;
+
+    std::string videoId;
+    if (ExtractFirstJsonValueString(html, "videoId", videoId) && !videoId.empty()) {
+        return true;
+    }
+
+    size_t w = html.find("watch?v=");
+    if (w != std::string::npos && w + 8 + 11 <= html.size()) {
+        std::string cand = html.substr(w + 8, 11);
+        auto ok = [](char c) {
+            return (c >= 'A' && c <= 'Z') ||
+                (c >= 'a' && c <= 'z') ||
+                (c >= '0' && c <= '9') ||
+                c == '_' || c == '-';
+            };
+        for (char c : cand) {
+            if (!ok(c)) return false;
+        }
+        return true;
+    }
+
+    return false;
 }
 
 static void ExtractChatMessages(const json& j, std::vector<ChatMessage>& outMsgs) {
@@ -455,7 +492,8 @@ static std::string ExtractRunsOrSimpleText(const json& obj, const std::string& k
                 return out;
             }
         }
-    } catch (...) {}
+    }
+    catch (...) {}
     return "";
 }
 
@@ -473,13 +511,15 @@ static void ExtractYouTubeEvents(const json& j, std::vector<EventItem>& outEvent
             try {
                 if (r.contains("authorName") && r["authorName"].contains("simpleText"))
                     e.user = r["authorName"]["simpleText"].get<std::string>();
-            } catch (...) {}
+            }
+            catch (...) {}
 
             std::string amount;
             try {
                 if (r.contains("purchaseAmountText") && r["purchaseAmountText"].contains("simpleText"))
                     amount = r["purchaseAmountText"]["simpleText"].get<std::string>();
-            } catch (...) {}
+            }
+            catch (...) {}
 
             std::string msg;
             try {
@@ -488,12 +528,14 @@ static void ExtractYouTubeEvents(const json& j, std::vector<EventItem>& outEvent
                         if (run.contains("text")) msg += run["text"].get<std::string>();
                     }
                 }
-            } catch (...) {}
+            }
+            catch (...) {}
 
             if (!amount.empty()) {
                 e.message = "sent Super Chat " + amount;
                 if (!msg.empty()) e.message += ": " + msg;
-            } else {
+            }
+            else {
                 e.message = "sent Super Chat";
                 if (!msg.empty()) e.message += ": " + msg;
             }
@@ -513,13 +555,15 @@ static void ExtractYouTubeEvents(const json& j, std::vector<EventItem>& outEvent
             try {
                 if (r.contains("authorName") && r["authorName"].contains("simpleText"))
                     e.user = r["authorName"]["simpleText"].get<std::string>();
-            } catch (...) {}
+            }
+            catch (...) {}
 
             std::string amount;
             try {
                 if (r.contains("purchaseAmountText") && r["purchaseAmountText"].contains("simpleText"))
                     amount = r["purchaseAmountText"]["simpleText"].get<std::string>();
-            } catch (...) {}
+            }
+            catch (...) {}
 
             e.message = amount.empty() ? "sent Super Sticker" : ("sent Super Sticker " + amount);
             if (!e.user.empty()) outEvents.push_back(std::move(e));
@@ -537,7 +581,8 @@ static void ExtractYouTubeEvents(const json& j, std::vector<EventItem>& outEvent
             try {
                 if (r.contains("authorName") && r["authorName"].contains("simpleText"))
                     e.user = r["authorName"]["simpleText"].get<std::string>();
-            } catch (...) {}
+            }
+            catch (...) {}
 
             std::string txt;
             try {
@@ -546,80 +591,80 @@ static void ExtractYouTubeEvents(const json& j, std::vector<EventItem>& outEvent
                         if (run.contains("text")) txt += run["text"].get<std::string>();
                     }
                 }
-            } catch (...) {}
+            }
+            catch (...) {}
 
             e.message = txt.empty() ? "became a member" : txt;
             if (!e.user.empty()) outEvents.push_back(std::move(e));
         }
 
+        // Gifted memberships (purchase announcement)
+        it = j.find("liveChatSponsorshipsGiftPurchaseAnnouncementRenderer");
+        if (it != j.end() && it->is_object()) {
+            const json& r = *it;
+            EventItem e{};
+            e.platform = "youtube";
+            e.type = "membership.gift";
+            e.ts_ms = (std::int64_t)NowMs();
 
-// Gifted memberships (purchase announcement)
-it = j.find("liveChatSponsorshipsGiftPurchaseAnnouncementRenderer");
-if (it != j.end() && it->is_object()) {
-    const json& r = *it;
-    EventItem e{};
-    e.platform = "youtube";
-    e.type = "membership.gift";
-    e.ts_ms = (std::int64_t)NowMs();
-
-    try {
-        if (r.contains("authorName") && r["authorName"].contains("simpleText"))
-            e.user = r["authorName"]["simpleText"].get<std::string>();
-    } catch (...) {}
-
-    std::string txt;
-    // YouTube varies the field names here; try several.
-    txt = ExtractRunsOrSimpleText(r, "headerPrimaryText");
-    if (txt.empty()) txt = ExtractRunsOrSimpleText(r, "primaryText");
-    if (txt.empty()) txt = ExtractRunsOrSimpleText(r, "headerSubtext");
-    if (txt.empty()) txt = ExtractRunsOrSimpleText(r, "message");
-    if (txt.empty()) txt = ExtractRunsOrSimpleText(r, "text");
-
-    if (txt.empty()) {
-        // Some payloads carry a numeric gift count.
-        try {
-            if (r.contains("giftCount")) {
-                int n = r["giftCount"].is_number_integer() ? r["giftCount"].get<int>() : 0;
-                if (n > 0) txt = "gifted " + std::to_string(n) + " memberships";
+            try {
+                if (r.contains("authorName") && r["authorName"].contains("simpleText"))
+                    e.user = r["authorName"]["simpleText"].get<std::string>();
             }
-        } catch (...) {}
-    }
+            catch (...) {}
 
-    e.message = txt.empty() ? "gifted memberships" : txt;
-    if (!e.user.empty()) outEvents.push_back(std::move(e));
-}
+            std::string txt;
+            txt = ExtractRunsOrSimpleText(r, "headerPrimaryText");
+            if (txt.empty()) txt = ExtractRunsOrSimpleText(r, "primaryText");
+            if (txt.empty()) txt = ExtractRunsOrSimpleText(r, "headerSubtext");
+            if (txt.empty()) txt = ExtractRunsOrSimpleText(r, "message");
+            if (txt.empty()) txt = ExtractRunsOrSimpleText(r, "text");
 
-// Gifted memberships (redemption announcement)
-it = j.find("liveChatSponsorshipsGiftRedemptionAnnouncementRenderer");
-if (it != j.end() && it->is_object()) {
-    const json& r = *it;
-    EventItem e{};
-    e.platform = "youtube";
-    e.type = "membership.gift.redeem";
-    e.ts_ms = (std::int64_t)NowMs();
+            if (txt.empty()) {
+                try {
+                    if (r.contains("giftCount")) {
+                        int n = r["giftCount"].is_number_integer() ? r["giftCount"].get<int>() : 0;
+                        if (n > 0) txt = "gifted " + std::to_string(n) + " memberships";
+                    }
+                }
+                catch (...) {}
+            }
 
-    // The "user" for redemption is often the recipient.
-    try {
-        if (r.contains("authorName") && r["authorName"].contains("simpleText"))
-            e.user = r["authorName"]["simpleText"].get<std::string>();
-    } catch (...) {}
+            e.message = txt.empty() ? "gifted memberships" : txt;
+            if (!e.user.empty()) outEvents.push_back(std::move(e));
+        }
 
-    std::string txt;
-    txt = ExtractRunsOrSimpleText(r, "headerPrimaryText");
-    if (txt.empty()) txt = ExtractRunsOrSimpleText(r, "primaryText");
-    if (txt.empty()) txt = ExtractRunsOrSimpleText(r, "headerSubtext");
-    if (txt.empty()) txt = ExtractRunsOrSimpleText(r, "message");
-    if (txt.empty()) txt = ExtractRunsOrSimpleText(r, "text");
+        // Gifted memberships (redemption announcement)
+        it = j.find("liveChatSponsorshipsGiftRedemptionAnnouncementRenderer");
+        if (it != j.end() && it->is_object()) {
+            const json& r = *it;
+            EventItem e{};
+            e.platform = "youtube";
+            e.type = "membership.gift.redeem";
+            e.ts_ms = (std::int64_t)NowMs();
 
-    e.message = txt.empty() ? "redeemed a gifted membership" : txt;
-    if (!e.user.empty()) outEvents.push_back(std::move(e));
-}
+            try {
+                if (r.contains("authorName") && r["authorName"].contains("simpleText"))
+                    e.user = r["authorName"]["simpleText"].get<std::string>();
+            }
+            catch (...) {}
 
+            std::string txt;
+            txt = ExtractRunsOrSimpleText(r, "headerPrimaryText");
+            if (txt.empty()) txt = ExtractRunsOrSimpleText(r, "primaryText");
+            if (txt.empty()) txt = ExtractRunsOrSimpleText(r, "headerSubtext");
+            if (txt.empty()) txt = ExtractRunsOrSimpleText(r, "message");
+            if (txt.empty()) txt = ExtractRunsOrSimpleText(r, "text");
+
+            e.message = txt.empty() ? "redeemed a gifted membership" : txt;
+            if (!e.user.empty()) outEvents.push_back(std::move(e));
+        }
 
         for (auto it2 = j.begin(); it2 != j.end(); ++it2) {
             ExtractYouTubeEvents(it2.value(), outEvents);
         }
-    } else if (j.is_array()) {
+    }
+    else if (j.is_array()) {
         for (const auto& v : j) ExtractYouTubeEvents(v, outEvents);
     }
 }
@@ -646,17 +691,134 @@ static bool ExtractContinuationAndTimeout(const json& j, std::string& continuati
                 }
             }
         }
-    } catch (...) {}
+    }
+    catch (...) {}
     return false;
+}
+
+struct YouTubeBootstrap {
+    std::string handle;
+    std::string videoId;
+    std::string apiKey;
+    std::string clientVersion;
+    std::string visitorData;
+    std::string continuation;
+};
+
+static bool BootstrapYouTubeSession(const std::string& handleIn,
+    YouTubeBootstrap& boot,
+    const std::function<void(const std::wstring&)>& Log)
+{
+    boot = {};
+    boot.handle = EnsureAtHandle(handleIn);
+    if (boot.handle.empty()) return false;
+
+    std::string livePath = "/" + boot.handle + "/live";
+
+    HttpResult liveHtml = WinHttpRequestUtf8(
+        L"GET",
+        L"www.youtube.com",
+        INTERNET_DEFAULT_HTTPS_PORT,
+        ToW(livePath),
+        L"",
+        "",
+        true);
+
+    if (liveHtml.status == 200 && !liveHtml.body.empty() && LooksLikeConsentWall(liveHtml.body)) {
+        std::wstring cookieHdr = L"Cookie: SOCS=CAI; CONSENT=YES+1\r\n";
+        liveHtml = WinHttpRequestUtf8(
+            L"GET",
+            L"www.youtube.com",
+            INTERNET_DEFAULT_HTTPS_PORT,
+            ToW(livePath),
+            cookieHdr,
+            "",
+            true);
+    }
+
+    if (liveHtml.status != 200 || liveHtml.body.empty()) {
+        Log(L"YOUTUBE: failed to load /live page (status=" + std::to_wstring(liveHtml.status) + L")");
+        return false;
+    }
+
+    if (!ExtractFirstJsonValueString(liveHtml.body, "videoId", boot.videoId) || boot.videoId.empty()) {
+        size_t w = liveHtml.body.find("watch?v=");
+        if (w != std::string::npos && w + 8 + 11 <= liveHtml.body.size()) {
+            std::string cand = liveHtml.body.substr(w + 8, 11);
+            auto ok = [](char c) {
+                return (c >= 'A' && c <= 'Z') ||
+                    (c >= 'a' && c <= 'z') ||
+                    (c >= '0' && c <= '9') ||
+                    c == '_' || c == '-';
+                };
+            bool good = true;
+            for (char c : cand) {
+                if (!ok(c)) { good = false; break; }
+            }
+            if (good) boot.videoId = cand;
+        }
+    }
+
+    if (boot.videoId.empty()) {
+        Log(L"YOUTUBE: could not find videoId on /live page");
+        return false;
+    }
+
+    Log(L"YOUTUBE: live videoId=" + ToW(boot.videoId));
+
+    std::string chatPath = "/live_chat?is_popout=1&v=" + boot.videoId;
+
+    HttpResult chatHtml = WinHttpRequestUtf8(
+        L"GET",
+        L"www.youtube.com",
+        INTERNET_DEFAULT_HTTPS_PORT,
+        ToW(chatPath),
+        L"",
+        "",
+        true);
+
+    if (chatHtml.status == 200 && !chatHtml.body.empty() && LooksLikeConsentWall(chatHtml.body)) {
+        std::wstring cookieHdr = L"Cookie: SOCS=CAI; CONSENT=YES+1\r\n";
+        chatHtml = WinHttpRequestUtf8(
+            L"GET",
+            L"www.youtube.com",
+            INTERNET_DEFAULT_HTTPS_PORT,
+            ToW(chatPath),
+            cookieHdr,
+            "",
+            true);
+    }
+
+    if (chatHtml.status != 200 || chatHtml.body.empty()) {
+        Log(L"YOUTUBE: failed to load live_chat page (status=" + std::to_wstring(chatHtml.status) + L")");
+        return false;
+    }
+
+    if (!ExtractYtCfg(chatHtml.body, boot.apiKey, boot.clientVersion, boot.visitorData) || boot.apiKey.empty()) {
+        Log(L"YOUTUBE: could not find INNERTUBE_API_KEY in live_chat page");
+        return false;
+    }
+
+    if (boot.clientVersion.empty()) {
+        boot.clientVersion = "2.20250101.00.00";
+    }
+
+    if (!ExtractInitialContinuation(chatHtml.body, boot.continuation) || boot.continuation.empty()) {
+        Log(L"YOUTUBE: could not find initial continuation token");
+        return false;
+    }
+
+    Log(L"YOUTUBE: bootstrap complete; entering poll loop");
+    return true;
 }
 
 YouTubeLiveChatService::YouTubeLiveChatService() {}
 YouTubeLiveChatService::~YouTubeLiveChatService() { stop(); }
 
 bool YouTubeLiveChatService::start(const std::string& youtube_handle_or_channel,
-        ChatAggregator& chat,
-        LogFn log,
-        AppState* state)
+    ChatAggregator& chat,
+    LogFn log,
+    AppState* state)
 {
     if (running_.load()) return false;
     if (Trim(youtube_handle_or_channel).empty()) return false;
@@ -676,98 +838,30 @@ void YouTubeLiveChatService::worker(std::string handleIn, ChatAggregator* chat, 
         if (log) log(s);
         };
 
-    std::string handle = EnsureAtHandle(handleIn);
+    const std::string handle = EnsureAtHandle(handleIn);
     Log(L"YOUTUBE: starting live chat poller for '" + ToW(handle) + L"'");
 
-    // 1) Resolve live videoId by hitting /@handle/live
-    std::string livePath = "/" + handle + "/live";
+    YouTubeBootstrap boot;
+    int consecutivePollFailures = 0;
+    int bootstrapFailures = 0;
 
-    HttpResult liveHtml = WinHttpRequestUtf8(L"GET", L"www.youtube.com", INTERNET_DEFAULT_HTTPS_PORT,
-        ToW(livePath), L"", "", true);
-
-    if (liveHtml.status == 200 && !liveHtml.body.empty() && LooksLikeConsentWall(liveHtml.body)) {
-        std::wstring cookieHdr = L"Cookie: SOCS=CAI; CONSENT=YES+1\r\n";
-        liveHtml = WinHttpRequestUtf8(L"GET", L"www.youtube.com", INTERNET_DEFAULT_HTTPS_PORT,
-            ToW(livePath), cookieHdr, "", true);
-    }
-
-    if (!running_.load()) return;
-
-    if (liveHtml.status != 200 || liveHtml.body.empty()) {
-        Log(L"YOUTUBE: failed to load /live page (status=" + std::to_wstring(liveHtml.status) + L")");
-        running_.store(false);
-        return;
-    }
-
-    std::string videoId;
-    if (!ExtractFirstJsonValueString(liveHtml.body, "videoId", videoId) || videoId.empty()) {
-        // Fallback: look for watch?v=VIDEOID (11 chars)
-        // Common patterns: /watch?v=XXXXXXXXXXX or "watch?v=XXXXXXXXXXX"
-        size_t w = liveHtml.body.find("watch?v=");
-        if (w != std::string::npos && w + 8 + 11 <= liveHtml.body.size()) {
-            std::string cand = liveHtml.body.substr(w + 8, 11);
-            auto ok = [](char c) {
-                return (c >= 'A' && c <= 'Z') ||
-                    (c >= 'a' && c <= 'z') ||
-                    (c >= '0' && c <= '9') ||
-                    c == '_' || c == '-';
-                };
-            bool good = true;
-            for (char c : cand) if (!ok(c)) { good = false; break; }
-            if (good) videoId = cand;
-        }
-    }
-
-    if (videoId.empty()) {
-        Log(L"YOUTUBE: could not find videoId on /live page (are they live?)");
-        running_.store(false);
-        return;
-    }
-    Log(L"YOUTUBE: live videoId=" + ToW(videoId));
-
-    // 2) Load live_chat page for INNERTUBE + continuation
-    std::string chatPath = "/live_chat?is_popout=1&v=" + videoId;
-
-    HttpResult chatHtml = WinHttpRequestUtf8(L"GET", L"www.youtube.com", INTERNET_DEFAULT_HTTPS_PORT,
-        ToW(chatPath), L"", "", true);
-
-    if (chatHtml.status == 200 && !chatHtml.body.empty() && LooksLikeConsentWall(chatHtml.body)) {
-        std::wstring cookieHdr = L"Cookie: SOCS=CAI; CONSENT=YES+1\r\n";
-        chatHtml = WinHttpRequestUtf8(L"GET", L"www.youtube.com", INTERNET_DEFAULT_HTTPS_PORT,
-            ToW(chatPath), cookieHdr, "", true);
-    }
-
-    if (!running_.load()) return;
-
-    if (chatHtml.status != 200 || chatHtml.body.empty()) {
-        Log(L"YOUTUBE: failed to load live_chat page (status=" + std::to_wstring(chatHtml.status) + L")");
-        running_.store(false);
-        return;
-    }
-
-    std::string apiKey, clientVersion, visitorData;
-    if (!ExtractYtCfg(chatHtml.body, apiKey, clientVersion, visitorData) || apiKey.empty()) {
-        Log(L"YOUTUBE: could not find INNERTUBE_API_KEY in live_chat page");
-        running_.store(false);
-        return;
-    }
-    if (clientVersion.empty()) clientVersion = "2.20250101.00.00";
-
-    std::string continuation;
-    if (!ExtractInitialContinuation(chatHtml.body, continuation) || continuation.empty()) {
-        Log(L"YOUTUBE: could not find initial continuation token");
-        running_.store(false);
-        return;
-    }
-
-    Log(L"YOUTUBE: got apiKey/clientVersion/continuation; entering poll loop.");
-
-    int sleepMs = 1500;
     while (running_.load()) {
+        if (boot.videoId.empty() || boot.apiKey.empty() || boot.continuation.empty()) {
+            if (!BootstrapYouTubeSession(handle, boot, Log)) {
+                ++bootstrapFailures;
+                const int backoffMs = (bootstrapFailures >= 3) ? 10000 : 5000;
+                std::this_thread::sleep_for(std::chrono::milliseconds(backoffMs));
+                continue;
+            }
+
+            bootstrapFailures = 0;
+            consecutivePollFailures = 0;
+        }
+
         json body;
         body["context"]["client"]["clientName"] = "WEB";
-        body["context"]["client"]["clientVersion"] = clientVersion;
-        body["continuation"] = continuation;
+        body["context"]["client"]["clientVersion"] = boot.clientVersion;
+        body["continuation"] = boot.continuation;
 
         std::string bodyStr = body.dump();
 
@@ -776,16 +870,17 @@ void YouTubeLiveChatService::worker(std::string handleIn, ChatAggregator* chat, 
             L"Origin: https://www.youtube.com\r\n"
             L"Referer: https://www.youtube.com/\r\n"
             L"X-Youtube-Client-Name: 1\r\n"
-            L"X-Youtube-Client-Version: " + ToW(clientVersion) + L"\r\n"
+            L"X-Youtube-Client-Version: " + ToW(boot.clientVersion) + L"\r\n"
             L"Cookie: SOCS=CAI; CONSENT=YES+1\r\n";
 
-        if (!visitorData.empty()) {
-            headers += L"X-Goog-Visitor-Id: " + ToW(visitorData) + L"\r\n";
+        if (!boot.visitorData.empty()) {
+            headers += L"X-Goog-Visitor-Id: " + ToW(boot.visitorData) + L"\r\n";
         }
 
-        std::wstring path = ToW("/youtubei/v1/live_chat/get_live_chat?key=" + apiKey);
+        std::wstring path = ToW("/youtubei/v1/live_chat/get_live_chat?key=" + boot.apiKey);
 
-        HttpResult r = WinHttpRequestUtf8(L"POST",
+        HttpResult r = WinHttpRequestUtf8(
+            L"POST",
             L"www.youtube.com",
             INTERNET_DEFAULT_HTTPS_PORT,
             path,
@@ -796,67 +891,91 @@ void YouTubeLiveChatService::worker(std::string handleIn, ChatAggregator* chat, 
         if (!running_.load()) break;
 
         if (r.status != 200 || r.body.empty()) {
-            Log(L"YOUTUBE: poll failed status=" + std::to_wstring(r.status) + L" winerr=" + std::to_wstring(r.winerr));
-            std::this_thread::sleep_for(std::chrono::milliseconds(2500));
+            ++consecutivePollFailures;
+            Log(L"YOUTUBE: poll failed status=" + std::to_wstring(r.status) +
+                L" winerr=" + std::to_wstring(r.winerr) +
+                L" failures=" + std::to_wstring(consecutivePollFailures));
+
+            if (consecutivePollFailures >= 3) {
+                Log(L"YOUTUBE: rebuilding session after repeated poll failures");
+                boot = {};
+                std::this_thread::sleep_for(std::chrono::milliseconds(2500));
+            }
+            else {
+                std::this_thread::sleep_for(std::chrono::milliseconds(2500));
+            }
             continue;
         }
 
         json j;
-        try { j = json::parse(r.body); }
+        try {
+            j = json::parse(r.body);
+        }
         catch (...) {
-            Log(L"YOUTUBE: poll returned non-JSON; backing off");
+            ++consecutivePollFailures;
+            Log(L"YOUTUBE: poll returned non-JSON; failures=" + std::to_wstring(consecutivePollFailures));
+            if (consecutivePollFailures >= 3) {
+                Log(L"YOUTUBE: rebuilding session after repeated invalid responses");
+                boot = {};
+            }
             std::this_thread::sleep_for(std::chrono::milliseconds(2500));
             continue;
-        }    std::vector<ChatMessage> msgs;
-    ExtractChatMessages(j, msgs);
-    for (auto& m : msgs) {
-        if (chat) chat->Add(std::move(m));
-    }
+        }
 
-    // Extract YouTube paid/membership events into AppState (separate from chat)
-    if (state) {
-        std::vector<EventItem> evs;
-        ExtractYouTubeEvents(j, evs);
+        consecutivePollFailures = 0;
 
-        for (const auto& e : evs) {
-            // NOTE: YouTube event payloads often lack a stable ID in our EventItem.
-            // Dedupe best-effort on (type|user|message) and a coarse time bucket.
-            std::string key =
-                e.type + "|" + e.user + "|" + e.message + "|" + std::to_string(e.ts_ms / 2000);
+        std::vector<ChatMessage> msgs;
+        ExtractChatMessages(j, msgs);
+        Log(L"YOUTUBE: extracted " + std::to_wstring((unsigned long long)msgs.size()) + L" chat messages");
+        for (auto& m : msgs) {
+            if (chat) chat->Add(std::move(m));
+        }
 
-            {
-                std::lock_guard<std::mutex> lk(yt_seen_mu);
-                if (!yt_seen.insert(key).second) {
-                    continue; // already seen this event
+        if (state) {
+            std::vector<EventItem> evs;
+            ExtractYouTubeEvents(j, evs);
+
+            for (const auto& e : evs) {
+                std::string key =
+                    e.type + "|" + e.user + "|" + e.message + "|" + std::to_string(e.ts_ms / 2000);
+
+                {
+                    std::lock_guard<std::mutex> lk(yt_seen_mu);
+                    if (!yt_seen.insert(key).second) {
+                        continue;
+                    }
+                }
+
+                state->push_youtube_event(e);
+
+                if (chat) {
+                    ChatMessage m;
+                    m.platform = "youtube";
+                    m.user = e.user;
+                    m.message = "[" + e.type + "] " + e.message;
+                    m.ts_ms = e.ts_ms;
+                    chat->Add(std::move(m));
                 }
             }
-
-            state->push_youtube_event(e);
-
-            // Also mirror as chat so overlays can show it in /api/chat
-            if (chat) {
-                ChatMessage m;
-                m.platform = "youtube";
-                m.user = e.user;
-                m.message = "[" + e.type + "] " + e.message;
-                m.ts_ms = e.ts_ms;
-                chat->Add(std::move(m));
-            }
         }
+
+        int timeoutMs = 1500;
+        std::string nextCont;
+        if (ExtractContinuationAndTimeout(j, nextCont, timeoutMs) && !nextCont.empty()) {
+            boot.continuation = std::move(nextCont);
+        }
+        else {
+            Log(L"YOUTUBE: missing next continuation; rebuilding session");
+            boot = {};
+            std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+            continue;
+        }
+
+        if (timeoutMs < 250) timeoutMs = 250;
+        if (timeoutMs > 10000) timeoutMs = 10000;
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(timeoutMs));
     }
 
-    // Continuation + pacing MUST happen regardless of whether AppState is provided.
-    int timeoutMs = sleepMs;
-    std::string nextCont;
-    if (ExtractContinuationAndTimeout(j, nextCont, timeoutMs) && !nextCont.empty()) {
-        continuation = std::move(nextCont);
-    }
-
-    if (timeoutMs < 250) timeoutMs = 250;
-    if (timeoutMs > 10000) timeoutMs = 10000;
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(timeoutMs));
-}
-
-Log(L"YOUTUBE: stopped");
+    Log(L"YOUTUBE: stopped");
 }
