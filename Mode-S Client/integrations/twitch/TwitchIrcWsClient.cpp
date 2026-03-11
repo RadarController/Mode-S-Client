@@ -48,6 +48,105 @@ static std::unordered_map<std::string, std::string> ParseTags(const std::string&
     }
     return tags;
 }
+struct TwitchEmoteSpan {
+    std::string id;
+    size_t start = 0;
+    size_t end = 0; // inclusive
+};
+
+static std::vector<TwitchEmoteSpan> ParseTwitchEmoteSpans(const std::string& emotesTag) {
+    // Twitch IRC format: 25:0-4,12-16/1902:6-10
+    std::vector<TwitchEmoteSpan> out;
+    size_t groupStart = 0;
+    while (groupStart < emotesTag.size()) {
+        size_t slash = emotesTag.find('/', groupStart);
+        std::string group = (slash == std::string::npos)
+            ? emotesTag.substr(groupStart)
+            : emotesTag.substr(groupStart, slash - groupStart);
+
+        size_t colon = group.find(':');
+        if (colon != std::string::npos && colon > 0 && colon + 1 < group.size()) {
+            std::string emoteId = group.substr(0, colon);
+            std::string ranges = group.substr(colon + 1);
+
+            size_t rangeStart = 0;
+            while (rangeStart < ranges.size()) {
+                size_t comma = ranges.find(',', rangeStart);
+                std::string range = (comma == std::string::npos)
+                    ? ranges.substr(rangeStart)
+                    : ranges.substr(rangeStart, comma - rangeStart);
+
+                size_t dash = range.find('-');
+                if (dash != std::string::npos && dash > 0 && dash + 1 < range.size()) {
+                    try {
+                        size_t start = (size_t)std::stoul(range.substr(0, dash));
+                        size_t end = (size_t)std::stoul(range.substr(dash + 1));
+                        if (end >= start) {
+                            out.push_back(TwitchEmoteSpan{ emoteId, start, end });
+                        }
+                    }
+                    catch (...) {
+                    }
+                }
+
+                if (comma == std::string::npos) break;
+                rangeStart = comma + 1;
+            }
+        }
+
+        if (slash == std::string::npos) break;
+        groupStart = slash + 1;
+    }
+
+    std::sort(out.begin(), out.end(), [](const TwitchEmoteSpan& a, const TwitchEmoteSpan& b) {
+        if (a.start != b.start) return a.start < b.start;
+        return a.end < b.end;
+        });
+
+    return out;
+}
+
+static nlohmann::json BuildTwitchRuns(const std::string& msg, const std::string& emotesTag) {
+    nlohmann::json runs = nlohmann::json::array();
+    if (msg.empty() || emotesTag.empty()) return runs;
+
+    const auto spans = ParseTwitchEmoteSpans(emotesTag);
+    if (spans.empty()) return runs;
+
+    size_t cursor = 0;
+    for (const auto& span : spans) {
+        if (span.start >= msg.size() || span.end >= msg.size() || span.start < cursor) continue;
+
+        if (span.start > cursor) {
+            runs.push_back({
+                {"t", "text"},
+                {"text", msg.substr(cursor, span.start - cursor)}
+                });
+        }
+
+        const size_t len = span.end - span.start + 1;
+        const std::string shortcut = msg.substr(span.start, len);
+
+        runs.push_back({
+            {"t", "emoji"},
+            {"provider", "twitch"},
+            {"id", span.id},
+            {"shortcut", shortcut},
+            {"url", "https://static-cdn.jtvnw.net/emoticons/v2/" + span.id + "/default/dark/1.0"}
+            });
+
+        cursor = span.end + 1;
+    }
+
+    if (cursor < msg.size()) {
+        runs.push_back({
+            {"t", "text"},
+            {"text", msg.substr(cursor)}
+            });
+    }
+
+    return runs;
+}
 TwitchIrcWsClient::TwitchIrcWsClient() {}
 TwitchIrcWsClient::~TwitchIrcWsClient() { stop(); }
 void TwitchIrcWsClient::stop() {
@@ -187,21 +286,18 @@ bool TwitchIrcWsClient::start(const std::string& oauth_token_with_oauth_prefix,
     const std::string& nick,
     const std::string& channel,
     ChatAggregator& chat) {
-    // Wrap the callback API and push incoming messages into ChatAggregator
+    // Store aggregator so worker() can push the richer chat message
+    // including color and parsed emote runs.
     m_chat = &chat;
     {
         std::wstringstream ss;
         ss << L"TWITCH: aggregator ptr=0x" << std::hex << (uintptr_t)m_chat << L"\n";
         OutputDebugStringW(ss.str().c_str());
     }
+
+    // Do not add to chat again via callback; worker() already does that.
     return start(oauth_token_with_oauth_prefix, nick, channel,
-        [&chat](const std::string& user, const std::string& message) {
-            ChatMessage m{};
-            m.platform = "twitch";
-            m.user = user;
-            m.message = message;
-            m.ts_ms = NowMs();
-            chat.Add(std::move(m));
+        [](const std::string&, const std::string&) {
         });
 }
 void TwitchIrcWsClient::worker(std::string oauth, std::string nick, std::string channel, OnPrivMsg cb) {
@@ -376,6 +472,14 @@ void TwitchIrcWsClient::worker(std::string oauth, std::string nick, std::string 
                                         m.message = msg;
                                         m.color = userColor;
                                         m.ts_ms = NowMs();
+
+                                        if (haveTags) {
+                                            auto itEmotes = tags.find("emotes");
+                                            if (itEmotes != tags.end() && !itEmotes->second.empty()) {
+                                                m.runs = BuildTwitchRuns(msg, itEmotes->second);
+                                            }
+                                        }
+
                                         m_chat->Add(std::move(m));
                                     }
                                     if (cb) cb(user, msg);

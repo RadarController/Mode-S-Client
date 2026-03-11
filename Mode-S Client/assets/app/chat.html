@@ -102,7 +102,9 @@
             border-left-color: #FF0000;
         }
 
-        .yt-emoji {
+        .chat-emoji,
+        .yt-emoji,
+        .twitch-emote {
             width: 1em;
             height: 1em;
             max-width: 1em;
@@ -430,18 +432,6 @@
                 return;
             }
 
-            // --- DUPLICATE CHECK (keeps your existing behaviour if you have seen/ids) ---
-            // If your file already has a "seen" set somewhere, KEEP USING IT.
-            // If it does not, this block is harmless and you can delete it later.
-            window.__seen = window.__seen || new Set();
-            const id = n.id || `${n.platform}|${n.user}|${n.ts_ms}|${extractGateText(n).slice(0, 40)}`;
-            if (window.__seen.has(id)) {
-                dbg.skip_dupe++;
-                dbg.lastSkip = `dupe id=${id}`;
-                setDiag();
-                return;
-            }
-            window.__seen.add(id);
             // --- /DUPLICATE CHECK ---
 
             // Gate: if it will render as empty, do not append anything (prevents icon drift)
@@ -523,7 +513,7 @@
                         const shortcut = (typeof run.shortcut === 'string') ? run.shortcut : '';
                         if (typeof run.url === 'string' && run.url.length) {
                             const img = document.createElement('img');
-                            img.className = 'yt-emoji';
+                            img.className = (run.provider === 'twitch') ? 'twitch-emote' : 'yt-emoji';
                             img.src = run.url;
                             img.alt = shortcut || 'emoji';
                             img.loading = 'lazy';
@@ -655,8 +645,31 @@
                 addLine,
 
                 onError: (e) => {
-                    // Keep overlay quiet; app can log to console
-                    if (typeof console !== "undefined" && console.error) console.error("merged feed error:", e);
+                    if (typeof console !== "undefined" && console.error) {
+                        console.error("merged feed error:", e);
+                    }
+
+                    const existing = document.getElementById("chat-error");
+                    const msg = String((e && e.message) ? e.message : e);
+
+                    if (existing) {
+                        existing.textContent = "merged feed error: " + msg;
+                        return;
+                    }
+
+                    const div = document.createElement("div");
+                    div.id = "chat-error";
+                    div.style.position = "fixed";
+                    div.style.left = "8px";
+                    div.style.bottom = "8px";
+                    div.style.zIndex = "99999";
+                    div.style.background = "rgba(160,0,0,0.9)";
+                    div.style.color = "#fff";
+                    div.style.padding = "8px 10px";
+                    div.style.borderRadius = "8px";
+                    div.style.font = "12px/1.3 monospace";
+                    div.textContent = "merged feed error: " + msg;
+                    document.body.appendChild(div);
                 }
             });
         }
