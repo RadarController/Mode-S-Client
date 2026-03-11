@@ -633,7 +633,7 @@
 
                 // Normalize chat raw item into a common shape
                 
-                : (raw) => {
+                normalizeChatItem: (raw) => {
                     const n = normalize(raw);
                     if (!n) return n;
                     return n;
