@@ -1102,16 +1102,6 @@ void TwitchEventSubWsClient::HandleNotification(const void* payloadPtr)
 
             on_event_(evOut);
         }
-
-        // Forward EventSub events into chat as well (human-readable).
-        if (on_chat_event_) {
-            ChatMessage m{};
-            m.platform = "twitch";
-            m.user = user;
-            m.message = BuildHumanReadableMessage(subType, ev);
-            m.ts_ms = ts;
-            on_chat_event_(m);
-        }
     }
     catch (const std::exception& ex)
     {

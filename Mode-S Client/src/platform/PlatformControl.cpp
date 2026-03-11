@@ -117,14 +117,6 @@ namespace PlatformControl {
                     e.ts_ms = (std::int64_t)(ts * 1000.0);
                 }
                 state.push_tiktok_event(e);
-
-                ChatMessage c;
-                c.platform = "tiktok";
-                c.user = e.user;
-                c.message = e.message;
-                c.ts_ms = e.ts_ms;
-                c.is_event = true;
-                chat.Add(std::move(c));
             }
             else if (type == "tiktok.chat") {
                 ChatMessage c;
@@ -224,14 +216,6 @@ namespace PlatformControl {
 
                 const int n = (std::max)(0, (std::min)(delta, 25));
                 for (int i = 0; i < n; ++i) {
-                    ChatMessage c;
-                    c.platform = "youtube";
-                    c.user = "Someone";
-                    c.message = "followed 👋";
-                    c.ts_ms = ts_ms + i;
-                    c.is_event = true;
-                    chat.Add(std::move(c));
-
                     EventItem e;
                     e.platform = "youtube";
                     e.type = "subscribe";

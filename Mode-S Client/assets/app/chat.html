@@ -353,6 +353,17 @@
                 return [];
             }
         }
+        async function fetchYouTubeEventsSafe() {
+            try {
+                const r = await fetch("/api/youtube/events?limit=200", { cache: "no-store" });
+                if (!r.ok) return [];
+                const j = await r.json();
+                const evs = Array.isArray(j?.events) ? j.events : [];
+                return evs;
+            } catch (_) {
+                return [];
+            }
+        }
 
         function remember(id) {
             if (!id) return false;
@@ -468,8 +479,8 @@
             const userColor = String(n.color || n.user_color || '').trim();
             if (userColor && userColor.startsWith('#')) {
                 userSpan.style.color = userColor;
-            } else if (name) {
-                const key = `${String(n.platform || '').trim()}:${name}`;
+            } else if (n.user) {
+                const key = `${String(n.platform || '').trim()}:${n.user}`;
                 userSpan.style.color = colorFromName(key);
             }
 
@@ -601,20 +612,28 @@
 
                 // Event fetch returns {count, events:[...]}
                 fetchEvents: async () => {
-                    const [tw, tt] = await Promise.all([
+                    const [tw, tt, yt] = await Promise.all([
                         fetchEventsSafe(),
-                        fetchTikTokEventsSafe()
+                        fetchTikTokEventsSafe(),
+                        fetchYouTubeEventsSafe()
                     ]);
+
                     const twEvents = (tw && tw.events) ? tw.events : (tw || []);
-                    const ttEvents = (tt && tt.events) ? tt.events : (tt || []);
-                    return { count: (twEvents.length + ttEvents.length), events: [...twEvents, ...ttEvents] };
+                    const ttEvents = Array.isArray(tt) ? tt : ((tt && tt.events) ? tt.events : []);
+                    const ytEvents = Array.isArray(yt) ? yt : ((yt && yt.events) ? yt.events : []);
+
+                    return {
+                        count: twEvents.length + ttEvents.length + ytEvents.length,
+                        events: [...twEvents, ...ttEvents, ...ytEvents]
+                    };
                 },
 
                 // Convert chat JSON into raw message items.
                 extractChatItems: (chatJson) => extractMessages(chatJson),
 
                 // Normalize chat raw item into a common shape
-                normalizeChatItem: (raw) => {
+                
+                : (raw) => {
                     const n = normalize(raw);
                     if (!n) return n;
                     return n;
