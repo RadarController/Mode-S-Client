@@ -1485,34 +1485,181 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
         svr.Post("/api/settingssave", handle_settings_save);
         svr.Post("/api/settings/save", handle_settings_save);
 
-    // --- API: settings (read) ---
-    // The /app UI calls this to populate the username fields on load.
-    // Keep the payload intentionally small (do not expose secrets by default).
-    svr.Get("/api/settings", [&](const httplib::Request&, httplib::Response& res) {
-        const std::wstring cfg_path_w = AppConfig::ConfigPath();
-        const std::string  cfg_path = WideToUtf8(cfg_path_w);
+        // --- Safety: restrict sensitive local-only routes to localhost ---
+// Even if the server is later bound to 0.0.0.0 or exposed via tunnels/port-forwarding,
+// we do NOT want remote clients to be able to modify bot commands/settings or inject test chat.
+        auto is_local_request = [](const httplib::Request& req) -> bool {
+            // cpp-httplib provides the peer address in remote_addr.
+            // Accept IPv4 loopback and IPv6 loopback.
+            if (req.remote_addr == "127.0.0.1" || req.remote_addr == "::1") return true;
+            // Some builds may report other 127/8 loopback values; allow them too.
+            if (req.remote_addr.rfind("127.", 0) == 0) return true;
+            return false;
+            };
 
-        json out;
-        out["ok"] = true;
-        out["config_path"] = cfg_path;
+        auto require_local = [&](const httplib::Request& req, httplib::Response& res) -> bool {
+            if (is_local_request(req)) return true;
 
-        // Username / channel identifiers (safe to expose)
-        out["tiktok_unique_id"] = config_.tiktok_unique_id;
-        out["twitch_login"] = config_.twitch_login;
-        out["youtube_handle"] = config_.youtube_handle;
+            SecurityHttpLog(
+                log_,
+                L"Blocked non-local request to " + ToW(req.path) + L" from " + ToW(req.remote_addr)
+            );
 
-        // Twitch secrets
-        out["twitch_client_id"] = config_.twitch_client_id;
-        out["twitch_client_secret"] = config_.twitch_client_secret;
+            res.status = 403;
+            res.set_content(R"({"ok":false,"error":"forbidden"})", "application/json; charset=utf-8");
+            return false;
+            };
 
-        // TikTok cookie/session fields
-        out["tiktok_sessionid"] = config_.tiktok_sessionid;
-        out["tiktok_sessionid_ss"] = config_.tiktok_sessionid_ss;
-        out["tiktok_tt_target_idc"] = config_.tiktok_tt_target_idc;
+        // --- API: settings (read) ---
+        // General app settings only. Do not expose secrets/cookies here.
+        svr.Get("/api/settings", [&](const httplib::Request&, httplib::Response& res) {
+            const std::wstring cfg_path_w = AppConfig::ConfigPath();
+            const std::string  cfg_path = WideToUtf8(cfg_path_w);
 
-        res.set_header("X-Config-Path", cfg_path.c_str());
-        res.set_content(out.dump(2), "application/json; charset=utf-8");
-        });
+            json out;
+            out["ok"] = true;
+            out["config_path"] = cfg_path;
+
+            // Public identifiers only
+            out["tiktok_unique_id"] = config_.tiktok_unique_id;
+            out["twitch_login"] = config_.twitch_login;
+            out["youtube_handle"] = config_.youtube_handle;
+
+            res.set_header("X-Config-Path", cfg_path.c_str());
+            res.set_content(out.dump(2), "application/json; charset=utf-8");
+            });
+
+        // --- API: Twitch OAuth settings (local only) ---
+// Used only by /app/twitch_oauth.html
+        svr.Get("/api/settings/twitch-oauth", [&](const httplib::Request& req, httplib::Response& res) {
+            if (!require_local(req, res)) return;
+
+            json out;
+            out["ok"] = true;
+            out["twitch_login"] = config_.twitch_login;
+            out["twitch_client_id"] = config_.twitch_client_id;
+            out["has_twitch_client_secret"] = !config_.twitch_client_secret.empty();
+
+            res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+            res.set_header("Pragma", "no-cache");
+            res.set_content(out.dump(2), "application/json; charset=utf-8");
+            });
+
+        svr.Post("/api/settings/twitch-oauth", [&](const httplib::Request& req, httplib::Response& res) {
+            if (!require_local(req, res)) return;
+
+            try {
+                auto j = json::parse(req.body.empty() ? "{}" : req.body);
+
+                if (j.contains("twitch_login")) {
+                    config_.twitch_login = j.value("twitch_login", config_.twitch_login);
+                }
+                if (j.contains("twitch_client_id")) {
+                    config_.twitch_client_id = j.value("twitch_client_id", config_.twitch_client_id);
+                }
+
+                // Write-only secret: only update if caller explicitly provided a non-empty value
+                if (j.contains("twitch_client_secret")) {
+                    const std::string secret = j.value("twitch_client_secret", std::string{});
+                    if (!secret.empty()) {
+                        config_.twitch_client_secret = secret;
+                    }
+                }
+            }
+            catch (const std::exception& e) {
+                SettingsHttpLog(log_, L"Twitch OAuth settings rejected: invalid JSON: " + ToW(e.what()));
+                res.status = 400;
+                res.set_content(R"({"ok":false,"error":"invalid_json"})", "application/json; charset=utf-8");
+                return;
+            }
+            catch (...) {
+                SettingsHttpLog(log_, L"Twitch OAuth settings rejected: invalid JSON");
+                res.status = 400;
+                res.set_content(R"({"ok":false,"error":"invalid_json"})", "application/json; charset=utf-8");
+                return;
+            }
+
+            const std::wstring cfg_path_w = AppConfig::ConfigPath();
+            const std::string cfg_path = WideToUtf8(cfg_path_w);
+
+            if (!config_.Save()) {
+                SettingsHttpLog(log_, L"Twitch OAuth settings save failed for " + cfg_path_w);
+                res.status = 500;
+                res.set_content(R"({"ok":false,"error":"save_failed"})", "application/json; charset=utf-8");
+                return;
+            }
+
+            SettingsHttpLog(log_, L"Saved Twitch OAuth settings to " + cfg_path_w);
+
+            json out;
+            out["ok"] = true;
+            out["path"] = cfg_path;
+            out["has_twitch_client_secret"] = !config_.twitch_client_secret.empty();
+            res.set_content(out.dump(2), "application/json; charset=utf-8");
+            });
+
+        // --- API: TikTok cookies (local only) ---
+        // Used only by /app/tiktok_cookies.html
+        svr.Get("/api/settings/tiktok-cookies", [&](const httplib::Request& req, httplib::Response& res) {
+            if (!require_local(req, res)) return;
+
+            json out;
+            out["ok"] = true;
+            out["tiktok_sessionid"] = config_.tiktok_sessionid;
+            out["tiktok_sessionid_ss"] = config_.tiktok_sessionid_ss;
+            out["tiktok_tt_target_idc"] = config_.tiktok_tt_target_idc;
+
+            res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+            res.set_header("Pragma", "no-cache");
+            res.set_content(out.dump(2), "application/json; charset=utf-8");
+            });
+
+        svr.Post("/api/settings/tiktok-cookies", [&](const httplib::Request& req, httplib::Response& res) {
+            if (!require_local(req, res)) return;
+
+            try {
+                auto j = json::parse(req.body.empty() ? "{}" : req.body);
+
+                if (j.contains("tiktok_sessionid")) {
+                    config_.tiktok_sessionid = j.value("tiktok_sessionid", config_.tiktok_sessionid);
+                }
+                if (j.contains("tiktok_sessionid_ss")) {
+                    config_.tiktok_sessionid_ss = j.value("tiktok_sessionid_ss", config_.tiktok_sessionid_ss);
+                }
+                if (j.contains("tiktok_tt_target_idc")) {
+                    config_.tiktok_tt_target_idc = j.value("tiktok_tt_target_idc", config_.tiktok_tt_target_idc);
+                }
+            }
+            catch (const std::exception& e) {
+                SettingsHttpLog(log_, L"TikTok cookie settings rejected: invalid JSON: " + ToW(e.what()));
+                res.status = 400;
+                res.set_content(R"({"ok":false,"error":"invalid_json"})", "application/json; charset=utf-8");
+                return;
+            }
+            catch (...) {
+                SettingsHttpLog(log_, L"TikTok cookie settings rejected: invalid JSON");
+                res.status = 400;
+                res.set_content(R"({"ok":false,"error":"invalid_json"})", "application/json; charset=utf-8");
+                return;
+            }
+
+            const std::wstring cfg_path_w = AppConfig::ConfigPath();
+            const std::string cfg_path = WideToUtf8(cfg_path_w);
+
+            if (!config_.Save()) {
+                SettingsHttpLog(log_, L"TikTok cookie settings save failed for " + cfg_path_w);
+                res.status = 500;
+                res.set_content(R"({"ok":false,"error":"save_failed"})", "application/json; charset=utf-8");
+                return;
+            }
+
+            SettingsHttpLog(log_, L"Saved TikTok cookie settings to " + cfg_path_w);
+
+            json out;
+            out["ok"] = true;
+            out["path"] = cfg_path;
+            res.set_content(out.dump(2), "application/json; charset=utf-8");
+            });
 
     // --- API: EuroScope ingest ---
 
@@ -1601,31 +1748,6 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
 
     svr.Get("/api/chat/recent", handle_chat_recent);
     svr.Get("/api/chat", handle_chat_recent);
-
-    // --- Safety: restrict bot mutation routes to localhost only ---
-    // Even if the server is later bound to 0.0.0.0 or exposed via tunnels/port-forwarding,
-    // we do NOT want remote clients to be able to modify bot commands/settings or inject test chat.
-    auto is_local_request = [](const httplib::Request& req) -> bool {
-        // cpp-httplib provides the peer address in remote_addr.
-        // Accept IPv4 loopback and IPv6 loopback.
-        if (req.remote_addr == "127.0.0.1" || req.remote_addr == "::1") return true;
-        // Some builds may report other 127/8 loopback values; allow them too.
-        if (req.remote_addr.rfind("127.", 0) == 0) return true;
-        return false;
-    };
-
-    auto require_local = [&](const httplib::Request& req, httplib::Response& res) -> bool {
-        if (is_local_request(req)) return true;
-
-        SecurityHttpLog(
-            log_,
-            L"Blocked non-local request to " + ToW(req.path) + L" from " + ToW(req.remote_addr)
-        );
-
-        res.status = 403;
-        res.set_content(R"({"ok":false,"error":"forbidden"})", "application/json; charset=utf-8");
-        return false;
-        };
 
     // --- API: bot commands ---
     // GET  /api/bot/commands  -> current command list
@@ -2092,26 +2214,6 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
         res.set_header("Pragma", "no-cache");
         res.set_content(out.dump(2), "application/json; charset=utf-8");
 });
-
-    // --- API: chat diagnostics ---
-    // Returns address of the ChatAggregator instance and current buffered count.
-    svr.Get("/api/chat/diag", [&](const httplib::Request&, httplib::Response& res) {
-        json out;
-        out["chat_ptr"] = (uint64_t)(uintptr_t)(&chat_);
-        out["count"] = (long long)chat_.Size();
-        // Include AppState chat count as well (some adapters write into AppState)
-        try {
-            auto v = state_.recent_chat();
-            out["state_count"] = (long long)v.size();
-        }
-        catch (...) {
-            out["state_count"] = 0;
-        }
-        out["ts_ms"] = (long long)std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now().time_since_epoch()
-        ).count();
-        res.set_content(out.dump(2), "application/json; charset=utf-8");
-        });
 
     // --- API: chat test inject (debug) ---
     // Example:
