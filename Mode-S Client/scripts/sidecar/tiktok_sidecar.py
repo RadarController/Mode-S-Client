@@ -130,15 +130,12 @@ from TikTokLive.events import (
     ConnectEvent, DisconnectEvent, CommentEvent, FollowEvent,
     GiftEvent, LikeEvent, ShareEvent, SubscribeEvent
 )
+from TikTokLive.client.errors import UserOfflineError, WebcastBlocked200Error
 
 try:
     from TikTokLive.client.errors import SignAPIError  # type: ignore
 except Exception:
     SignAPIError = None  # type: ignore
-
-
-emit({"type": "tiktok.boot", "ts": now_ts()})
-
 
 # ---------------- helpers ----------------
 def extract_user_count(obj: Any) -> Optional[int]:
@@ -416,14 +413,30 @@ async def main_async() -> int:
     @client.on(CommentEvent)
     async def on_comment(event: CommentEvent):
         try:
+            user_info = getattr(event, "user_info", None)
+
+            user = (
+                getattr(user_info, "nick_name", None)
+                or getattr(user_info, "username", None)
+                or "unknown"
+            )
+
+            message = (
+                getattr(event, "content", None)
+                or getattr(event, "comment", None)
+                or getattr(event, "text", None)
+                or ""
+            )
+
             emit({
                 "type": "tiktok.chat",
                 "ts": now_ts(),
-                "user": event.user.nickname if event.user else "unknown",
-                "message": event.comment,
+                "user": str(user),
+                "message": str(message),
             })
-        except Exception:
-            pass
+
+        except Exception as ex:
+            log("tiktok.error", f"comment handler failed: {ex}")
 
     @client.on(FollowEvent)
     async def on_follow(event: FollowEvent):
@@ -484,6 +497,39 @@ async def main_async() -> int:
             await client.connect(fetch_room_info=True)
             emit_stats(False, 0, note="connect_returned", room_id=last_room_id)
             return 0
+
+        except UserOfflineError as e:
+            emit({
+                "type": "tiktok.info",
+                "ts": now_ts(),
+                "message": f"User is offline: {e}",
+            })
+            return 0
+
+        except WebcastBlocked200Error as e:
+            emit({
+                "type": "tiktok.error",
+                "ts": now_ts(),
+                "message": f"TikTok blocked this device/session: {e}",
+            })
+            return 3
+
+        except asyncio.CancelledError:
+            emit({
+                "type": "tiktok.info",
+                "ts": now_ts(),
+                "message": "TikTok sidecar cancelled",
+            })
+            raise
+
+        except KeyboardInterrupt:
+            emit({
+                "type": "tiktok.info",
+                "ts": now_ts(),
+                "message": "TikTok sidecar stopped",
+            })
+            return 0
+
         except Exception as e:
             if is_signer_failure(e):
                 delay = min(2.0 * attempt, 10.0) + 0.5
@@ -504,9 +550,16 @@ async def main_async() -> int:
             return 2
 
 
-def main() -> int:
-    return asyncio.run(main_async())
-
+def main():
+    try:
+        return asyncio.run(main_async())
+    except KeyboardInterrupt:
+        emit({
+            "type": "tiktok.info",
+            "ts": now_ts(),
+            "message": "TikTok sidecar stopped by user",
+        })
+        return 0
 
 if __name__ == "__main__":
     raise SystemExit(main())
