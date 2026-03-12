@@ -10,41 +10,59 @@
   <div class="app">
     <header class="topbar">
       <div class="brand">
-       <div class="brand__mark"><img src="/assets/icons/RClogo.svg" alt="RadarController" style="width:100%;height:100%;display:block;opacity:0.8;border-radius:inherit;" /></div>
+        <div class="brand__mark"><img src="/assets/icons/RClogo.svg" alt="RadarController" style="width:100%;height:100%;display:block;opacity:0.8;border-radius:inherit;" /></div>
         <div class="brand__text">
           <div class="brand__title">RadarController</div>
           <div class="brand__subtitle">Mode‑S Client</div>
         </div>
       </div>
 
-      <div class="topbar__metrics" id="topMetrics">
-        <div class="pill"><span class="pill__k">Viewers</span><span class="pill__v" id="mViewers">—</span></div>
-        <div class="pill"><span class="pill__k">Followers</span><span class="pill__v" id="mFollowers">—</span></div>
-        <div class="pill"><span class="pill__k">Aircraft</span><span class="pill__v" id="mAircraft">—</span></div>
-        <div class="pill pill--status"><span class="dot" id="mDot"></span><span class="pill__k">Status</span><span class="pill__v" id="mStatus">Idle</span></div>
-      </div>
-
       <div class="topbar__actions">
         <button class="btn btn--primary" id="btnStartAll">Start All Platforms</button>
         <button class="btn btn--ghost" id="btnOpenSettings">Settings</button>
+        <button class="btn btn--ghost" id="btnOpenDiagnostics" type="button">Diagnostics</button>
         <button class="btn btn--primary" id="btnOpenChat">Open Chat</button>
       </div>
     </header>
 
-    <main class="grid">
-      <section class="card card--wide">
-        <div class="card__head">
-          <div class="card__title">Platforms</div>
-          <div class="card__hint">Start/Restart and Stop each platform. Settings are saved locally.</div>
+    <div class="topbar__metrics" id="topMetrics">
+      <div class="pill"><span class="pill__k">Viewers</span><span class="pill__v" id="mViewers">—</span></div>
+      <div class="pill"><span class="pill__k">Followers</span><span class="pill__v" id="mFollowers">—</span></div>
+      <div class="pill pill--status"><span class="dot" id="mDot"></span><span class="pill__k">Status</span><span class="pill__v" id="mStatus">Idle</span></div>
+      <div class="pill"><span class="pill__k">Aircraft</span><span class="pill__v" id="mAircraft">—</span></div>
+    </div>
+
+    <main class="grid grid--single">
+      <section class="card card--wide home-platforms">
+        <div class="card__head home-platforms__head">
+          <div>
+            <div class="card__title">Platforms</div>
+            <div class="card__hint">Manage your linked accounts, or start or stop each platform.</div>
+          </div>
+          <div class="home-platforms__summary">
+            <div class="home-kpi">
+              <span class="home-kpi__k">Linked accounts</span>
+              <span class="home-kpi__v" id="linkedAccountsCount">0 / 3</span>
+            </div>
+            <div class="home-kpi">
+              <span class="home-kpi__k">Live platforms</span>
+              <span class="home-kpi__v" id="livePlatformsCount">0</span>
+            </div>
+          </div>
         </div>
 
-        <div class="platforms">
-          <div class="platform" data-platform="tiktok">
+        <div class="platforms platforms--home">
+          <div class="platform platform--home" data-platform="tiktok">
             <div class="platform__head">
-              <img class="platform__icon" src="/assets/icons/tiktok-icon.svg" alt="TikTok" />
-              <div class="platform__meta">
-                <div class="platform__name">TikTok</div>
-                <div class="platform__sub" id="tiktokState">Disconnected</div>
+              <div class="platform__identity">
+                <img class="platform__icon" src="/assets/icons/tiktok-icon.svg" alt="TikTok" />
+                <div class="platform__meta">
+                  <div class="platform__name">TikTok</div>
+                  <div class="platform__statusline">
+                    <span class="platform__state-dot" id="tiktokStateDot" aria-hidden="true"></span>
+                    <span class="platform__sub" id="tiktokState">Disconnected</span>
+                  </div>
+                </div>
               </div>
               <div class="platform__right">
                 <span class="badge" id="tiktokBadge">Offline</span>
@@ -52,11 +70,12 @@
             </div>
 
             <div class="platform__body">
-              <label class="field">
+              <div class="platform__section-label">Linked account</div>
+              <label class="field field--account">
                 <span class="field__k">Username</span>
-                <div class="field__row">
+                <div class="field__row field__row--account">
                   <input class="input" id="tiktokUser" placeholder="@username" />
-                  <button class="btn btn--ghost" data-action="set">SET</button>
+                  <button class="btn btn--ghost" data-action="set">Save</button>
                 </div>
               </label>
 
@@ -66,18 +85,23 @@
               </div>
 
               <div class="platform__actions">
-                <button class="btn btn--primary" data-action="start">Start/Restart</button>
+                <button class="btn btn--primary" data-action="start">Start / Restart</button>
                 <button class="btn btn--danger" data-action="stop" disabled>Stop</button>
               </div>
             </div>
           </div>
 
-          <div class="platform" data-platform="twitch">
+          <div class="platform platform--home" data-platform="twitch">
             <div class="platform__head">
-              <img class="platform__icon" src="/assets/icons/twitch-icon.svg" alt="Twitch" />
-              <div class="platform__meta">
-                <div class="platform__name">Twitch</div>
-                <div class="platform__sub" id="twitchState">Disconnected</div>
+              <div class="platform__identity">
+                <img class="platform__icon" src="/assets/icons/twitch-icon.svg" alt="Twitch" />
+                <div class="platform__meta">
+                  <div class="platform__name">Twitch</div>
+                  <div class="platform__statusline">
+                    <span class="platform__state-dot" id="twitchStateDot" aria-hidden="true"></span>
+                    <span class="platform__sub" id="twitchState">Disconnected</span>
+                  </div>
+                </div>
               </div>
               <div class="platform__right">
                 <span class="badge" id="twitchBadge">Offline</span>
@@ -85,11 +109,12 @@
             </div>
 
             <div class="platform__body">
-              <label class="field">
+              <div class="platform__section-label">Linked account</div>
+              <label class="field field--account">
                 <span class="field__k">Channel</span>
-                <div class="field__row">
+                <div class="field__row field__row--account">
                   <input class="input" id="twitchUser" placeholder="channel_name" />
-                  <button class="btn btn--ghost" data-action="set">SET</button>
+                  <button class="btn btn--ghost" data-action="set">Save</button>
                 </div>
               </label>
 
@@ -99,18 +124,23 @@
               </div>
 
               <div class="platform__actions">
-                <button class="btn btn--primary" data-action="start">Start/Restart</button>
+                <button class="btn btn--primary" data-action="start">Start / Restart</button>
                 <button class="btn btn--danger" data-action="stop" disabled>Stop</button>
               </div>
             </div>
           </div>
 
-          <div class="platform" data-platform="youtube">
+          <div class="platform platform--home" data-platform="youtube">
             <div class="platform__head">
-              <img class="platform__icon" src="/assets/icons/youtube-icon.svg" alt="YouTube" />
-              <div class="platform__meta">
-                <div class="platform__name">YouTube</div>
-                <div class="platform__sub" id="youtubeState">Disconnected</div>
+              <div class="platform__identity">
+                <img class="platform__icon" src="/assets/icons/youtube-icon.svg" alt="YouTube" />
+                <div class="platform__meta">
+                  <div class="platform__name">YouTube</div>
+                  <div class="platform__statusline">
+                    <span class="platform__state-dot" id="youtubeStateDot" aria-hidden="true"></span>
+                    <span class="platform__sub" id="youtubeState">Disconnected</span>
+                  </div>
+                </div>
               </div>
               <div class="platform__right">
                 <span class="badge" id="youtubeBadge">Offline</span>
@@ -118,11 +148,12 @@
             </div>
 
             <div class="platform__body">
-              <label class="field">
+              <div class="platform__section-label">Linked account</div>
+              <label class="field field--account">
                 <span class="field__k">Handle / Channel</span>
-                <div class="field__row">
+                <div class="field__row field__row--account">
                   <input class="input" id="youtubeUser" placeholder="UC... or @handle" />
-                  <button class="btn btn--ghost" data-action="set">SET</button>
+                  <button class="btn btn--ghost" data-action="set">Save</button>
                 </div>
               </label>
 
@@ -132,20 +163,23 @@
               </div>
 
               <div class="platform__actions">
-                <button class="btn btn--primary" data-action="start">Start/Restart</button>
+                <button class="btn btn--primary" data-action="start">Start / Restart</button>
                 <button class="btn btn--danger" data-action="stop" disabled>Stop</button>
               </div>
             </div>
           </div>
         </div>
-      </section>
 
-      <section class="card">
-        <div class="card__head">
-          <div class="card__title">Log</div>
-          <div class="card__hint">Live operational messages from the client.</div>
+        <div class="home-strip">
+          <div class="home-strip__item">
+            <span class="home-strip__dot"></span>
+            <span class="home-strip__text">Connected means the platform is configured and the client can currently see or talk to that integration. In short, you're ready to go live.</span>
+          </div>
+          <div class="home-strip__item">
+            <span class="home-strip__dot home-strip__dot--blue"></span>
+            <span class="home-strip__text">Problems, errors and alerts related to the app are now in the Diagnostics page. Stream alerts show up in the chat window.</span>
+          </div>
         </div>
-        <div class="log" id="log"></div>
       </section>
     </main>
 
@@ -156,5 +190,15 @@
   </div>
 
   <script src="/app/app.js"></script>
+  <script>
+    (function () {
+      const btn = document.getElementById('btnOpenDiagnostics');
+      if (btn) {
+        btn.addEventListener('click', function () {
+          window.location.href = '/app/diagnostics.html';
+        });
+      }
+    })();
+  </script>
 </body>
 </html>

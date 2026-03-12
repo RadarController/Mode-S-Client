@@ -94,6 +94,7 @@ function updatePlatformInputUi(platform){
 
 function updateAllPlatformInputUi(){
   ["tiktok", "twitch", "youtube"].forEach(updatePlatformInputUi);
+  updateHomeSummary();
 }
 
 function setActionBusy(button, busy, busyText){
@@ -254,9 +255,43 @@ function setBadge(platform, live, label){
   if (card) card.classList.toggle("platform--live", !!live);
 }
 
+function updateHomeSummary(){
+  const cards = $$(".platform[data-platform]");
+  const linked = cards.filter(card => {
+    const platform = card.dataset.platform;
+    const input = getPlatformInput(platform);
+    return !!sanitizePlatformValue(platform, input?.value || "");
+  }).length;
+  const live = cards.filter(card => card.classList.contains("platform--live")).length;
+
+  setText("linkedAccountsCount", `${linked} / ${cards.length || 0}`);
+  setText("livePlatformsCount", String(live));
+}
+
 function setState(platform, text){
   const el = document.getElementById(`${platform}State`);
   if (el) el.textContent = text;
+
+  const dot = document.getElementById(`${platform}StateDot`);
+  const card = document.querySelector(`.platform[data-platform="${platform}"]`);
+  if (!card) {
+    updateHomeSummary();
+    return;
+  }
+
+  const normalized = String(text || "").toLowerCase();
+  const live = normalized === "live";
+  const connected = live || normalized === "connected";
+
+  card.classList.toggle("platform--live", live);
+  card.classList.toggle("platform--connected", connected);
+  card.classList.toggle("platform--disconnected", !connected);
+
+  if (dot) {
+    dot.classList.toggle("platform__state-dot--live", live);
+  }
+
+  updateHomeSummary();
 }
 
 function setStopEnabled(platform, enabled){
@@ -443,6 +478,10 @@ function wireActions(){
 
   $("#btnOpenSettings")?.addEventListener("click", () => {
     window.location.href = "/app/settings.html";
+  });
+
+  $("#btnOpenDiagnostics")?.addEventListener("click", () => {
+    window.location.href = "/app/diagnostics.html";
   });
 
   $("#btnOpenBot")?.addEventListener("click", () => {
