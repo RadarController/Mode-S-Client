@@ -5,6 +5,63 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Diagnostics — RadarController</title>
   <link rel="stylesheet" href="/app/app.css" />
+  <style>
+    html,body{height:100%;overflow:hidden}
+    body{margin:0}
+    .app{height:100vh;overflow:hidden;display:grid;grid-template-rows:auto minmax(0,1fr) auto}
+    main.grid.grid--single{min-height:0;overflow:hidden}
+    .diag-shell{display:grid;grid-template-rows:auto auto minmax(0,1fr);gap:14px;min-height:0;height:100%}
+    .diag-toolbar,.diag-summary,.diag-layout{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:18px}
+    .diag-toolbar{padding:14px;display:grid;grid-template-columns:minmax(180px,1.3fr) auto auto auto auto auto;gap:10px;align-items:center}
+    .diag-search{width:100%;min-width:0}
+    .diag-chipbar{display:flex;gap:8px;flex-wrap:wrap}
+    .diag-chip{border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.04);color:#dbe7ff;border-radius:999px;padding:8px 12px;font:inherit;cursor:pointer}
+    .diag-chip.is-active{background:linear-gradient(180deg,rgba(79,127,255,.42),rgba(53,93,199,.55));border-color:rgba(111,154,255,.55);box-shadow:0 0 0 1px rgba(255,255,255,.04) inset}
+    .diag-summary{padding:10px 14px;display:flex;gap:18px;flex-wrap:wrap;align-items:center}
+    .diag-stat{display:flex;align-items:center;gap:8px;color:#dce5ff}
+    .diag-stat__dot{width:10px;height:10px;border-radius:999px;background:#70a0ff;box-shadow:0 0 12px rgba(112,160,255,.45)}
+    .diag-stat__dot--warn{background:#f0bf63;box-shadow:0 0 12px rgba(240,191,99,.45)}
+    .diag-stat__dot--error{background:#ff6c80;box-shadow:0 0 12px rgba(255,108,128,.45)}
+    .diag-layout{padding:0;display:grid;grid-template-columns:minmax(0,1.85fr) minmax(300px,.95fr);min-height:0;height:100%;overflow:hidden}
+    .diag-listPane{border-right:1px solid rgba(255,255,255,.08);display:grid;grid-template-rows:auto minmax(0,1fr) auto;min-width:0;min-height:0}
+    .diag-header{display:grid;grid-template-columns:120px 120px 1fr 34px;gap:12px;padding:12px 16px;background:rgba(255,255,255,.03);border-bottom:1px solid rgba(255,255,255,.08);font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#98a8d7}
+    .diag-list{overflow:auto;min-height:0;overscroll-behavior:contain}
+    .diag-row{display:grid;grid-template-columns:120px 120px 1fr 34px;gap:12px;align-items:center;padding:11px 16px;border-bottom:1px solid rgba(255,255,255,.06);cursor:pointer;transition:background .15s ease, border-color .15s ease}
+    .diag-row:hover{background:rgba(255,255,255,.035)}
+    .diag-row.is-selected{background:linear-gradient(90deg,rgba(72,114,255,.16),rgba(72,114,255,.07));box-shadow:inset 2px 0 0 rgba(96,140,255,.95)}
+    .diag-time{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;color:#d6def7;white-space:nowrap}
+    .diag-source{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:6px 10px;border-radius:999px;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;border:1px solid rgba(255,255,255,.12);width:max-content;max-width:100%}
+    .diag-source--HTTP{background:rgba(91,131,255,.18);color:#c9dcff}
+    .diag-source--TWITCH{background:rgba(158,96,255,.18);color:#ead8ff}
+    .diag-source--TWITCHAUTH{background:rgba(119,110,255,.18);color:#ddd8ff}
+    .diag-source--TIKTOK{background:rgba(64,196,196,.18);color:#d8ffff}
+    .diag-source--YOUTUBE{background:rgba(255,91,122,.18);color:#ffdbe3}
+    .diag-source--CONFIG,.diag-source--SYSTEM,.diag-source--MODE-S{background:rgba(255,255,255,.09);color:#eef2ff}
+    .diag-msg{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#f3f6ff}
+    .diag-msg b{font-weight:700}
+    .diag-sev{width:10px;height:10px;border-radius:999px;justify-self:center;background:#6f88c9;box-shadow:0 0 10px rgba(111,136,201,.35)}
+    .diag-sev--warn{background:#f0bf63;box-shadow:0 0 10px rgba(240,191,99,.45)}
+    .diag-sev--error{background:#ff6c80;box-shadow:0 0 10px rgba(255,108,128,.55)}
+    .diag-sev--success{background:#59d38c;box-shadow:0 0 10px rgba(89,211,140,.45)}
+    .diag-footer{display:flex;justify-content:space-between;gap:12px;padding:12px 16px;border-top:1px solid rgba(255,255,255,.08);font-size:13px;color:#aab7db}
+    .diag-detail{display:grid;grid-template-rows:auto minmax(0,1fr);min-width:0;min-height:0;overflow:hidden}
+    .diag-detail__head{padding:18px 18px 12px;border-bottom:1px solid rgba(255,255,255,.08)}
+    .diag-detail__title{font-size:24px;font-weight:800;line-height:1.1;margin-bottom:6px}
+    .diag-detail__meta{color:#b4c2e8;display:grid;gap:6px}
+    .diag-detail__body{padding:18px;display:grid;gap:16px;align-content:start;min-width:0;min-height:0;overflow:hidden}
+    .diag-panel{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:14px}
+    .diag-panel__k{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#98a8d7;margin-bottom:8px}
+    .diag-panel__v{color:#f3f6ff;line-height:1.5;white-space:normal;overflow-wrap:anywhere;word-break:break-word;max-width:100%}
+    .diag-raw{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:13px;line-height:1.6;color:#dce6ff;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;max-width:100%;max-height:320px;overflow:auto}
+    .diag-empty{padding:32px 18px;color:#9eb0df}
+    .diag-toggle{display:inline-flex;align-items:center;gap:8px;padding:0 12px}
+    .diag-toggle input{accent-color:#4f7fff}
+    @media (max-width: 1180px){
+      .diag-toolbar{grid-template-columns:1fr 1fr;}
+      .diag-layout{grid-template-columns:1fr;}
+      .diag-listPane{border-right:none;border-bottom:1px solid rgba(255,255,255,.08)}
+    }
+  </style>
 </head>
 <body>
   <div class="app" id="diagnosticsPage">
@@ -22,19 +79,63 @@
       </div>
 
       <div class="topbar__actions">
-        <button class="btn btn--ghost" id="btnBackHome">Back</button>
-        <button class="btn btn--ghost" id="btnClearDiagLog">Clear</button>
+        <button class="btn btn--ghost" id="btnBackHome" type="button">Back</button>
+        <button class="btn btn--ghost" id="btnPrettyToggle" type="button">Raw</button>
+        <button class="btn btn--ghost" id="btnCopySelected" type="button">Copy Entry</button>
+        <button class="btn btn--primary" id="btnCopyDiagLog" type="button">Copy Log</button>
       </div>
     </header>
 
     <main class="grid grid--single">
-      <section class="card">
-        <div class="card__head">
-          <div class="card__title">Log</div>
-          <div class="card__hint">Verbose operational messages from the client (raw).</div>
-        </div>
-        <div class="log" id="diagLog"></div>
-      </section>
+      <div class="diag-shell">
+        <section class="diag-toolbar">
+          <input class="input diag-search" id="diagSearch" type="search" placeholder="Search logs" />
+          <div class="diag-chipbar" id="diagSourceFilter"></div>
+          <label class="diag-toggle"><input type="checkbox" id="diagImportantOnly" /> Important only</label>
+          <label class="diag-toggle"><input type="checkbox" id="diagAutoScroll" checked /> Auto-scroll</label>
+          <button class="btn btn--ghost" id="btnClearDiagLog" type="button">Clear View</button>
+          <div class="pill"><span class="pill__k">Visible</span><span class="pill__v" id="diagVisibleCount">0</span></div>
+        </section>
+
+        <section class="diag-summary">
+          <div class="diag-stat"><span class="diag-stat__dot diag-stat__dot--error"></span><span>Last error:</span><strong id="diagLastError">None</strong></div>
+          <div class="diag-stat"><span class="diag-stat__dot"></span><span>Sources:</span><strong id="diagSourceCount">0</strong></div>
+          <div class="diag-stat"><span class="diag-stat__dot diag-stat__dot--warn"></span><span>Lines loaded:</span><strong id="diagLoadedCount">0</strong></div>
+        </section>
+
+        <section class="diag-layout">
+          <div class="diag-listPane">
+            <div class="diag-header">
+              <div>Time</div>
+              <div>Source</div>
+              <div>Message</div>
+              <div></div>
+            </div>
+            <div class="diag-list" id="diagList"></div>
+            <div class="diag-footer">
+              <div id="diagFooterLeft">Waiting for log data…</div>
+              <div id="diagFooterRight">Pretty view</div>
+            </div>
+          </div>
+
+          <aside class="diag-detail">
+            <div class="diag-detail__head">
+              <div class="diag-detail__title" id="diagDetailTitle">No entry selected</div>
+              <div class="diag-detail__meta" id="diagDetailMeta">Pick a row on the left to inspect it properly.</div>
+            </div>
+            <div class="diag-detail__body">
+              <div class="diag-panel">
+                <div class="diag-panel__k">Message</div>
+                <div class="diag-panel__v" id="diagDetailMessage">Nothing selected yet.</div>
+              </div>
+              <div class="diag-panel">
+                <div class="diag-panel__k">Raw details</div>
+                <div class="diag-raw" id="diagDetailRaw">{ }</div>
+              </div>
+            </div>
+          </aside>
+        </section>
+      </div>
     </main>
 
     <footer class="footer">
@@ -44,5 +145,270 @@
   </div>
 
   <script src="/app/app.js"></script>
+  <script>
+    (() => {
+      const state = {
+        all: [],
+        visible: [],
+        source: 'ALL',
+        search: '',
+        importantOnly: false,
+        pretty: true,
+        selectedId: null,
+        clearView: false,
+      };
+
+      const el = {
+        list: document.getElementById('diagList'),
+        search: document.getElementById('diagSearch'),
+        sourceFilter: document.getElementById('diagSourceFilter'),
+        importantOnly: document.getElementById('diagImportantOnly'),
+        autoScroll: document.getElementById('diagAutoScroll'),
+        visibleCount: document.getElementById('diagVisibleCount'),
+        sourceCount: document.getElementById('diagSourceCount'),
+        loadedCount: document.getElementById('diagLoadedCount'),
+        lastError: document.getElementById('diagLastError'),
+        footerLeft: document.getElementById('diagFooterLeft'),
+        footerRight: document.getElementById('diagFooterRight'),
+        detailTitle: document.getElementById('diagDetailTitle'),
+        detailMeta: document.getElementById('diagDetailMeta'),
+        detailMessage: document.getElementById('diagDetailMessage'),
+        detailRaw: document.getElementById('diagDetailRaw'),
+        btnPretty: document.getElementById('btnPrettyToggle'),
+        btnCopyLog: document.getElementById('btnCopyDiagLog'),
+        btnCopySelected: document.getElementById('btnCopySelected'),
+        btnClear: document.getElementById('btnClearDiagLog'),
+        btnBack: document.getElementById('btnBackHome'),
+      };
+
+      const sourcePriority = ['ALL','HTTP','TWITCH','TWITCHAUTH','TIKTOK','YOUTUBE','CONFIG','MODE-S','SYSTEM','OTHER'];
+
+      function escapeHtml(s){
+        return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      }
+
+      function tryParseJsonLine(line){
+        try { return JSON.parse(line); } catch { return null; }
+      }
+
+      function splitConcatenatedJson(text){
+        const out = [];
+        let depth = 0, inString = false, esc = false, start = -1;
+        for(let i=0;i<text.length;i++){
+          const ch = text[i];
+          if (inString){
+            if (esc) esc = false;
+            else if (ch === '\\') esc = true;
+            else if (ch === '"') inString = false;
+            continue;
+          }
+          if (ch === '"'){ inString = true; continue; }
+          if (ch === '{'){
+            if (depth === 0) start = i;
+            depth++;
+          } else if (ch === '}'){
+            depth--;
+            if (depth === 0 && start !== -1){
+              out.push(text.slice(start, i + 1));
+              start = -1;
+            }
+          }
+        }
+        return out;
+      }
+
+      function normalizePayload(data){
+        if (Array.isArray(data)) return data;
+        if (data && Array.isArray(data.entries)) return data.entries;
+        if (data && Array.isArray(data.lines)) return data.lines;
+        if (data && Array.isArray(data.log)) return data.log;
+        if (typeof data === 'string') return textToEntries(data);
+        if (data && typeof data === 'object') return [data];
+        return [];
+      }
+
+      function textToEntries(text){
+        const trimmed = String(text || '').trim();
+        if (!trimmed) return [];
+        const compact = splitConcatenatedJson(trimmed);
+        if (compact.length) return compact.map(x => tryParseJsonLine(x) || { msg: x });
+        return trimmed.split(/\r?\n/).filter(Boolean).map(line => tryParseJsonLine(line) || { msg: line });
+      }
+
+      function inferSource(msg){
+        const upper = String(msg || '').toUpperCase();
+        const keys = ['TWITCHAUTH','TWITCH','TIKTOK','YOUTUBE','HTTP','CONFIG','MODE-S','SYSTEM'];
+        for (const key of keys){
+          if (upper.includes(key + ':') || upper.startsWith(key) || upper.includes('[' + key + ']')) return key;
+        }
+        return 'OTHER';
+      }
+
+      function cleanMessage(msg, source){
+        let s = String(msg || '').trim();
+        if (source && source !== 'OTHER'){
+          s = s.replace(new RegExp('^' + source.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&') + '\s*:\s*', 'i'), '');
+          s = s.replace(new RegExp('^\\[' + source.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&') + '\]\s*', 'i'), '');
+        }
+        return s;
+      }
+
+      function inferSeverity(msg){
+        const s = String(msg || '').toLowerCase();
+        if (/(error|failed|cannot|invalid|denied|exception|fatal)/.test(s)) return 'error';
+        if (/(warn|warning|retry|timeout|stopped|disconnect)/.test(s)) return 'warn';
+        if (/(ok|started|listening|loaded|succeeded|connected|ready)/.test(s)) return 'success';
+        return 'info';
+      }
+
+      function formatTime(tsMs){
+        const n = Number(tsMs);
+        if (!Number.isFinite(n)) return '—';
+        const d = new Date(n);
+        const pad = v => String(v).padStart(2, '0');
+        const ms = String(d.getMilliseconds()).padStart(3, '0');
+        return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${ms}`;
+      }
+
+      function normalizeEntry(entry, idx){
+        const raw = typeof entry === 'object' ? entry : { msg: String(entry) };
+        const msg = raw.msg || raw.message || raw.text || JSON.stringify(raw);
+        const source = inferSource(msg);
+        const severity = inferSeverity(msg);
+        return {
+          id: raw.id ?? idx,
+          ts_ms: raw.ts_ms ?? raw.ts ?? Date.now(),
+          time: formatTime(raw.ts_ms ?? raw.ts),
+          source,
+          severity,
+          msg: cleanMessage(msg, source),
+          raw,
+          searchable: `${source} ${msg} ${JSON.stringify(raw)}`.toLowerCase(),
+        };
+      }
+
+      function prettyRaw(entry){
+        try { return JSON.stringify(entry.raw, null, 2); }
+        catch { return String(entry.raw); }
+      }
+
+      function updateSourceChips(){
+        const set = new Set(state.all.map(x => x.source));
+        const ordered = sourcePriority.filter(x => x === 'ALL' || set.has(x)).concat([...set].filter(x => !sourcePriority.includes(x)).sort());
+        el.sourceFilter.innerHTML = ordered.map(source => `
+          <button class="diag-chip ${state.source === source ? 'is-active' : ''}" data-source="${escapeHtml(source)}" type="button">${escapeHtml(source)}</button>
+        `).join('');
+        el.sourceFilter.querySelectorAll('[data-source]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            state.source = btn.dataset.source;
+            applyFilters();
+          });
+        });
+      }
+
+      function renderList(){
+        if (!state.visible.length){
+          el.list.innerHTML = `<div class="diag-empty">No log entries match the current filters. A little silence from the machine for once.</div>`;
+          renderDetail(null);
+          return;
+        }
+        el.list.innerHTML = state.visible.map(entry => {
+          const selected = String(entry.id) === String(state.selectedId);
+          return `
+            <div class="diag-row ${selected ? 'is-selected' : ''}" data-id="${escapeHtml(entry.id)}">
+              <div class="diag-time">${escapeHtml(entry.time)}</div>
+              <div><span class="diag-source diag-source--${escapeHtml(entry.source)}">${escapeHtml(entry.source)}</span></div>
+              <div class="diag-msg">${escapeHtml(state.pretty ? entry.msg : JSON.stringify(entry.raw))}</div>
+              <div class="diag-sev diag-sev--${escapeHtml(entry.severity)}"></div>
+            </div>`;
+        }).join('');
+        el.list.querySelectorAll('.diag-row').forEach(row => row.addEventListener('click', () => {
+          state.selectedId = row.dataset.id;
+          renderList();
+          renderDetail(state.visible.find(x => String(x.id) === String(state.selectedId)) || null);
+        }));
+        const selected = state.visible.find(x => String(x.id) === String(state.selectedId)) || state.visible[0];
+        state.selectedId = selected ? selected.id : null;
+        if (selected) renderDetail(selected);
+        if (el.autoScroll.checked) el.list.scrollTop = el.list.scrollHeight;
+      }
+
+      function renderDetail(entry){
+        if (!entry){
+          el.detailTitle.textContent = 'No entry selected';
+          el.detailMeta.textContent = 'Pick a row on the left to inspect it properly.';
+          el.detailMessage.textContent = 'Nothing selected yet.';
+          el.detailRaw.textContent = '{ }';
+          return;
+        }
+        el.detailTitle.textContent = `${entry.source} • ${entry.severity.toUpperCase()}`;
+        el.detailMeta.textContent = `${entry.time} • id ${entry.id}`;
+        el.detailMessage.textContent = entry.msg;
+        el.detailRaw.textContent = prettyRaw(entry);
+      }
+
+      function applyFilters(){
+        const search = state.search.trim().toLowerCase();
+        state.visible = state.all.filter(entry => {
+          if (state.source !== 'ALL' && entry.source !== state.source) return false;
+          if (state.importantOnly && !['warn','error'].includes(entry.severity)) return false;
+          if (search && !entry.searchable.includes(search)) return false;
+          return true;
+        });
+        el.visibleCount.textContent = String(state.visible.length);
+        el.loadedCount.textContent = String(state.all.length);
+        el.sourceCount.textContent = String(new Set(state.all.map(x => x.source)).size);
+        const lastError = [...state.all].reverse().find(x => x.severity === 'error');
+        el.lastError.textContent = lastError ? `${lastError.source}: ${lastError.msg}` : 'None';
+        el.footerLeft.textContent = `${state.visible.length} of ${state.all.length} entries displayed`;
+        el.footerRight.textContent = state.pretty ? 'Pretty view' : 'Raw view';
+        updateSourceChips();
+        renderList();
+      }
+
+      async function fetchLog(){
+        if (state.clearView) return;
+        try {
+          const res = await fetch('/api/log', { cache: 'no-store' });
+          const text = await res.text();
+          let parsed;
+          try { parsed = normalizePayload(JSON.parse(text)); }
+          catch { parsed = textToEntries(text); }
+          state.all = parsed.map(normalizeEntry);
+          applyFilters();
+        } catch (err) {
+          state.all = [normalizeEntry({ id: 'fetch-error', msg: `HTTP: Failed to load /api/log: ${err && err.message ? err.message : err}` }, 0)];
+          applyFilters();
+        }
+      }
+
+      el.search.addEventListener('input', e => { state.search = e.target.value || ''; applyFilters(); });
+      el.importantOnly.addEventListener('change', e => { state.importantOnly = !!e.target.checked; applyFilters(); });
+      el.btnPretty.addEventListener('click', () => {
+        state.pretty = !state.pretty;
+        el.btnPretty.textContent = state.pretty ? 'Raw' : 'Pretty';
+        applyFilters();
+      });
+      el.btnClear.addEventListener('click', () => {
+        state.clearView = true;
+        state.all = [];
+        state.visible = [];
+        applyFilters();
+      });
+      el.btnCopyLog.addEventListener('click', async () => {
+        const text = state.visible.map(entry => state.pretty ? `[${entry.time}] [${entry.source}] ${entry.msg}` : JSON.stringify(entry.raw)).join('\n');
+        await navigator.clipboard.writeText(text);
+      });
+      el.btnCopySelected.addEventListener('click', async () => {
+        const entry = state.visible.find(x => String(x.id) === String(state.selectedId));
+        if (!entry) return;
+        await navigator.clipboard.writeText(prettyRaw(entry));
+      });
+      el.btnBack.addEventListener('click', () => { window.location.href = '/app/index.html'; });
+
+      fetchLog();
+      setInterval(fetchLog, 2000);
+    })();
+  </script>
 </body>
 </html>
