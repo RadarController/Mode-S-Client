@@ -713,7 +713,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 return true;
                 };
             opt.stop_twitch = [&]() -> bool {
-                PlatformControl::StopTwitch(twitch, state, [](const std::wstring& s) { LogLine(s); });
+                PlatformControl::StopTwitch(twitch, twitchEventSub, state, [](const std::wstring& s) { LogLine(s); });
                 return true;
                 };
 
@@ -872,42 +872,15 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             twitchAuth.on_tokens_updated = [&](const std::string& access,
                 const std::string& /*refresh*/,
                 const std::string& login) {
-                    LogLine(L"TWITCH: tokens updated - restarting EventSub + IRC");
-
                     // Defensive: validated login can be empty depending on validate/refresh edge cases.
                     const std::string effective_login = !login.empty() ? login : config.twitch_login;
+                    LogLine(L"TWITCH: tokens updated - refreshing EventSub token and restarting IRC");
 
+                    // Keep config aligned with the validated login we actually use elsewhere.
+                    config.twitch_login = effective_login;
+
+                    // EventSub handles token changes by reconnecting/resubscribing internally.
                     twitchEventSub.UpdateAccessToken(access);
-                    twitchEventSub.Stop();
-                    twitchEventSub.Start(
-                        config.twitch_client_id,
-                        access,
-                        config.twitch_login,
-
-                        // EventSub -> Chat (optional messages you inject)
-                        [&](const ChatMessage& msg) {
-                            ChatMessage c = msg;
-                            c.is_event = true;
-                            chat.Add(std::move(c));
-                        },
-
-                        // EventSub -> Alerts overlay
-                        [&](const nlohmann::json& ev) { state.add_twitch_eventsub_event(ev); },
-
-                        // EventSub -> Status/health (THIS is what makes /api/twitch/eventsub/status meaningful)
-                        [&](const nlohmann::json& st) {
-                            state.set_twitch_eventsub_status(st);
-
-                            // Push new error events into AppState's ring buffer (optional but useful)
-                            static std::uint64_t last_seq = 0;
-                            const std::uint64_t seq = st.value("last_error_seq", (std::uint64_t)0);
-                            if (seq != 0 && seq != last_seq) {
-                                last_seq = seq;
-                                const std::string msg = st.value("last_error", std::string{});
-                                if (!msg.empty()) state.push_twitch_eventsub_error(msg);
-                            }
-                        }
-                    );
 
                     PlatformControl::StartOrRestartTwitchIrc(
                         twitch, state, chat,
