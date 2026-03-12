@@ -9,6 +9,7 @@ class AppState;
 class ChatAggregator;
 class TikTokSidecar;
 class TwitchIrcWsClient;
+class TwitchEventSubWsClient;
 struct AppConfig;
 
 namespace PlatformControl {
@@ -47,6 +48,6 @@ bool StartOrRestartTwitchIrc(
 // Stops helpers (also clears AppState live flags + viewers to avoid stale UI).
 void StopTikTok(TikTokSidecar& tiktok, AppState& state, LogFn log);
 void StopYouTube(TikTokSidecar& youtube, AppState& state, LogFn log);
-void StopTwitch(TwitchIrcWsClient& twitch, AppState& state, LogFn log);
+void StopTwitch(TwitchIrcWsClient& twitch, TwitchEventSubWsClient& twitchEventSub, AppState& state, LogFn log);
 
 } // namespace PlatformControl

@@ -8,6 +8,7 @@
 
 #include "tiktok/TikTokSidecar.h"
 #include "twitch/TwitchIrcWsClient.h"
+#include "twitch/TwitchEventSubWsClient.h"
 #include "chat/ChatAggregator.h"
 #include "AppState.h"
 
@@ -291,11 +292,12 @@ void StopYouTube(TikTokSidecar& youtube, AppState& state, LogFn log) {
     state.set_youtube_viewers(0);
     if (log) log(L"YOUTUBE: stopped.");
 }
-void StopTwitch(TwitchIrcWsClient& twitch, AppState& state, LogFn log) {
+void StopTwitch(TwitchIrcWsClient& twitch, TwitchEventSubWsClient& twitchEventSub, AppState& state, LogFn log) {
     twitch.stop();
+    twitchEventSub.Stop();
     state.set_twitch_live(false);
     state.set_twitch_viewers(0);
-    if (log) log(L"TWITCH: stopped.");
+    if (log) log(L"TWITCH: stopped IRC + EventSub.");
 }
 
 } // namespace PlatformControl
