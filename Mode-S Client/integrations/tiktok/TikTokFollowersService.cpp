@@ -9,6 +9,7 @@
 #include <sstream>
 #include <cstdint>
 #include <algorithm>
+#include <vector>
 
 #include "json.hpp"
 #include "AppConfig.h"
@@ -195,7 +196,33 @@ static bool TryParseFollowersFromSigi(const json& j, const std::string& uniqueId
     return false;
 }
 
-static bool TryExtractFollowerCount(const std::string& html, const std::string& uniqueId, int& outFollowers)
+static bool TryParseFollowersFromUniversal(const json& j, const std::string& uniqueId, int& outFollowers)
+{
+    if (!j.is_object()) return false;
+    if (!j.contains("__DEFAULT_SCOPE__")) return false;
+    const auto& scope = j["__DEFAULT_SCOPE__"];
+    if (!scope.is_object()) return false;
+
+    for (const char* k : { "webapp.user-detail", "webapp.user-detail.0", "webapp.user-detail.1" }) {
+        if (!scope.contains(k)) continue;
+        const auto& node = scope[k];
+        if (!node.is_object()) continue;
+        if (!node.contains("userInfo") || !node["userInfo"].is_object()) continue;
+        const auto& ui = node["userInfo"];
+        std::string u = SanitizeTikTok(ui.value("user", json::object()).value("uniqueId", ""));
+        if (!u.empty() && u != uniqueId) continue;
+        if (ui.contains("stats") && ui["stats"].is_object()) {
+            const auto& st = ui["stats"];
+            if (st.contains("followerCount")) {
+                if (st["followerCount"].is_number_integer()) { outFollowers = st["followerCount"].get<int>(); return true; }
+                if (st["followerCount"].is_number()) { outFollowers = (int)st["followerCount"].get<double>(); return true; }
+            }
+        }
+    }
+    return false;
+}
+
+static bool TryExtractFollowerCount(const std::string& html, const std::string& uniqueId, int& outFollowers, std::wstring* outSource = nullptr)
 {
     // First choice: SIGI_STATE
     {
@@ -203,7 +230,10 @@ static bool TryExtractFollowerCount(const std::string& html, const std::string& 
         if (ExtractJsonScript(html, "SIGI_STATE", js)) {
             try {
                 auto j = json::parse(js);
-                if (TryParseFollowersFromSigi(j, uniqueId, outFollowers)) return true;
+                if (TryParseFollowersFromSigi(j, uniqueId, outFollowers)) {
+                    if (outSource) *outSource = L"SIGI_STATE";
+                    return true;
+                }
             } catch (...) {}
         }
     }
@@ -214,32 +244,54 @@ static bool TryExtractFollowerCount(const std::string& html, const std::string& 
         if (ExtractJsonScript(html, "__UNIVERSAL_DATA_FOR_REHYDRATION__", js)) {
             try {
                 auto j = json::parse(js);
-                // Often: { "__DEFAULT_SCOPE__": { "webapp.user-detail": { "userInfo": { "user": {...}, "stats": {...}}}}}
-                if (j.contains("__DEFAULT_SCOPE__")) {
-                    const auto& scope = j["__DEFAULT_SCOPE__"];
-                    // Try a couple of common keys without being too clever.
-                    for (const char* k : { "webapp.user-detail", "webapp.user-detail.0", "webapp.user-detail.1" }) {
-                        if (!scope.contains(k)) continue;
-                        const auto& node = scope[k];
-                        if (!node.is_object()) continue;
-                        if (!node.contains("userInfo") || !node["userInfo"].is_object()) continue;
-                        const auto& ui = node["userInfo"];
-                        std::string u = SanitizeTikTok(ui.value("user", json::object()).value("uniqueId", ""));
-                        if (!u.empty() && u != uniqueId) continue;
-                        if (ui.contains("stats") && ui["stats"].is_object()) {
-                            const auto& st = ui["stats"];
-                            if (st.contains("followerCount")) {
-                                if (st["followerCount"].is_number_integer()) { outFollowers = st["followerCount"].get<int>(); return true; }
-                                if (st["followerCount"].is_number()) { outFollowers = (int)st["followerCount"].get<double>(); return true; }
-                            }
-                        }
-                    }
+                if (TryParseFollowersFromUniversal(j, uniqueId, outFollowers)) {
+                    if (outSource) *outSource = L"__UNIVERSAL_DATA_FOR_REHYDRATION__";
+                    return true;
                 }
             } catch (...) {}
         }
     }
 
     return false;
+}
+
+static void AppendCookiePart(std::wstring& cookie, const wchar_t* name, const std::string& value)
+{
+    if (value.empty()) return;
+    if (!cookie.empty()) cookie += L"; ";
+    cookie += name;
+    cookie += L"=";
+    cookie += ToW(value);
+}
+
+static std::wstring BuildRequestHeaders(const AppConfig& config, bool* outUsingCookies)
+{
+    std::wstring hdr =
+        L"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36\r\n"
+        L"Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n"
+        L"Accept-Language: en-GB,en;q=0.9\r\n"
+        L"Cache-Control: no-cache\r\n"
+        L"Pragma: no-cache\r\n";
+
+    std::wstring cookie;
+    AppendCookiePart(cookie, L"sessionid", Trim(config.tiktok_sessionid));
+    AppendCookiePart(cookie, L"sessionid_ss", Trim(config.tiktok_sessionid_ss));
+    AppendCookiePart(cookie, L"tt-target-idc", Trim(config.tiktok_tt_target_idc));
+
+    const bool usingCookies = !cookie.empty();
+    if (outUsingCookies) *outUsingCookies = usingCookies;
+
+    if (usingCookies) {
+        hdr += L"Cookie: " + cookie + L"\r\n";
+    }
+    return hdr;
+}
+
+static std::wstring HttpErrorMessage(const HttpResult& r)
+{
+    std::wstring msg = L"TikTok: HTTP error " + std::to_wstring((unsigned)r.status);
+    if (r.winerr) msg += L" (winerr=" + std::to_wstring((unsigned)r.winerr) + L")";
+    return msg;
 }
 
 } // namespace
@@ -255,10 +307,12 @@ std::thread StartTikTokFollowersPoller(
 
         std::string lastUser;
         int lastFollowers = -1;
+        bool lastUsingCookies = false;
+        int consecutiveFailures = 0;
 
         auto set_status = [&](const std::wstring& s) {
             SafeCall(cb.set_status, s);
-            };
+        };
 
         while (running) {
             std::string user = SanitizeTikTok(config.tiktok_unique_id);
@@ -268,49 +322,68 @@ std::thread StartTikTokFollowersPoller(
                 continue;
             }
 
+            bool usingCookies = false;
+            std::wstring hdr = BuildRequestHeaders(config, &usingCookies);
+
             // If username changes, force a refresh.
             if (user != lastUser) {
                 lastUser = user;
                 lastFollowers = -1;
+                consecutiveFailures = 0;
                 set_status(L"TikTok: polling followers…");
+                SafeCall(cb.log, L"TIKTOK: followers poller bound to @" + ToW(user));
             }
 
-            // Fetch TikTok profile page HTML
-            // NOTE: This is "best effort" scraping and may break if TikTok changes the page format.
-            std::wstring hdr =
-                L"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\r\n"
-                L"Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n"
-                L"Accept-Language: en-GB,en;q=0.9\r\n";
+            if (usingCookies != lastUsingCookies) {
+                lastUsingCookies = usingCookies;
+                SafeCall(cb.log, usingCookies
+                    ? L"TIKTOK: followers poller using stored TikTok cookies"
+                    : L"TIKTOK: followers poller running without TikTok cookies");
+            }
 
             std::wstring path = L"/@" + ToW(user);
             HttpResult r = WinHttpRequest(L"GET", L"www.tiktok.com", 443, path, hdr, true);
 
             if (r.status != 200 || r.body.empty()) {
-                std::wstring msg = L"TikTok: HTTP error " + std::to_wstring((unsigned)r.status);
-                if (r.winerr) msg += L" (winerr=" + std::to_wstring((unsigned)r.winerr) + L")";
+                consecutiveFailures++;
+                std::wstring msg = HttpErrorMessage(r);
                 set_status(msg);
-                SafeCall(cb.log, msg);
-                Sleep(15000);
+                SafeCall(cb.log, L"TIKTOK: followers poll failed for @" + ToW(user) + L": " + msg);
+                const int backoffMs = (consecutiveFailures >= 3) ? 30000 : 15000;
+                for (int i = 0; i < backoffMs / 1000 && running; ++i) Sleep(1000);
                 continue;
             }
 
             int followers = 0;
-            if (!TryExtractFollowerCount(r.body, user, followers)) {
+            std::wstring source;
+            if (!TryExtractFollowerCount(r.body, user, followers, &source)) {
+                consecutiveFailures++;
                 set_status(L"TikTok: follower parse error");
-                SafeCall(cb.log, L"TIKTOK: failed to parse followerCount from profile page");
-                Sleep(20000);
+                std::wstring msg = L"TIKTOK: failed to parse followerCount for @" + ToW(user);
+                if (!usingCookies) {
+                    msg += L" (try adding TikTok cookies in Settings)";
+                }
+                SafeCall(cb.log, msg);
+                const int backoffMs = (consecutiveFailures >= 3) ? 45000 : 20000;
+                for (int i = 0; i < backoffMs / 1000 && running; ++i) Sleep(1000);
                 continue;
             }
+
+            consecutiveFailures = 0;
 
             if (followers != lastFollowers) {
                 lastFollowers = followers;
                 state.set_tiktok_followers(followers);
                 SafeCall(cb.set_followers, followers);
-                set_status(L"TikTok: followers ok");
+                SafeCall(cb.log, L"TIKTOK: followers updated @" + ToW(user) + L" = " + std::to_wstring(followers) + L" via " + source);
             }
 
-            // Poll interval: 60s. (TikTok is rate-limited; keep this gentle.)
+            set_status(usingCookies ? L"TikTok: followers ok (cookies)" : L"TikTok: followers ok");
+
+            // Poll interval: 60s. Keep this gentle.
             for (int i = 0; i < 60 && running; ++i) Sleep(1000);
         }
+
+        SafeCall(cb.log, L"TIKTOK: followers poller thread exiting");
     });
 }
