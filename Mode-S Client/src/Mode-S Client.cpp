@@ -29,6 +29,8 @@
 #include "version.h"
 #include "AppConfig.h"
 #include "AppState.h"
+#include "app/AppBootstrap.h"
+#include "app/AppShutdown.h"
 #include "core/StringUtil.h"
 #include "http/HttpServer.h"
 #include "chat/ChatAggregator.h"
@@ -263,93 +265,22 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     static EuroScopeIngestService euroscope;
     static ObsWsClient obs;
 
-    // Centralised shutdown routine (idempotent).
-   // Lives inside WndProc so it can see the static service/thread instances above.
-    auto BeginShutdown = [&](HWND hwndToDestroy)
-        {
-            static std::atomic<bool> shuttingDown{ false };
-            if (shuttingDown.exchange(true)) return;
-
-            LogLine(L"SHUTDOWN: BeginShutdown()");
-
-            // 1) Flip flags so loops exit
-            gRunning = false;
-            gTwitchHelixRunning = false;
-            LogLine(L"SHUTDOWN: flags set");
-
-            // 2) Stop HTTP early
-            if (gHttp) {
-                LogLine(L"SHUTDOWN: stopping HTTP");
-                gHttp->Stop();
-                gHttp.reset();
-                LogLine(L"SHUTDOWN: HTTP stopped");
-            }
-
-            // 3) Join threads next
-            if (tiktokFollowersThread.joinable()) {
-                LogLine(L"SHUTDOWN: join tiktokFollowersThread...");
-                tiktokFollowersThread.join();
-                LogLine(L"SHUTDOWN: joined tiktokFollowersThread");
-            }
-
-            if (twitchHelixThread.joinable()) {
-                LogLine(L"SHUTDOWN: join twitchHelixThread...");
-                twitchHelixThread.join();
-                LogLine(L"SHUTDOWN: joined twitchHelixThread");
-            }
-
-            if (metricsThread.joinable()) {
-                LogLine(L"SHUTDOWN: join metricsThread...");
-                metricsThread.join();
-                LogLine(L"SHUTDOWN: joined metricsThread");
-            }
-
-            // 4) Stop services last (less risk of deadlock)
-            LogLine(L"SHUTDOWN: stopping services...");
-
-            LogLine(L"SHUTDOWN: stopping twitchEventSub...");
-            try { twitchEventSub.Stop(); }
-            catch (...) {}
-            LogLine(L"SHUTDOWN: stopped twitchEventSub");
-
-            LogLine(L"SHUTDOWN: stopping twitchAuth...");
-            try { twitchAuth.Stop(); }
-            catch (...) {}
-            LogLine(L"SHUTDOWN: stopped twitchAuth");
-
-            LogLine(L"SHUTDOWN: stopping twitch...");
-            try { twitch.stop(); }
-            catch (...) {}
-            LogLine(L"SHUTDOWN: stopped twitch");
-
-            LogLine(L"SHUTDOWN: stopping youtubeChat...");
-            try { youtubeChat.stop(); }
-            catch (...) {}
-            LogLine(L"SHUTDOWN: stopped youtubeChat");
-
-            LogLine(L"SHUTDOWN: stopping youtube...");
-            try { youtube.stop(); }
-            catch (...) {}
-            LogLine(L"SHUTDOWN: stopped youtube");
-
-            LogLine(L"SHUTDOWN: stopping tiktok...");
-            try { tiktok.stop(); }
-            catch (...) {}
-            LogLine(L"SHUTDOWN: stopped tiktok");
-
-            LogLine(L"SHUTDOWN: services stopped");
-
-            // Destroy window to reach WM_DESTROY -> PostQuitMessage
-            if (hwndToDestroy && IsWindow(hwndToDestroy)) {
-                LogLine(L"SHUTDOWN: destroying window");
-                DestroyWindow(hwndToDestroy);
-            }
+    auto BuildShutdownDeps = [&]() -> AppShutdown::Dependencies {
+        return AppShutdown::Dependencies{
+            gHttp,
+            metricsThread,
+            twitchHelixThread,
+            tiktokFollowersThread,
+            twitchEventSub,
+            twitchAuth,
+            twitch,
+            youtubeChat,
+            youtube,
+            tiktok,
+            gRunning,
+            gTwitchHelixRunning
         };
-
-    // Subscribe the chatbot handler only once.
-    // Must live at function scope (not inside a switch/case) to avoid C++ case-jump
-    // rules that trigger C2360/C2361.
-    static bool botSubscribed = false;
+        };
 
     // Restartable Helix poller (needed when Twitch channel/login changes).
     auto RestartTwitchHelixPoller = [&](const std::string& reason) {
@@ -395,512 +326,76 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
     case WM_CREATE:
     {
-        // Load config first (so edits start populated)
-        (void)config.Load();
-
-        // -----------------------------------------------------------------
-        // Bot commands persistence (2.2)
-        // Store bot_commands.json next to the exe, and load it at startup.
-        // -----------------------------------------------------------------
-        try {
-            std::filesystem::path botPath = std::filesystem::path(GetExeDir()) / "bot_commands.json";
-            state.set_bot_commands_storage_path(ToUtf8(botPath.wstring()));
-            if (state.load_bot_commands_from_disk()) {
-                LogLine(L"BOT: loaded commands from bot_commands.json");
-            }
-            else {
-                LogLine(L"BOT: no bot_commands.json found (or empty/invalid) - starting with in-memory defaults");
-            }
-        }
-        catch (...) {
-            LogLine(L"BOT: failed to set/load bot commands storage path");
-        }
-
-        // -----------------------------------------------------------------
-        // Bot safety settings persistence (2.3)
-        // Store bot_settings.json next to the exe, and load it at startup.
-        // -----------------------------------------------------------------
-        try {
-            std::filesystem::path setPath = std::filesystem::path(GetExeDir()) / "bot_settings.json";
-            state.set_bot_settings_storage_path(ToUtf8(setPath.wstring()));
-            if (state.load_bot_settings_from_disk()) {
-                LogLine(L"BOT: loaded settings from bot_settings.json");
-            }
-            else {
-                LogLine(L"BOT: no bot_settings.json found (or empty/invalid) - using defaults");
-            }
-        }
-        catch (...) {
-            LogLine(L"BOT: failed to set/load bot settings storage path");
-        }
-
-
-        // -----------------------------------------------------------------
-        // Overlay header settings persistence
-        // Store overlay_header.json next to the exe, and load it at startup.
-        // -----------------------------------------------------------------
-        try {
-            std::filesystem::path hdrPath = std::filesystem::path(GetExeDir()) / "overlay_header.json";
-            state.set_overlay_header_storage_path(ToUtf8(hdrPath.wstring()));
-            if (state.load_overlay_header_from_disk()) {
-                LogLine(L"OVERLAY: loaded header settings from overlay_header.json");
-            }
-            else {
-                LogLine(L"OVERLAY: no overlay_header.json found (or empty/invalid) - using defaults");
-            }
-        }
-        catch (...) {
-            LogLine(L"OVERLAY: failed to set/load overlay header settings path");
-        }
-
-        // Allow LogLine() to feed the Web UI (/api/log)
-        UiLog_SetWebLogState(&state);
-
-        // -----------------------------------------------------------------
-        // Bot command handler (injects into ChatAggregator)
-        // -----------------------------------------------------------------
-        // We subscribe once during WM_CREATE. When any chat message that begins
-        // with '!' is added to the unified ChatAggregator, we attempt to resolve
-        // a command and inject a single bot reply back into the same feed.
-        //
-        // NOTE:
-        // - This does NOT send messages to Twitch/YouTube/TikTok yet.
-        // - Role data (mod/broadcaster) is not available at this stage, so both
-        //   are treated as false here. The test endpoint can simulate roles.
-        if (!botSubscribed) {
-            botSubscribed = true;
-            chat.Subscribe([pChat = &chat, pState = &state, pTwitch = &twitch, pTikTok = &tiktok](const ChatMessage& m) {
-                // Avoid responding to ourselves.
-                if (m.user == "StreamingATC.Bot") return;
-                if (m.message.size() < 2 || m.message[0] != '!') return;
-
-                auto to_lower = [](std::string s) {
-                    std::transform(s.begin(), s.end(), s.begin(),
-                        [](unsigned char c) { return (char)std::tolower(c); });
-                    return s;
-                    };
-                auto replace_all = [](std::string s, const std::string& from, const std::string& to) {
-                    if (from.empty()) return s;
-                    size_t pos = 0;
-                    while ((pos = s.find(from, pos)) != std::string::npos) {
-                        s.replace(pos, from.size(), to);
-                        pos += to.size();
-                    }
-                    return s;
-                    };
-
-                // Extract first token after '!'
-                size_t start = 1;
-                while (start < m.message.size() && std::isspace((unsigned char)m.message[start])) start++;
-                size_t end = start;
-                while (end < m.message.size() && !std::isspace((unsigned char)m.message[end])) end++;
-                if (end <= start) return;
-
-                std::string cmd_lc = to_lower(m.message.substr(start, end - start));
-                if (cmd_lc.empty()) return;
-
-                const long long now_ms_ll = (long long)std::chrono::duration_cast<std::chrono::milliseconds>(
-                    std::chrono::system_clock::now().time_since_epoch()).count();
-
-                // Load bot safety settings (configurable via bot_settings.json).
-                const AppState::BotSettings bot_settings = pState->bot_settings_snapshot();
-                if (bot_settings.silent_mode) {
-                    return;
-                }
-
-                // -----------------------------------------------------------------
-                // Global safety limits (2.3): per-user + per-platform rate limiting
-                // -----------------------------------------------------------------
-                // These sit on top of per-command cooldowns to prevent spam/ban risk.
-                // They apply regardless of command.
-                static std::mutex rl_mu;
-                static std::unordered_map<std::string, long long> last_by_user;
-                static std::unordered_map<std::string, long long> last_by_platform;
-
-                const long long kUserGapMs = (long long)bot_settings.per_user_gap_ms;
-                const long long kPlatformGapMs = (long long)bot_settings.per_platform_gap_ms;
-
-                std::string platform_lc = to_lower(m.platform);
-                std::string user_key = platform_lc + "|" + m.user;
-
-                {
-                    std::lock_guard<std::mutex> lk(rl_mu);
-                    if (kPlatformGapMs > 0) {
-                        auto itp = last_by_platform.find(platform_lc);
-                        if (itp != last_by_platform.end() && (now_ms_ll - itp->second) < kPlatformGapMs) {
-                            return;
-                        }
-                    }
-                    if (kUserGapMs > 0) {
-                        auto itu = last_by_user.find(user_key);
-                        if (itu != last_by_user.end() && (now_ms_ll - itu->second) < kUserGapMs) {
-                            return;
-                        }
-                    }
-                    // Reserve slots now (so parallel threads don't double-fire).
-                    last_by_platform[platform_lc] = now_ms_ll;
-                    last_by_user[user_key] = now_ms_ll;
-                }
-
-                // Enforce enabled/cooldown/scope (2.2: role flags carried on ChatMessage).
-                std::string template_reply = pState->bot_try_get_response(
-                    cmd_lc,
-                    /*is_mod*/m.is_mod,
-                    /*is_broadcaster*/m.is_broadcaster,
-                    now_ms_ll
-                );
-                if (template_reply.empty()) return;
-
-                std::string reply = template_reply;
-                reply = replace_all(reply, "{user}", m.user);
-                reply = replace_all(reply, "{platform}", platform_lc);
-
-                // Clamp reply length for safety (platform limits vary; keep conservative).
-                const size_t kMaxReplyLen = bot_settings.max_reply_len;
-                if (kMaxReplyLen > 0 && reply.size() > kMaxReplyLen) {
-                    reply.resize(kMaxReplyLen);
-                }
-                if (kMaxReplyLen == 0) {
-                    // Explicitly configured to suppress replies.
-                    return;
-                }
-
-                ChatMessage bot{};
-                bot.platform = m.platform;
-                bot.user = "StreamingATC.Bot";
-                bot.message = reply;
-                bot.ts_ms = (uint64_t)(now_ms_ll + 1);
-                pChat->Add(std::move(bot));
-
-                // Also send back to the origin platform (Twitch first).
-                // This keeps overlay injection but makes the bot respond on-platform too.
-                if (platform_lc == "twitch" && pTwitch) {
-                    if (!pTwitch->SendPrivMsg(reply)) {
-                        LogLine(L"BOT: Twitch send failed");
-                    }
-                }
-                // Send back to the origin platform (Tiktok).
-                if (platform_lc == "tiktok" && pTikTok) {
-                    if (!pTikTok->send_chat(reply)) {
-                        LogLine(L"BOT: TikTok send failed (sidecar)");
-                    }
-                }
-
-                });
-        }
-
-        // Log what AppConfig actually loaded (helps diagnose mismatched JSON keys vs. AppConfig mapping).
-        {
-            std::wstring snap = L"CONFIG: AppConfig snapshot ";
-            snap += L"twitch_login='";
-            snap += ToW(config.twitch_login);
-            snap += L"' twitch_client_id='";
-            snap += ToW(config.twitch_client_id);
-            snap += L"' twitch_client_secret_len=";
-            snap += std::to_wstring(config.twitch_client_secret.size());
-            LogLine(snap.c_str());
-        }
-
-        // Create a hidden log control so existing LogLine() plumbing still works (optional).
-        HWND hLog = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
-            WS_CHILD | ES_MULTILINE | ES_READONLY | WS_VSCROLL, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
-        UiLog_SetLogHwnd(hLog);
+        AppBootstrap::Dependencies deps{
+            hwnd,
+            config,
+            state,
+            chat,
+            tiktok,
+            youtube,
+            twitch,
+            twitchEventSub,
+            twitchAuth,
+            youtubeAuth,
+            youtubeChat,
+            gHttp,
+            metricsThread,
+            twitchHelixThread,
+            tiktokFollowersThread,
+            euroscope,
+            obs,
+            gRunning,
+            gTwitchHelixRunning,
+            gTwitchHelixBoundLogin
+        };
 
         if (!gFloatingChat) gFloatingChat = std::make_unique<FloatingChat>();
 
-        (void)WebViewHost::Create(
-            hwnd,
+        AppBootstrap::InitializeUiAndState(
+            deps,
             kModernUiUrl,
             APP_VERSION_FILE_W,
             [hwnd](HWND) {
                 if (gFloatingChat) gFloatingChat->Open(hwnd);
             });
 
-        LogLine(L"Starting Mode-S Client overlay");
-        LogLine(L"Overlay: http://localhost:17845/overlay/chat.html");
-        LogLine(L"Metrics: http://localhost:17845/api/metrics");
-
-        if (config.tiktok_unique_id.empty() && config.twitch_login.empty() && config.youtube_handle.empty()) {
-            LogLine(L"No config.json found yet. Configure your platform details in the Settings page.");
-        }
-        else {
-            LogLine(L"Loaded config.json");
-        }
-
         PostMessageW(hwnd, WM_APP + 1, 0, 0);
         return 0;
     }
-    return 0;
 
     case WM_APP + 1:
     {
-        // Start HTTP server in background thread
-
-        // Start HTTP server (API + overlay)
-        {
-            HttpServer::Options opt;
-            opt.bind_host = "127.0.0.1";
-            opt.port = 17845;
-            opt.overlay_root = std::filesystem::path(GetExeDir()) / "assets" / "overlay";
-            // Platform control callbacks for the /app Web UI
-            opt.start_tiktok = [&]() -> bool {
-                config.tiktok_unique_id = SanitizeTikTok(config.tiktok_unique_id);
-                if (config.tiktok_unique_id.empty()) {
-                    LogLine(L"TIKTOK: username is empty - refusing to start");
-                    return false;
-                }
-
-                return PlatformControl::StartOrRestartTikTokSidecar(
-                    tiktok, state, chat,
-                    GetExeDir(),
-                    config.tiktok_unique_id,
-                    [](const std::wstring& s) { LogLine(s); });
-                };
-            opt.stop_tiktok = [&]() -> bool {
-                PlatformControl::StopTikTok(tiktok, state, [](const std::wstring& s) { LogLine(s); });
-                return true;
-                };
-
-            opt.start_twitch = [&]() -> bool {
-                config.twitch_login = SanitizeTwitchLogin(config.twitch_login);
-                if (config.twitch_login.empty()) {
-                    LogLine(L"TWITCH: channel login is empty - refusing to start");
-                    return false;
-                }
-
-                std::string token = twitchAuth.GetAccessToken().value_or("");
-                if (token.empty()) {
-                    LogLine(L"TWITCH: token not available yet (auth not ready) - refusing to start");
-                    return false;
-                }
-
-                if (gTwitchHelixBoundLogin != config.twitch_login) {
-                    RestartTwitchHelixPoller("web dashboard start");
-                }
-
-                const bool ok = PlatformControl::StartOrRestartTwitchIrc(
-                    twitch, state, chat,
-                    config.twitch_login,
-                    token,
-                    [](const std::wstring& s) { LogLine(s); });
-
-                if (!ok) return false;
-
-                twitchEventSub.Start(
-                    config.twitch_client_id,
-                    token,
-                    config.twitch_login,
-                    [&](const ChatMessage& msg) {
-                        ChatMessage c = msg;
-                        c.is_event = true;
-                        chat.Add(std::move(c));
-                    },
-                    [&](const nlohmann::json& ev) { state.add_twitch_eventsub_event(ev); },
-                    [&](const nlohmann::json& st) {
-                        state.set_twitch_eventsub_status(st);
-
-                        // Optional: push “new” error events into AppState ring buffer
-                        static std::uint64_t last_seq = 0;
-                        const std::uint64_t seq = st.value("last_error_seq", (std::uint64_t)0);
-                        if (seq != 0 && seq != last_seq) {
-                            last_seq = seq;
-                            const std::string msg = st.value("last_error", std::string{});
-                            if (!msg.empty()) state.push_twitch_eventsub_error(msg);
-                        }
-                    }
-                );
-
-                return true;
-                };
-            opt.stop_twitch = [&]() -> bool {
-                PlatformControl::StopTwitch(twitch, twitchEventSub, state, [](const std::wstring& s) { LogLine(s); });
-                return true;
-                };
-
-            opt.start_youtube = [&]() -> bool {
-                config.youtube_handle = SanitizeYouTubeHandle(config.youtube_handle);
-                if (config.youtube_handle.empty()) {
-                    LogLine(L"YOUTUBE: handle/channel is empty - refusing to start");
-                    return false;
-                }
-
-                const bool ok = PlatformControl::StartOrRestartYouTubeSidecar(
-                    youtube, state, chat,
-                    GetExeDir(),
-                    config.youtube_handle,
-                    [](const std::wstring& s) { LogLine(s); });
-
-                if (!ok) return false;
-
-                youtubeChat.start(config.youtube_handle, chat,
-                    [](const std::wstring& s) { LogLine(s); },
-                    &state);
-
-                return true;
-                };
-
-            opt.stop_youtube = [&]() -> bool {
-                PlatformControl::StopYouTube(youtube, state, [](const std::wstring& s) { LogLine(s); });
-                youtubeChat.stop();
-                return true;
-                };
-
-            // Twitch OAuth (interactive) endpoints
-            // Provides /auth/twitch/start and /auth/twitch/callback so you can (re)authorize with chat:read/chat:edit.
-            opt.twitch_auth_build_authorize_url = [&](const std::string& redirect_uri, std::string* out_error) -> std::string {
-                std::string err;
-                const std::string url = twitchAuth.BuildAuthorizeUrl(redirect_uri, &err);
-                if (url.empty()) {
-                    if (out_error) *out_error = err;
-                    LogLine(ToW(std::string("TWITCHAUTH: BuildAuthorizeUrl failed: ") + err));
-                }
-                return url;
-                };
-
-            opt.twitch_auth_handle_callback = [&](const std::string& code,
-                const std::string& state,
-                const std::string& redirect_uri,
-                std::string* out_error) -> bool {
-                    std::string err;
-                    const bool ok = twitchAuth.HandleOAuthCallback(code, state, redirect_uri, &err);
-                    if (!ok) {
-                        if (out_error) *out_error = err;
-                        LogLine(ToW(std::string("TWITCHAUTH: OAuth callback failed: ") + err));
-                    }
-                    return ok;
-                };
-
-            // YouTube OAuth (interactive) endpoints
-            // Provides /auth/youtube/start and /auth/youtube/callback so you can authorize YouTube Data API access.
-            opt.youtube_auth_build_authorize_url = [&](const std::string& redirect_uri, std::string* out_error) -> std::string {
-                std::string err;
-                const std::string url = youtubeAuth.BuildAuthorizeUrl(redirect_uri, &err);
-                if (url.empty()) {
-                    if (out_error) *out_error = err;
-                    LogLine(ToW(std::string("YTAUTH: BuildAuthorizeUrl failed: ") + err));
-                }
-                return url;
-                };
-
-            opt.youtube_auth_handle_callback = [&](const std::string& code,
-                const std::string& state,
-                const std::string& redirect_uri,
-                std::string* out_error) -> bool {
-                    std::string err;
-                    const bool ok = youtubeAuth.HandleOAuthCallback(code, state, redirect_uri, &err);
-                    if (!ok) {
-                        if (out_error) *out_error = err;
-                        LogLine(ToW(std::string("YTAUTH: OAuth callback failed: ") + err));
-                    }
-                    return ok;
-                };
-
-            // YouTube access token provider (used by /api/youtube/vod/* endpoints)
-            opt.youtube_get_access_token = []() -> std::optional<std::string> {
-                return youtubeAuth.GetAccessToken();
-                };
-
-            // YouTube OAuth status (read-only): used by the UI to show "connected" vs "not connected".
-            // IMPORTANT: Do not return tokens here; only booleans + non-sensitive metadata.
-            opt.youtube_auth_info_json = []() {
-                nlohmann::json j;
-                j["ok"] = true;
-                j["start_url"] = "/auth/youtube/start";
-                j["oauth_routes_wired"] = true;
-
-                const auto snap = youtubeAuth.GetTokenSnapshot();
-                j["has_refresh_token"] = snap.has_value() && !snap->refresh_token.empty();
-                j["has_access_token"] = snap.has_value() && !snap->access_token.empty();
-                j["expires_at_unix"] = snap.has_value() ? snap->expires_at_unix : 0;
-                j["scope"] = snap.has_value() ? snap->scope_joined : "";
-                j["channel_id"] = youtubeAuth.GetChannelId().value_or("");
-
-                // Keep existing fields for callers that display scopes (and for debug).
-                j["scopes_readable"] = std::string(YouTubeAuth::RequiredScopeReadable());
-                j["scopes_encoded"] = std::string(YouTubeAuth::RequiredScopeEncoded());
-                return j.dump(2);
-                };
-
-
-            gHttp = std::make_unique<HttpServer>(state, chat, euroscope, config, opt,
-                [](const std::wstring& s) { LogLine(s); });
-
-            gHttp->Start();
-        }
-
-        // Signal that the HTTP server is ready for WebView2 navigation.
-        WebViewHost::SetHttpReadyAndNavigate(kModernUiUrl);
-
-        metricsThread = std::thread([&]() {
-            while (gRunning) {
-                auto m = state.get_metrics();
-                obs.set_text("TOTAL_VIEWER_COUNT", std::to_string(m.total_viewers()));
-                obs.set_text("TOTAL_FOLLOWER_COUNT", std::to_string(m.total_followers()));
-                Sleep(5000);
-            }
-            });
-
-
-        if (!youtubeAuth.Start()) {
-            LogLine(L"YOUTUBE: OAuth token refresh/start failed (check config: youtube.client_id / youtube.client_secret / youtube.refresh_token)");
-        }
-        else {
-            LogLine(L"YOUTUBE: OAuth token refresh/start OK");
-        }
-
-        LogLine(L"TWITCH: starting Helix poller thread");
-
-        // Bind the poller to the current config.twitch_login.
-        RestartTwitchHelixPoller("init");
-        LogLine(L"TIKTOK: starting followers poller thread");
-        tiktokFollowersThread = StartTikTokFollowersPoller(
+        AppBootstrap::Dependencies deps{
+            hwnd,
             config,
             state,
+            chat,
+            tiktok,
+            youtube,
+            twitch,
+            twitchEventSub,
+            twitchAuth,
+            youtubeAuth,
+            youtubeChat,
+            gHttp,
+            metricsThread,
+            twitchHelixThread,
+            tiktokFollowersThread,
+            euroscope,
+            obs,
             gRunning,
-            TikTokFollowersUiCallbacks{
-                /*log*/           [](const std::wstring& s) { LogLine(s); },
-                /*set_status*/    [](const std::wstring& /*s*/) { /* optional */ },
-                /*set_followers*/ [&](int /*f*/) {}
-            }
-        );
-        // Twitch OAuth token refresh (silent) - runs during boot while splash is visible
-        {
-            LogLine(L"TWITCH: refreshing OAuth token...");
-            std::string auth_err;
-            // When TwitchAuth refreshes tokens, push the new access token into IRC + EventSub.
-// When TwitchAuth refreshes tokens, push the new access token into IRC + EventSub.
-            twitchAuth.on_tokens_updated = [&](const std::string& access,
-                const std::string& /*refresh*/,
-                const std::string& login) {
-                    // Defensive: validated login can be empty depending on validate/refresh edge cases.
-                    const std::string effective_login = !login.empty() ? login : config.twitch_login;
-                    LogLine(L"TWITCH: tokens updated - refreshing EventSub token and restarting IRC");
+            gTwitchHelixRunning,
+            gTwitchHelixBoundLogin
+        };
 
-                    // Keep config aligned with the validated login we actually use elsewhere.
-                    config.twitch_login = effective_login;
+        AppBootstrap::StartBackend(
+            deps,
+            kModernUiUrl,
+            [&](const std::string& reason) {
+                RestartTwitchHelixPoller(reason);
+            });
 
-                    // EventSub handles token changes by reconnecting/resubscribing internally.
-                    twitchEventSub.UpdateAccessToken(access);
-
-                    PlatformControl::StartOrRestartTwitchIrc(
-                        twitch, state, chat,
-                        effective_login,
-                        access,
-                        [](const std::wstring& s) { LogLine(s); }
-                    );
-                };
-
-            if (!twitchAuth.Start()) {
-                LogLine(L"TWITCH: OAuth token refresh/start failed (check config: twitch_client_id / twitch_client_secret / twitch.user_refresh_token)");
-            }
-            else {
-                LogLine(L"TWITCH: OAuth token refresh worker started");
-            }
-        }
-
-        // Signal that the app has finished initializing and the main window can be shown.
         PostMessageW(hwnd, WM_APP_SPLASH_READY, 0, 0);
-
         return 0;
     }
 
@@ -917,21 +412,29 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     }
 
     case WM_CLOSE:
-        BeginShutdown(hwnd);
+    {
+        auto deps = BuildShutdownDeps();
+        AppShutdown::BeginShutdown(deps, hwnd);
         return 0;
+    }
 
     case WM_SIZE:
         WebViewHost::ResizeToClient(hwnd);
         return 0;
 
     case WM_DESTROY:
+    {
         // Safety net: if we somehow got here without WM_CLOSE
         UiLog_SetLogHwnd(nullptr);
         SplashScreen::Destroy();
         WebViewHost::Destroy();
-        BeginShutdown(nullptr);
+
+        auto deps = BuildShutdownDeps();
+        AppShutdown::BeginShutdown(deps, nullptr);
+
         PostQuitMessage(0);
         return 0;
+    }
 
     default:
         break;
