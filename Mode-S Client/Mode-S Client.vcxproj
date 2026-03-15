@@ -200,6 +200,8 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClInclude Include="integrations\youtube\YouTubeSidecar.h" />
     <ClInclude Include="src\AppConfig.h" />
     <ClInclude Include="src\AppState.h" />
+    <ClInclude Include="src\app\AppBootstrap.h" />
+    <ClInclude Include="src\app\AppShutdown.h" />
     <ClInclude Include="src\bot\BotReplyRouter.h" />
     <ClInclude Include="src\chat\ChatAggregator.h" />
     <ClInclude Include="src\core\StringUtil.h" />
@@ -228,6 +230,8 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClCompile Include="integrations\youtube\YouTubeLiveChatService.cpp" />
     <ClCompile Include="integrations\youtube\YouTubeSidecar.cpp" />
     <ClCompile Include="src\AppState.cpp" />
+    <ClCompile Include="src\app\AppBootstrap.cpp" />
+    <ClCompile Include="src\app\AppShutdown.cpp" />
     <ClCompile Include="src\chat\ChatAggregator.cpp" />
     <ClCompile Include="src\core\StringUtil.cpp" />
     <ClCompile Include="src\floating\FloatingChat.cpp" />
