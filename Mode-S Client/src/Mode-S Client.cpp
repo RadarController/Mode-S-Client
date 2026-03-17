@@ -50,6 +50,7 @@
 #include "floating/FloatingChat.h"
 #include "platform/PlatformControl.h"
 #include "ui/WindowEffects.h"
+#include "ui/WindowLayout.h"
 #include "log/UiLog.h"
 
 #include "ui/WebViewHost.h"
@@ -167,24 +168,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     }
 
     return DefWindowProc(hwnd, msg, wParam, lParam);
-}
-
-
-static RECT CenteredWindowRect(int width, int height)
-{
-    RECT wa{};
-    SystemParametersInfoW(SPI_GETWORKAREA, 0, &wa, 0);
-
-    RECT rc{ 0, 0, width, height };
-    AdjustWindowRectEx(&rc, WS_OVERLAPPEDWINDOW, FALSE, 0);
-
-    const int windowWidth = rc.right - rc.left;
-    const int windowHeight = rc.bottom - rc.top;
-
-    const int x = wa.left + ((wa.right - wa.left) - windowWidth) / 2;
-    const int y = wa.top + ((wa.bottom - wa.top) - windowHeight) / 2;
-
-    return RECT{ x, y, x + windowWidth, y + windowHeight };
 }
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
