@@ -193,6 +193,7 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClInclude Include="integrations\tiktok\TikTokSidecar.h" />
     <ClInclude Include="integrations\twitch\TwitchAuth.h" />
     <ClInclude Include="integrations\twitch\TwitchEventSubWsClient.h" />
+    <ClInclude Include="integrations\twitch\TwitchHelixController.h" />
     <ClInclude Include="integrations\twitch\TwitchHelixService.h" />
     <ClInclude Include="integrations\twitch\TwitchIrcWsClient.h" />
     <ClInclude Include="integrations\youtube\YouTubeAuth.h" />
@@ -205,6 +206,7 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClInclude Include="src\app\AppShutdown.h" />
     <ClInclude Include="src\bot\BotReplyRouter.h" />
     <ClInclude Include="src\chat\ChatAggregator.h" />
+    <ClInclude Include="src\core\AppPaths.h" />
     <ClInclude Include="src\core\StringUtil.h" />
     <ClInclude Include="src\floating\FloatingChat.h" />
     <ClInclude Include="src\http\LocalApiClient.h" />
@@ -225,6 +227,7 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClCompile Include="integrations\tiktok\TikTokSidecar.cpp" />
     <ClCompile Include="integrations\twitch\TwitchAuth.cpp" />
     <ClCompile Include="integrations\twitch\TwitchEventSubWsClient.cpp" />
+    <ClCompile Include="integrations\twitch\TwitchHelixController.cpp" />
     <ClCompile Include="integrations\twitch\TwitchHelixService.cpp" />
     <ClCompile Include="integrations\twitch\TwitchIrcWsClient.cpp" />
     <ClCompile Include="integrations\youtube\YouTubeAuth.cpp" />
@@ -235,6 +238,7 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClCompile Include="src\app\AppRuntime.cpp" />
     <ClCompile Include="src\app\AppShutdown.cpp" />
     <ClCompile Include="src\chat\ChatAggregator.cpp" />
+    <ClCompile Include="src\core\AppPaths.cpp" />
     <ClCompile Include="src\core\StringUtil.cpp" />
     <ClCompile Include="src\floating\FloatingChat.cpp" />
     <ClCompile Include="src\http\LocalApiClient.cpp" />
