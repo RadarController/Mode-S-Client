@@ -32,16 +32,18 @@
 #include "app/AppBootstrap.h"
 #include "app/AppRuntime.h"
 #include "app/AppShutdown.h"
+#include "core/AppPaths.h"
 #include "core/StringUtil.h"
 #include "http/HttpServer.h"
 #include "chat/ChatAggregator.h"
 #include "twitch/TwitchHelixService.h"
+#include "twitch/TwitchHelixController.h"
 #include "twitch/TwitchIrcWsClient.h"
 #include "twitch/TwitchEventSubWsClient.h"
 #include "twitch/TwitchAuth.h"
-#include "youtube/YouTubeAuth.h"
 #include "tiktok/TikTokSidecar.h"
 #include "tiktok/TikTokFollowersService.h"
+#include "youtube/YouTubeAuth.h"
 #include "youtube/YouTubeLiveChatService.h"
 #include "euroscope/EuroScopeIngestService.h"
 #include "obs/ObsWsClient.h"
@@ -68,41 +70,6 @@ static std::unique_ptr<class FloatingChat> gFloatingChat;
 static AppRuntime gRuntime;
 
 // --------------------------- Helpers ----------------------------------------
-static std::wstring GetExeDir()
-{
-    wchar_t path[MAX_PATH];
-    GetModuleFileNameW(nullptr, path, MAX_PATH);
-    std::wstring p = path;
-    auto pos = p.find_last_of(L"\\/");
-    return (pos == std::wstring::npos) ? L"." : p.substr(0, pos);
-}
-
-// Read Twitch user access token from config.json.
-// Stored at: { "twitch": { "user_access_token": "..." } }
-static std::string ReadTwitchUserAccessToken()
-{
-    auto try_path = [](const std::filesystem::path& p) -> std::string {
-        try {
-            std::ifstream f(p);
-            if (!f.is_open()) return {};
-            nlohmann::json j;
-            f >> j;
-            return j.value("twitch", nlohmann::json::object()).value("user_access_token", "");
-        }
-        catch (...) {
-            return {};
-        }
-        };
-
-    // Prefer config.json next to the exe
-    std::filesystem::path p1 = std::filesystem::path(GetExeDir()) / "config.json";
-    std::string tok = try_path(p1);
-    if (!tok.empty()) return tok;
-
-    // Fallback: current working directory
-    return try_path(std::filesystem::path("config.json"));
-}
-
 static void JoinWithTimeout(std::thread& t, DWORD timeoutMs, const wchar_t* name)
 {
     if (!t.joinable()) return;
@@ -251,42 +218,16 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
     // Restartable Helix poller (needed when Twitch channel/login changes).
     auto RestartTwitchHelixPoller = [&](const std::string& reason) {
-        const std::string login = gRuntime.config.twitch_login;
-        if (login.empty()) return;
-
-        if (gRuntime.twitchHelixBoundLogin == login && gRuntime.twitchHelixThread.joinable()) {
-            return;
-        }
-
-        LogLine(L"TWITCH: restarting Helix poller (" + ToW(reason) + L")");
-
-        if (gRuntime.twitchHelixThread.joinable()) {
-            gRuntime.twitchHelixRunning = false;
-            gRuntime.twitchHelixThread.join();
-        }
-
-        gRuntime.state.set_twitch_viewers(0);
-        gRuntime.state.set_twitch_followers(0);
-        gRuntime.state.set_twitch_live(false);
-
-        gRuntime.twitchHelixRunning = true;
-        gRuntime.twitchHelixBoundLogin = login;
-
-        gRuntime.twitchHelixThread = StartTwitchHelixPoller(
+        TwitchHelixController::Dependencies deps{
             hwnd,
             gRuntime.config,
             gRuntime.state,
+            gRuntime.twitchHelixThread,
             gRuntime.twitchHelixRunning,
-            0,
-            TwitchHelixUiCallbacks{
-                [](const std::wstring& s) { LogLine(s); },
-                [&](const std::wstring& /*s*/) {},
-                [&](bool /*live*/) {},
-                [&](int /*v*/) {},
-                [&](int /*f*/) {}
-            }
-        );
+            gRuntime.twitchHelixBoundLogin
         };
+        TwitchHelixController::RestartPoller(deps, reason);
+    };
 
     switch (msg) {
 
