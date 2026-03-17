@@ -11,60 +11,18 @@
 #include <objbase.h>
 
 #include <string>
-#include <thread>
 #include <memory>
 
 #include "resource.h"
 #include "version.h"
 
-// Core app state/config.
-#include "AppConfig.h"
-#include "AppState.h"
-
-// Extracted app lifecycle modules.
-#include "app/AppBootstrap.h"   // startup / backend initialisation
-#include "app/AppRuntime.h"     // long-lived runtime ownership
-#include "app/AppShutdown.h"    // orderly shutdown / teardown
-
-// Core helpers.
-#include "core/AppPaths.h"
-#include "core/StringUtil.h"
-
-// Local HTTP server.
-#include "http/HttpServer.h"
-
-// Chat aggregation.
-#include "chat/ChatAggregator.h"
-
-// Twitch integration pieces.
-#include "twitch/TwitchHelixService.h"
+#include "app/AppBootstrap.h"
+#include "app/AppRuntime.h"
+#include "app/AppShutdown.h"
 #include "twitch/TwitchHelixController.h"
-#include "twitch/TwitchIrcWsClient.h"
-#include "twitch/TwitchEventSubWsClient.h"
-#include "twitch/TwitchAuth.h"
-
-// TikTok integration pieces.
-#include "tiktok/TikTokSidecar.h"
-#include "tiktok/TikTokFollowersService.h"
-
-// YouTube integration pieces.
-#include "youtube/YouTubeAuth.h"
-#include "youtube/YouTubeLiveChatService.h"
-
-// Other app services / integrations.
-#include "euroscope/EuroScopeIngestService.h"
-#include "obs/ObsWsClient.h"
 #include "floating/FloatingChat.h"
-#include "platform/PlatformControl.h"
-
-// Native UI helpers extracted from this file.
-#include "ui/WindowEffects.h"
 #include "ui/WindowLayout.h"
-
-// UI logging.
 #include "log/UiLog.h"
-
-// Main UI hosting pieces.
 #include "ui/WebViewHost.h"
 #include "ui/SplashScreen.h"
 
@@ -73,9 +31,6 @@
 static const wchar_t* kModernUiUrl = L"http://127.0.0.1:17845/app";
 
 // --------------------------- Globals (UI handles) ---------------------------
-
-// Main native window handle for the app.
-static HWND gMainWnd = nullptr;
 
 // Custom app message used to marshal log output safely back to the UI thread.
 static constexpr UINT WM_APP_LOG = WM_APP + 100;
@@ -99,12 +54,6 @@ static AppRuntime gRuntime;
 // Main Win32 window procedure.
 // This handles top-level lifecycle messages and delegates real work to extracted modules.
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-
-    // Small local helper that builds the dependency bundle used by AppShutdown.
-    // This keeps the shutdown call sites tidy.
-    auto BuildShutdownDeps = [&]() -> AppShutdown::Dependencies {
-        return gRuntime.BuildShutdownDeps();
-        };
 
     // Restartable Twitch Helix poller helper.
     // This is needed when Twitch login/channel context changes and the Helix poller
@@ -162,9 +111,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         AppBootstrap::StartBackend(
             deps,
             kModernUiUrl,
-            [&](const std::string& reason) {
-                RestartTwitchHelixPoller(reason);
-            });
+            RestartTwitchHelixPoller);
 
         // Tell the splash screen startup is complete.
         PostMessageW(hwnd, WM_APP_SPLASH_READY, 0, 0);
@@ -188,7 +135,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     case WM_CLOSE:
     {
         // Begin orderly shutdown when the user closes the main window.
-        auto deps = BuildShutdownDeps();
+        auto deps = gRuntime.BuildShutdownDeps();
         AppShutdown::BeginShutdown(deps, hwnd);
         return 0;
     }
@@ -207,7 +154,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         SplashScreen::Destroy();
         WebViewHost::Destroy();
 
-        auto deps = BuildShutdownDeps();
+        auto deps = gRuntime.BuildShutdownDeps();
         AppShutdown::BeginShutdown(deps, nullptr);
 
         // End the Win32 message loop.
@@ -223,16 +170,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     return DefWindowProc(hwnd, msg, wParam, lParam);
 }
 
-// Native Windows process entry point.
-int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
+    // Native Windows process entry point.
+    int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
 
     // Initialise COM for the UI thread.
     // Apartment-threaded COM is typically required for WebView2 / UI-related COM work.
     HRESULT hrCom = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-
-    // Record whether COM was successfully initialised by this call, or whether
-    // it was already initialised differently.
-    const bool comInitialized = SUCCEEDED(hrCom) || hrCom == RPC_E_CHANGED_MODE;
 
     // Cache the UI thread ID for log-message marshalling and other thread-aware UI tasks.
     const DWORD uiThreadId = GetCurrentThreadId();
@@ -297,9 +240,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
         mainRc.bottom - mainRc.top,
         nullptr, nullptr, hInstance, nullptr
     );
-
-    // Store the main window handle globally for any top-level shell usage.
-    gMainWnd = hwnd;
 
     // Tell the UI log system where to post log messages for marshalled UI-thread handling.
     UiLog_SetUiContext(hwnd, uiThreadId, WM_APP_LOG);
