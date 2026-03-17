@@ -30,6 +30,7 @@
 #include "AppConfig.h"
 #include "AppState.h"
 #include "app/AppBootstrap.h"
+#include "app/AppRuntime.h"
 #include "app/AppShutdown.h"
 #include "core/StringUtil.h"
 #include "http/HttpServer.h"
@@ -64,11 +65,7 @@ static const wchar_t* kAppDisplayName = L"StreamingATC.Live Mode-S Client";
 static std::unique_ptr<class FloatingChat> gFloatingChat;
 
 // App lifecycle
-static std::atomic<bool> gRunning{ true };
-
-// Helix poller is restartable independently of full app shutdown.
-static std::atomic<bool> gTwitchHelixRunning{ true };
-static std::string gTwitchHelixBoundLogin;
+static AppRuntime gRuntime;
 
 // --------------------------- Helpers ----------------------------------------
 static std::wstring GetExeDir()
@@ -247,77 +244,46 @@ static bool TryEnableAcrylic(HWND hwnd, BYTE bgOpacity /*0..255*/)
 
 // --------------------------- Main Window ------------------------------------
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    static AppConfig config;
-
-    static AppState state;
-    static ChatAggregator chat;
-    static TikTokSidecar tiktok;
-    static TikTokSidecar youtube;
-    static TwitchIrcWsClient twitch;
-    static TwitchEventSubWsClient twitchEventSub;
-    static TwitchAuth twitchAuth;
-    static YouTubeAuth youtubeAuth;
-    static YouTubeLiveChatService youtubeChat;
-    static std::unique_ptr<HttpServer> gHttp;
-    static std::thread metricsThread;
-    static std::thread twitchHelixThread;
-    static std::thread tiktokFollowersThread;
-    static EuroScopeIngestService euroscope;
-    static ObsWsClient obs;
 
     auto BuildShutdownDeps = [&]() -> AppShutdown::Dependencies {
-        return AppShutdown::Dependencies{
-            gHttp,
-            metricsThread,
-            twitchHelixThread,
-            tiktokFollowersThread,
-            twitchEventSub,
-            twitchAuth,
-            twitch,
-            youtubeChat,
-            youtube,
-            tiktok,
-            gRunning,
-            gTwitchHelixRunning
-        };
+        return gRuntime.BuildShutdownDeps();
         };
 
     // Restartable Helix poller (needed when Twitch channel/login changes).
     auto RestartTwitchHelixPoller = [&](const std::string& reason) {
-        const std::string login = config.twitch_login;
+        const std::string login = gRuntime.config.twitch_login;
         if (login.empty()) return;
 
-        // Avoid unnecessary restarts.
-        if (gTwitchHelixBoundLogin == login && twitchHelixThread.joinable()) return;
+        if (gRuntime.twitchHelixBoundLogin == login && gRuntime.twitchHelixThread.joinable()) {
+            return;
+        }
 
         LogLine(L"TWITCH: restarting Helix poller (" + ToW(reason) + L")");
 
-        // Stop existing poller thread if running.
-        if (twitchHelixThread.joinable()) {
-            gTwitchHelixRunning = false;
-            twitchHelixThread.join();
+        if (gRuntime.twitchHelixThread.joinable()) {
+            gRuntime.twitchHelixRunning = false;
+            gRuntime.twitchHelixThread.join();
         }
 
-        // Reset UI + metrics immediately so we don't show previous channel values.
-        state.set_twitch_viewers(0);
-        state.set_twitch_followers(0);
-        state.set_twitch_live(false);
+        gRuntime.state.set_twitch_viewers(0);
+        gRuntime.state.set_twitch_followers(0);
+        gRuntime.state.set_twitch_live(false);
 
-        gTwitchHelixRunning = true;
-        gTwitchHelixBoundLogin = login;
+        gRuntime.twitchHelixRunning = true;
+        gRuntime.twitchHelixBoundLogin = login;
 
-        twitchHelixThread = StartTwitchHelixPoller(
+        gRuntime.twitchHelixThread = StartTwitchHelixPoller(
             hwnd,
-            config,
-            state,
-            gTwitchHelixRunning,
+            gRuntime.config,
+            gRuntime.state,
+            gRuntime.twitchHelixRunning,
             0,
             TwitchHelixUiCallbacks{
-                /*log*/ [](const std::wstring& s) { LogLine(s); },
-                /*set_status*/   [&](const std::wstring& /*s*/) {},
-                /*set_live*/     [&](bool /*live*/) {},
-                /*set_viewers*/  [&](int /*v*/) {},
-                /*set_followers*/[&](int /*f*/) {}
+                [](const std::wstring& s) { LogLine(s); },
+                [&](const std::wstring& /*s*/) {},
+                [&](bool /*live*/) {},
+                [&](int /*v*/) {},
+                [&](int /*f*/) {}
             }
         );
         };
@@ -326,28 +292,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
     case WM_CREATE:
     {
-        AppBootstrap::Dependencies deps{
-            hwnd,
-            config,
-            state,
-            chat,
-            tiktok,
-            youtube,
-            twitch,
-            twitchEventSub,
-            twitchAuth,
-            youtubeAuth,
-            youtubeChat,
-            gHttp,
-            metricsThread,
-            twitchHelixThread,
-            tiktokFollowersThread,
-            euroscope,
-            obs,
-            gRunning,
-            gTwitchHelixRunning,
-            gTwitchHelixBoundLogin
-        };
+        auto deps = gRuntime.BuildBootstrapDeps(hwnd);
 
         if (!gFloatingChat) gFloatingChat = std::make_unique<FloatingChat>();
 
@@ -365,28 +310,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
     case WM_APP + 1:
     {
-        AppBootstrap::Dependencies deps{
-            hwnd,
-            config,
-            state,
-            chat,
-            tiktok,
-            youtube,
-            twitch,
-            twitchEventSub,
-            twitchAuth,
-            youtubeAuth,
-            youtubeChat,
-            gHttp,
-            metricsThread,
-            twitchHelixThread,
-            tiktokFollowersThread,
-            euroscope,
-            obs,
-            gRunning,
-            gTwitchHelixRunning,
-            gTwitchHelixBoundLogin
-        };
+        auto deps = gRuntime.BuildBootstrapDeps(hwnd);
 
         AppBootstrap::StartBackend(
             deps,
