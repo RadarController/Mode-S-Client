@@ -70,24 +70,6 @@ static std::unique_ptr<class FloatingChat> gFloatingChat;
 static AppRuntime gRuntime;
 
 // --------------------------- Helpers ----------------------------------------
-static void JoinWithTimeout(std::thread& t, DWORD timeoutMs, const wchar_t* name)
-{
-    if (!t.joinable()) return;
-
-    HANDLE h = (HANDLE)t.native_handle();
-    DWORD wait = WaitForSingleObject(h, timeoutMs);
-
-    if (wait == WAIT_OBJECT_0) {
-        t.join();
-        LogLine(std::wstring(L"Joined thread: ") + name);
-        return;
-    }
-
-    // Timed out (or failed). Don't hang shutdown.
-    LogLine(std::wstring(L"Timeout waiting for thread: ") + name + L" (detaching)");
-    t.detach(); // process exit will still terminate it if we quit main loop
-}
-
 struct HttpResult {
     int status = 0;
     DWORD winerr = 0;
