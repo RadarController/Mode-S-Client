@@ -40,6 +40,9 @@
     <Filter Include="assets\overlay\portrait">
       <UniqueIdentifier>{ee5b8218-a144-4c3a-9381-d46b700f67fb}</UniqueIdentifier>
     </Filter>
+    <Filter Include="assets\app\splash">
+      <UniqueIdentifier>{7161739f-55ff-49a2-b5da-b5588d36022e}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="targetver.h">
@@ -129,6 +132,12 @@
     <ClInclude Include="src\app\AppBootstrap.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="src\app\AppShutdown.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\app\AppRuntime.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="integrations\obs\ObsWsClient.cpp">
@@ -201,6 +210,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="src\app\AppBootstrap.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\app\AppShutdown.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\app\AppRuntime.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -291,6 +306,9 @@
     </None>
     <None Include="assets\overlay\landscape\msfs_flightbar_landscape.html">
       <Filter>assets\overlay\landscape</Filter>
+    </None>
+    <None Include="assets\app\splash\index.html">
+      <Filter>assets\app\splash</Filter>
     </None>
   </ItemGroup>
 </Project>

@@ -2,203 +2,86 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>RadarController — Mode‑S Client</title>
-  <link rel="stylesheet" href="/app/app.css" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>StreamingATC.Live — Starting up</title>
+  <link rel="stylesheet" href="./splash.css" />
 </head>
 <body>
-  <div class="app">
-    <header class="topbar">
-      <div class="brand">
-        <div class="brand__mark"><img src="/assets/icons/RClogo.svg" alt="RadarController" style="width:100%;height:100%;display:block;opacity:0.8;border-radius:inherit;" /></div>
-        <div class="brand__text">
-          <div class="brand__title">RadarController</div>
-          <div class="brand__subtitle">Mode‑S Client</div>
+  <div class="shell">
+    <div class="noise"></div>
+    <div class="frame">
+      <div class="hero">
+        <div class="hero__left">
+          <div class="badge">LOCAL STARTUP SEQUENCE</div>
+          <h1 class="title">
+            <span class="title__main">StreamingATC.Live</span>
+            <span class="title__sub">Mode-S Client</span>
+          </h1>
+
+          <p class="lede">
+            Initialising radar scope, platform links, and the application interface.
+          </p>
+
+          <div class="status-card">
+            <div class="status-row">
+              <span class="status-row__label">SYSTEM</span>
+              <span class="status-row__value" id="statusLine">Preparing local services</span>
+            </div>
+
+            <div class="progress" aria-hidden="true">
+              <div class="progress__bar" id="progressBar"></div>
+              <div class="progress__shine"></div>
+            </div>
+
+            <div class="stages" id="stages">
+              <div class="stage stage--active"><span class="stage__dot"></span><span>Loading shell</span></div>
+              <div class="stage"><span class="stage__dot"></span><span>Starting HTTP server</span></div>
+              <div class="stage"><span class="stage__dot"></span><span>Warming WebView</span></div>
+              <div class="stage"><span class="stage__dot"></span><span>Connecting systems</span></div>
+            </div>
+          </div>
+
+          <div class="meta">
+            <div class="meta__item">
+              <span class="meta__k">Build</span>
+              <span class="meta__v" id="buildText">—</span>
+            </div>
+            <div class="meta__item">
+              <span class="meta__k">Target</span>
+              <span class="meta__v">127.0.0.1:17845</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="hero__right">
+          <div class="radar-card">
+            <div class="radar">
+              <div class="radar__rings"></div>
+              <div class="radar__sweep"></div>
+              <div class="radar__grid"></div>
+              <div class="track track--a"></div>
+              <div class="track track--b"></div>
+              <div class="track track--c"></div>
+              <div class="track track--d"></div>
+              <div class="blip blip--1"></div>
+              <div class="blip blip--2"></div>
+              <div class="blip blip--3"></div>
+              <div class="blip blip--4"></div>
+            </div>
+          </div>
         </div>
       </div>
 
-      <div class="topbar__actions">
-        <button class="btn btn--primary" id="btnStartAll">Start All Platforms</button>
-        <button class="btn btn--ghost" id="btnOpenSettings">Settings</button>
-        <button class="btn btn--ghost" id="btnOpenDiagnostics" type="button">Diagnostics</button>
-        <button class="btn btn--primary" id="btnOpenChat">Open Chat</button>
+      <div class="footer">
+        <div class="footer__brand" aria-hidden="true"></div>
+        <div class="footer__right">
+          <span class="footer__pill">OFFLINE SPLASH</span>
+          <span class="footer__pill footer__pill--live" id="readyPill">BOOTING</span>
+        </div>
       </div>
-    </header>
-
-    <div class="topbar__metrics" id="topMetrics">
-      <div class="pill"><span class="pill__k">Viewers</span><span class="pill__v" id="mViewers">—</span></div>
-      <div class="pill"><span class="pill__k">Followers</span><span class="pill__v" id="mFollowers">—</span></div>
-      <div class="pill pill--status"><span class="dot" id="mDot"></span><span class="pill__k">Status</span><span class="pill__v" id="mStatus">Idle</span></div>
-      <div class="pill"><span class="pill__k">Aircraft</span><span class="pill__v" id="mAircraft">—</span></div>
     </div>
-
-    <main class="grid grid--single">
-      <section class="card card--wide home-platforms">
-        <div class="card__head home-platforms__head">
-          <div>
-            <div class="card__title">Platforms</div>
-            <div class="card__hint">Manage your linked accounts, or start or stop each platform.</div>
-          </div>
-          <div class="home-platforms__summary">
-            <div class="home-kpi">
-              <span class="home-kpi__k">Linked accounts</span>
-              <span class="home-kpi__v" id="linkedAccountsCount">0 / 3</span>
-            </div>
-            <div class="home-kpi">
-              <span class="home-kpi__k">Live platforms</span>
-              <span class="home-kpi__v" id="livePlatformsCount">0</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="platforms platforms--home">
-          <div class="platform platform--home" data-platform="tiktok">
-            <div class="platform__head">
-              <div class="platform__identity">
-                <img class="platform__icon" src="/assets/icons/tiktok-icon.svg" alt="TikTok" />
-                <div class="platform__meta">
-                  <div class="platform__name">TikTok</div>
-                  <div class="platform__statusline">
-                    <span class="platform__state-dot" id="tiktokStateDot" aria-hidden="true"></span>
-                    <span class="platform__sub" id="tiktokState">Disconnected</span>
-                  </div>
-                </div>
-              </div>
-              <div class="platform__right">
-                <span class="badge" id="tiktokBadge">Offline</span>
-              </div>
-            </div>
-
-            <div class="platform__body">
-              <div class="platform__section-label">Linked account</div>
-              <label class="field field--account">
-                <span class="field__k">Username</span>
-                <div class="field__row field__row--account">
-                  <input class="input" id="tiktokUser" placeholder="@username" />
-                  <button class="btn btn--ghost" data-action="set">Save</button>
-                </div>
-              </label>
-
-              <div class="platform__stats">
-                <div class="stat"><div class="stat__k">Viewers</div><div class="stat__v" id="tiktokViewers">—</div></div>
-                <div class="stat"><div class="stat__k">Followers</div><div class="stat__v" id="tiktokFollowers">—</div></div>
-              </div>
-
-              <div class="platform__actions">
-                <button class="btn btn--primary" data-action="start">Start / Restart</button>
-                <button class="btn btn--danger" data-action="stop" disabled>Stop</button>
-              </div>
-            </div>
-          </div>
-
-          <div class="platform platform--home" data-platform="twitch">
-            <div class="platform__head">
-              <div class="platform__identity">
-                <img class="platform__icon" src="/assets/icons/twitch-icon.svg" alt="Twitch" />
-                <div class="platform__meta">
-                  <div class="platform__name">Twitch</div>
-                  <div class="platform__statusline">
-                    <span class="platform__state-dot" id="twitchStateDot" aria-hidden="true"></span>
-                    <span class="platform__sub" id="twitchState">Disconnected</span>
-                  </div>
-                </div>
-              </div>
-              <div class="platform__right">
-                <span class="badge" id="twitchBadge">Offline</span>
-              </div>
-            </div>
-
-            <div class="platform__body">
-              <div class="platform__section-label">Linked account</div>
-              <label class="field field--account">
-                <span class="field__k">Channel</span>
-                <div class="field__row field__row--account">
-                  <input class="input" id="twitchUser" placeholder="channel_name" />
-                  <button class="btn btn--ghost" data-action="set">Save</button>
-                </div>
-              </label>
-
-              <div class="platform__stats">
-                <div class="stat"><div class="stat__k">Viewers</div><div class="stat__v" id="twitchViewers">—</div></div>
-                <div class="stat"><div class="stat__k">Followers</div><div class="stat__v" id="twitchFollowers">—</div></div>
-              </div>
-
-              <div class="platform__actions">
-                <button class="btn btn--primary" data-action="start">Start / Restart</button>
-                <button class="btn btn--danger" data-action="stop" disabled>Stop</button>
-              </div>
-            </div>
-          </div>
-
-          <div class="platform platform--home" data-platform="youtube">
-            <div class="platform__head">
-              <div class="platform__identity">
-                <img class="platform__icon" src="/assets/icons/youtube-icon.svg" alt="YouTube" />
-                <div class="platform__meta">
-                  <div class="platform__name">YouTube</div>
-                  <div class="platform__statusline">
-                    <span class="platform__state-dot" id="youtubeStateDot" aria-hidden="true"></span>
-                    <span class="platform__sub" id="youtubeState">Disconnected</span>
-                  </div>
-                </div>
-              </div>
-              <div class="platform__right">
-                <span class="badge" id="youtubeBadge">Offline</span>
-              </div>
-            </div>
-
-            <div class="platform__body">
-              <div class="platform__section-label">Linked account</div>
-              <label class="field field--account">
-                <span class="field__k">Handle / Channel</span>
-                <div class="field__row field__row--account">
-                  <input class="input" id="youtubeUser" placeholder="UC... or @handle" />
-                  <button class="btn btn--ghost" data-action="set">Save</button>
-                </div>
-              </label>
-
-              <div class="platform__stats">
-                <div class="stat"><div class="stat__k">Viewers</div><div class="stat__v" id="youtubeViewers">—</div></div>
-                <div class="stat"><div class="stat__k">Subscribers</div><div class="stat__v" id="youtubeFollowers">—</div></div>
-              </div>
-
-              <div class="platform__actions">
-                <button class="btn btn--primary" data-action="start">Start / Restart</button>
-                <button class="btn btn--danger" data-action="stop" disabled>Stop</button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="home-strip">
-          <div class="home-strip__item">
-            <span class="home-strip__dot"></span>
-            <span class="home-strip__text">Connected means the platform is configured and the client can currently see or talk to that integration. In short, you're ready to go live.</span>
-          </div>
-          <div class="home-strip__item">
-            <span class="home-strip__dot home-strip__dot--blue"></span>
-            <span class="home-strip__text">Problems, errors and alerts related to the app are now in the Diagnostics page. Stream alerts show up in the chat window.</span>
-          </div>
-        </div>
-      </section>
-    </main>
-
-    <footer class="footer">
-      <div class="footer__left">Local UI at <span class="mono">/app</span> (served by the built‑in HTTP server).</div>
-      <div class="footer__right"><span class="mono" id="buildInfo">—</span></div>
-    </footer>
   </div>
 
-  <script src="/app/app.js"></script>
-  <script>
-    (function () {
-      const btn = document.getElementById('btnOpenDiagnostics');
-      if (btn) {
-        btn.addEventListener('click', function () {
-          window.location.href = '/app/diagnostics.html';
-        });
-      }
-    })();
-  </script>
+  <script src="./splash.js"></script>
 </body>
 </html>
