@@ -5,42 +5,15 @@
 // - own the main Win32 window procedure
 // - delegate real work to extracted modules
 
-// Trim Windows headers down to reduce compile noise / macro pollution.
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
-
-// Low-level Windows / networking headers.
-// Some of these may now be removable in a later include-cleanup pass.
-#include <winsock2.h>
-#include <ws2tcpip.h>
 #include <windows.h>
-#include <wininet.h>
-#include <winhttp.h>
 #include <objbase.h>
 
-// Link WinHTTP at build time.
-#pragma comment(lib, "winhttp.lib")
-
-// Standard library headers used by this translation unit.
-// Some are likely historical and may be removable after an include audit.
 #include <string>
 #include <thread>
-#include <atomic>
-#include <filesystem>
-#include <sstream>
-#include <fstream>
-#include <cctype>
-#include <algorithm>
-#include <ctime>
 #include <memory>
-#include <mutex>
-#include <unordered_map>
 
-// Third-party libraries.
-#include "httplib.h"
-#include "json.hpp"
-
-// Project resources / version metadata.
 #include "resource.h"
 #include "version.h"
 
