@@ -16,6 +16,7 @@
 #include "TwitchAuth.h"
 #include "core/StringUtil.h"
 #include "log/UiLog.h"
+#include "../../src/oauth/EmbeddedOAuthConfig.h"
 
 // This translation unit uses cpp-httplib + nlohmann::json.
 // Keep these includes near the top so early functions compile regardless of include order.
@@ -230,6 +231,11 @@ static bool TwitchValidateAccessToken(const std::string& access_token_raw,
 }
 
 namespace {
+    inline void LoadEmbeddedTwitchClientCredentials(std::string& client_id, std::string& client_secret) {
+        client_id = EmbeddedOAuthConfig::TwitchClientId();
+        client_secret = EmbeddedOAuthConfig::TwitchClientSecret();
+    }
+
     // ---- config path: CWD first, then exe dir ----
     std::filesystem::path FindConfigPath() {
         std::vector<std::filesystem::path> candidates;
@@ -417,14 +423,9 @@ std::string TwitchAuth::HttpPostForm(const std::string& url,
 
 std::string TwitchAuth::BuildAuthorizeUrl(const std::string& redirect_uri, std::string* out_error) {
     if (out_error) out_error->clear();
-    // Twitch requires redirect_uri to EXACTLY match a registered URI.
-    // Some legacy callers passed a bare "http://localhost/" (or empty),
-    // which causes a redirect_mismatch. Default to our canonical local callback.
     auto normalize_redirect = [](std::string uri) -> std::string {
         const char* kDefault = "http://localhost:17845/auth/twitch/callback";
-        // Empty -> default
         if (uri.empty()) return kDefault;
-        // Common legacy values -> default
         if (uri == "http://localhost" || uri == "http://localhost/" ||
             uri == "https://localhost" || uri == "https://localhost/" ||
             uri == "http://127.0.0.1" || uri == "http://127.0.0.1/") {
@@ -435,13 +436,16 @@ std::string TwitchAuth::BuildAuthorizeUrl(const std::string& redirect_uri, std::
 
     const std::string eff_redirect = normalize_redirect(redirect_uri);
 
-    // Ensure we have client id/secret loaded.
-    std::string err;
     if (client_id_.empty() || client_secret_.empty()) {
-        (void)LoadFromConfig(&err); // best-effort; err returned below if still missing
+        LoadEmbeddedTwitchClientCredentials(client_id_, client_secret_);
+        if (client_id_.empty() || client_secret_.empty()) {
+            std::string err;
+            (void)LoadFromConfig(&err); // best-effort token load
+        }
     }
-    if (client_id_.empty()) {
-        if (out_error) *out_error = err.empty() ? "Missing twitch_client_id in config.json" : err;
+
+    if (client_id_.empty() || client_secret_.empty()) {
+        if (out_error) *out_error = "Embedded Twitch app credentials are missing in this build";
         return {};
     }
 
@@ -451,7 +455,6 @@ std::string TwitchAuth::BuildAuthorizeUrl(const std::string& redirect_uri, std::
         pending_state_ = st;
     }
 
-    // Scope is already URL-encoded in kTwitchScopeEncoded.
     std::string url = "https://id.twitch.tv/oauth2/authorize?";
     url += "response_type=code";
     url += "&client_id=" + UrlEncode(client_id_);
@@ -502,13 +505,11 @@ bool TwitchAuth::HandleOAuthCallback(const std::string& code,
 
     std::string cfg_err;
     if (client_id_.empty() || client_secret_.empty()) {
-        if (!LoadFromConfig(&cfg_err)) {
-            if (out_error) *out_error = cfg_err;
-            return false;
-        }
+        LoadEmbeddedTwitchClientCredentials(client_id_, client_secret_);
+        (void)LoadFromConfig(&cfg_err);
     }
     if (client_id_.empty() || client_secret_.empty()) {
-        if (out_error) *out_error = "Missing twitch_client_id or twitch_client_secret in config.json";
+        if (out_error) *out_error = "Embedded Twitch app credentials are missing in this build";
         return false;
     }
 
@@ -590,33 +591,35 @@ return true;
 }
 
 bool TwitchAuth::LoadFromConfig(std::string* out_error) {
+    if (out_error) out_error->clear();
+
+    LoadEmbeddedTwitchClientCredentials(client_id_, client_secret_);
+
     auto path = FindConfigPath();
     DebugLog(std::string("using config path: ") + path.string());
+
     json j;
-    if (!ReadJsonFile(path, &j, out_error)) return false;
-
-    // Matches your sample config:
-    // twitch_client_id (top-level)
-    // twitch_client_secret (top-level)
-    // twitch.user_access_token / twitch.user_refresh_token (nested)
-    client_id_ = j.value("twitch_client_id", "");
-    client_secret_ = j.value("twitch_client_secret", "");
-
-    DebugLog("loaded client_id len=" + std::to_string(client_id_.size()) + ", client_secret len=" + std::to_string(client_secret_.size()));
-    if (!j.contains("twitch") || !j["twitch"].is_object()) {
-        if (out_error) *out_error = "Missing 'twitch' object in config.json";
-        return false;
+    std::string read_err;
+    if (!ReadJsonFile(path, &j, &read_err)) {
+        DebugLog("config not available yet; continuing without persisted Twitch tokens");
+        refresh_token_cfg_.clear();
+        {
+            std::lock_guard<std::mutex> lock(mu_);
+            current_.reset();
+        }
+        return true;
     }
 
-    const auto& tj = j["twitch"];
-    std::string access = tj.value("user_access_token", "");
-    std::string refresh = tj.value("user_refresh_token", "");
+    const auto tj = j.value("twitch", json::object());
+    std::string access = tj.is_object() ? tj.value("user_access_token", "") : "";
+    std::string refresh = tj.is_object() ? tj.value("user_refresh_token", "") : "";
 
     refresh_token_cfg_ = refresh;
 
+    DebugLog(std::string("embedded client_id len=") + std::to_string(client_id_.size()) +
+             ", client_secret len=" + std::to_string(client_secret_.size()));
     DebugLog(std::string("loaded access_token ") + MaskToken(access) + ", refresh_token " + MaskToken(refresh));
 
-    // Best-effort validate any existing access token (helps diagnose "Login unsuccessful" quickly).
     if (!access.empty()) {
         long vhttp = 0;
         std::string vlogin;
@@ -627,18 +630,7 @@ bool TwitchAuth::LoadFromConfig(std::string* out_error) {
             DebugLog(std::string("validate FAILED; ") + verr);
         }
     }
-    if (client_id_.empty() || client_secret_.empty() || refresh_token_cfg_.empty()) {
-        DebugLog("missing required config fields; cannot refresh.");
-        if (out_error) {
-            *out_error =
-                "Missing twitch_client_id / twitch_client_secret / twitch.user_refresh_token in config.json. "
-                "Silent refresh requires a stored refresh token (one-time login).";
-        }
-        return false;
-    }
 
-    // Optional: if you ever decide to persist expiry, you can add a field later.
-    // For now, we will always treat missing expiry as “needs refresh”.
     TokenSnapshot snap;
     snap.access_token = access;
     snap.refresh_token = refresh_token_cfg_;
@@ -648,32 +640,41 @@ bool TwitchAuth::LoadFromConfig(std::string* out_error) {
 
     {
         std::lock_guard<std::mutex> lock(mu_);
-        // Only store if access token exists; expiry is unknown so NeedsRefresh() will refresh anyway.
         if (!snap.access_token.empty()) current_ = snap;
+        else current_.reset();
     }
 
-    DebugLog("persisted refreshed tokens successfully.");
+    if (client_id_.empty() || client_secret_.empty()) {
+        if (out_error) *out_error = "Embedded Twitch app credentials are missing in this build";
+        return false;
+    }
+
+    if (refresh_token_cfg_.empty()) {
+        DebugLog("no stored Twitch refresh token yet; interactive OAuth required.");
+    }
+
     return true;
 }
 
 bool TwitchAuth::SaveToConfig(const TokenSnapshot& snap, std::string* out_error) {
     auto path = FindConfigPath();
     DebugLog(std::string("saving tokens to config path: ") + path.string());
-    json j;
-    if (!ReadJsonFile(path, &j, out_error)) return false;
 
-    // Ensure twitch object exists
+    json j = json::object();
+    std::string read_err;
+    if (!ReadJsonFile(path, &j, &read_err)) {
+        j = json::object();
+    }
+
+    j.erase("twitch_client_id");
+    j.erase("twitch_client_secret");
+
     if (!j.contains("twitch") || !j["twitch"].is_object()) {
         j["twitch"] = json::object();
     }
 
-    // Matches your sample config structure
     j["twitch"]["user_access_token"] = snap.access_token;
     j["twitch"]["user_refresh_token"] = snap.refresh_token;
-
-    // NOTE: your sample config does not currently include expiry fields.
-    // We intentionally do not add new fields here to keep config stable.
-    // (If you want expiry persisted, we can add twitch.token_expires_at_unix etc. later.)
 
     return WriteJsonFileAtomic(path, j, out_error);
 }
@@ -695,6 +696,20 @@ bool TwitchAuth::NeedsRefresh(std::int64_t now_unix) const {
 }
 
 bool TwitchAuth::RefreshWithTwitch(std::string* out_error) {
+    if (out_error) out_error->clear();
+
+    if (client_id_.empty() || client_secret_.empty()) {
+        LoadEmbeddedTwitchClientCredentials(client_id_, client_secret_);
+    }
+    if (client_id_.empty() || client_secret_.empty()) {
+        if (out_error) *out_error = "Embedded Twitch app credentials are missing in this build";
+        return false;
+    }
+    if (refresh_token_cfg_.empty()) {
+        if (out_error) *out_error = "No stored Twitch refresh token (complete OAuth first)";
+        return false;
+    }
+
     DebugLog("starting token refresh (refresh_token " + MaskToken(refresh_token_cfg_) + ", client_id len=" + std::to_string(client_id_.size()) + ")");
     // https://id.twitch.tv/oauth2/token
     const std::string url = "https://id.twitch.tv/oauth2/token";
@@ -807,6 +822,10 @@ bool TwitchAuth::RefreshNow(std::string* out_error) {
         }
         loaded.store(true);
     }
+    if (refresh_token_cfg_.empty()) {
+        if (out_error) *out_error = "No stored Twitch refresh token (complete OAuth first)";
+        return false;
+    }
     return RefreshWithTwitch(out_error);
 }
 
@@ -814,23 +833,22 @@ bool TwitchAuth::Start() {
     DebugLog("Start() called");
     std::string err;
     if (!LoadFromConfig(&err)) {
-        return false;
+        DebugLog("load config failed: " + err);
     }
 
-    // Always attempt refresh at startup (since sample config doesn't store expiry)
-    {
+    if (!refresh_token_cfg_.empty()) {
         std::string refresh_err;
-            if (!RefreshWithTwitch(&refresh_err)) {
-                DebugLog("token refresh FAILED: " + refresh_err);
-            } else {
-                DebugLog("token refresh succeeded");
-            }
+        if (!RefreshWithTwitch(&refresh_err)) {
+            DebugLog("token refresh FAILED: " + refresh_err);
+        } else {
+            DebugLog("token refresh succeeded");
+        }
+    } else {
+        DebugLog("no stored Twitch refresh token; waiting for interactive OAuth");
     }
 
     running_.store(true);
     worker_ = std::thread([this]() {
-        // Without persisted expiry, refresh on a safe cadence (e.g., every 45 minutes).
-        // Twitch access tokens are typically hours-long; 45m is conservative and lightweight.
         int seconds_until_refresh = 45 * 60;
 
         while (running_.load()) {
@@ -838,6 +856,7 @@ bool TwitchAuth::Start() {
                 std::this_thread::sleep_for(std::chrono::seconds(1));
             }
             if (!running_.load()) break;
+            if (refresh_token_cfg_.empty()) continue;
 
             std::string refresh_err;
             if (!RefreshWithTwitch(&refresh_err)) {
@@ -846,7 +865,7 @@ bool TwitchAuth::Start() {
                 DebugLog("token refresh succeeded");
             }
         }
-        });
+    });
 
     return true;
 }

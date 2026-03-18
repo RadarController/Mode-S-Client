@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Connected Accounts — RadarController</title>
+  <title>Connect account — RadarController</title>
   <link rel="stylesheet" href="/app/app.css" />
 </head>
 <body>
@@ -25,15 +25,15 @@
     <main class="grid grid--single">
       <section class="card accounts-page">
         <div class="card__head">
-          <h2>Connected Accounts</h2>
+          <h2>Connect account</h2>
           <p class="muted">
-            Link Twitch and YouTube so Mode-S Client can update stream metadata and complete platform actions.
+            Connect Twitch and YouTube so Mode-S Client can update stream metadata and complete platform actions.
           </p>
         </div>
 
         <div class="card__body">
           <div class="accounts-intro">
-            Complete sign-in in your browser when prompted. This page will update automatically once authentication finishes.
+            App credentials are embedded in this build. Complete sign-in in your browser when prompted and this page will update automatically.
           </div>
 
           <div class="accounts-grid">
@@ -73,30 +73,13 @@
                       <strong id="twitchAuthScopes">—</strong>
                     </div>
                     <div class="kv-row">
-                      <span>Client ID</span>
-                      <strong id="twitchAuthClientIdState">—</strong>
-                    </div>
-                    <div class="kv-row">
-                      <span>Client secret</span>
-                      <strong id="twitchAuthClientSecretState">—</strong>
-                    </div>
-                    <div class="field" style="margin-top:14px">
-                      <label class="field__k" for="twitchLogin">Channel login</label>
-                      <input class="input" id="twitchLogin" type="text" autocomplete="off" />
-                    </div>
-                    <div class="field" style="margin-top:12px">
-                      <label class="field__k" for="twitchClientId">Client ID</label>
-                      <input class="input mono" id="twitchClientId" type="text" autocomplete="off" />
-                    </div>
-                    <div class="field" style="margin-top:12px">
-                      <label class="field__k" for="twitchClientSecret">Client Secret</label>
-                      <input class="input mono" id="twitchClientSecret" type="password" autocomplete="off" />
+                      <span>App credentials</span>
+                      <strong id="twitchAuthAppCredentials">—</strong>
                     </div>
                     <div class="toolbar" style="margin-top:12px">
-                      <button class="btn" id="btnSaveTwitchSettings">Save Twitch Settings</button>
                       <button class="btn btn--ghost" id="btnTwitchAuthCopy">Copy Start URL</button>
                       <div class="toolbar__spacer"></div>
-                      <span class="note" id="twitchSettingsStatus"></span>
+                      <span class="note" id="twitchSettingsStatus">Credentials are embedded in this build.</span>
                     </div>
                   </div>
                 </details>
@@ -139,17 +122,13 @@
                       <strong id="youtubeAuthScopes">—</strong>
                     </div>
                     <div class="kv-row">
-                      <span>Client ID</span>
-                      <strong id="youtubeAuthClientIdState">—</strong>
-                    </div>
-                    <div class="kv-row">
-                      <span>Client secret</span>
-                      <strong id="youtubeAuthClientSecretState">—</strong>
+                      <span>App credentials</span>
+                      <strong id="youtubeAuthAppCredentials">—</strong>
                     </div>
                     <div class="toolbar" style="margin-top:12px">
                       <button class="btn btn--ghost" id="btnYouTubeAuthCopy">Copy Start URL</button>
                       <div class="toolbar__spacer"></div>
-                      <span class="note" id="youtubeSettingsStatus">YouTube app credentials are still read from config.json in this pass.</span>
+                      <span class="note" id="youtubeSettingsStatus">Credentials are embedded in this build.</span>
                     </div>
                   </div>
                 </details>

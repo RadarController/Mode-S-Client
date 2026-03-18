@@ -601,8 +601,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     wireSettingsHubPage();
     wireTwitchStreamInfoPage();
     wireYouTubeAuthStatus();
+    wireConnectedAccountsPage();
     loadYouTubeVodDraft();
-    wireTwitchOAuthPage();
     wireTikTokCookiesPage();
     wireOverlayTitlePage();
     wireActions();
@@ -861,148 +861,237 @@ function wireTwitchStreamInfoPage(){
   load();
 }
 
+function getYouTubeAuthUiState(data) {
+  if (!data || data.ok === false) return "error";
+  const hasConfig = !!data.has_client_id && !!data.has_client_secret;
+  if (!hasConfig) return "missing_config";
+  if (data.needs_reauth) return "reauth_required";
+  if (data.has_refresh_token || data.has_access_token) return "connected";
+  return "not_connected";
+}
+
+function getYouTubeAuthUiLabel(data) {
+  switch (getYouTubeAuthUiState(data)) {
+    case "missing_config": return "App credentials unavailable";
+    case "reauth_required": return "Re-authentication required";
+    case "connected": return "Connected";
+    case "not_connected": return "Not connected";
+    default: return "Status unavailable";
+  }
+}
+
+function setYouTubeVodEditingEnabled(enabled) {
+  const t = document.getElementById("youtubeVodTitle");
+  const d = document.getElementById("youtubeVodDescription");
+  const b = document.getElementById("btnApplyYouTubeVod");
+  if (t) t.readOnly = !enabled;
+  if (d) d.readOnly = !enabled;
+  if (b) b.disabled = !enabled;
+}
+
 function wireYouTubeAuthStatus() {
-  // stream_details.html renders YouTube connection status in two places using the same id.
-  // We update all matching nodes so the page stays consistent.
   const nodes = document.querySelectorAll("#ytAuthStatusText");
   if (!nodes || nodes.length === 0) return;
 
   const setAll = (text) => nodes.forEach(n => { n.textContent = text; });
-
-  // Default while loading
   setAll("Checking YouTube connection…");
 
   fetch("/api/youtube/auth/info", { cache: "no-store" })
     .then(r => r.ok ? r.json() : Promise.reject(new Error("http " + r.status)))
     .then(data => {
-      if (!data || !data.ok || !data.has_refresh_token) {
-        setAll("Not connected");
-      const t=document.getElementById("youtubeVodTitle"); const d=document.getElementById("youtubeVodDescription");
-      if (t) t.readOnly = true; if (d) d.readOnly = true;
-      const b=document.getElementById("btnApplyYouTubeVod"); if (b) b.disabled = true;
+      const state = getYouTubeAuthUiState(data);
+      if (state === "connected") {
+        setAll("Connected");
+        setYouTubeVodEditingEnabled(true);
         return;
       }
-      // Keep it simple for now; we can add channel/expiry later.
-      setAll("Connected");
-      const t=document.getElementById("youtubeVodTitle"); const d=document.getElementById("youtubeVodDescription");
-      if (t) t.readOnly = false; if (d) d.readOnly = false;
-      const b=document.getElementById("btnApplyYouTubeVod"); if (b) b.disabled = false;
+      if (state === "reauth_required") {
+        setAll("Re-authorisation required");
+        setYouTubeVodEditingEnabled(false);
+        return;
+      }
+      if (state === "missing_config") {
+        setAll("App credentials unavailable");
+        setYouTubeVodEditingEnabled(false);
+        return;
+      }
+      setAll("Not connected");
+      setYouTubeVodEditingEnabled(false);
     })
-    .catch(() => setAll("Status unavailable"));
+    .catch(() => {
+      setAll("Status unavailable");
+      setYouTubeVodEditingEnabled(false);
+    });
 }
 
+function wireConnectedAccountsPage() {
+  const root = document.getElementById("connectedAccountsPage");
+  if (!root) return;
 
+  const state = {
+    twitch: { info: null, polling: null },
+    youtube: { info: null, polling: null }
+  };
 
-function wireTwitchOAuthPage() {
-    const root = document.getElementById("twitchOAuthPage");
-    if (!root) return;
+  function setTextSafe(id, text) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text ?? "";
+  }
 
-    const elScopes = document.getElementById("twitchOAuthScopes");
-    const elStart = document.getElementById("btnTwitchOAuthStart");
-    const elCopy = document.getElementById("btnTwitchOAuthCopy");
-    const elStatus = document.getElementById("twitchOAuthStatus");
+  function setHidden(id, hidden) {
+    const el = document.getElementById(id);
+    if (el) el.hidden = !!hidden;
+  }
 
-    const elLogin = document.getElementById("twitchLogin");
-    const elClientId = document.getElementById("twitchClientId");
-    const elClientSecret = document.getElementById("twitchClientSecret");
-    const elSave = document.getElementById("btnSaveTwitchSettings");
-    const elSettingsStatus = document.getElementById("twitchSettingsStatus");
+  function setButtonBusy(btn, busy, label) {
+    if (!btn) return;
+    if (!btn.dataset.baseLabel) btn.dataset.baseLabel = btn.textContent || "";
+    btn.disabled = !!busy;
+    btn.textContent = busy ? (label || "Working…") : btn.dataset.baseLabel;
+  }
 
-    const setStatus = (t) => { if (elStatus) elStatus.textContent = t || ""; };
-    const setSettingsStatus = (t) => { if (elSettingsStatus) elSettingsStatus.textContent = t || ""; };
+  function clipCopy(text) {
+    return navigator.clipboard.writeText(text).catch(() => {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    });
+  }
 
-    async function loadOauthInfo() {
-        try {
-            const j = await apiGet("/api/twitch/auth/info");
-            if (elScopes) elScopes.textContent = (j.scopes_readable || "").trim();
+  function getPlatformState(platform, info) {
+    if (!info || info.ok === false) return "error";
+    const hasConfig = !!info.has_client_id && !!info.has_client_secret;
+    const hasTokens = !!info.has_refresh_token || !!info.has_access_token;
+    if (!hasConfig) return "missing_config";
+    if (info.needs_reauth) return "reauth_required";
+    if (hasTokens) return "connected";
+    return "not_connected";
+  }
 
-            if (j.oauth_routes_wired === false) {
-                setStatus("OAuth routes are not wired in this build.");
-                if (elStart) elStart.disabled = true;
-                if (elCopy) elCopy.disabled = true;
-                return;
-            }
+  function getPlatformSummary(platform, info) {
+    const s = getPlatformState(platform, info);
+    if (platform === "twitch") {
+      if (s === "connected") return info.connected_login ? `Connected as ${info.connected_login}` : "Connected";
+      if (s === "reauth_required") return "Twitch needs to be connected again.";
+      if (s === "missing_config") return "Twitch app credentials are not embedded in this build.";
+      if (s === "not_connected") return "Twitch is ready to connect.";
+      return "Could not load Twitch status.";
+    }
+    if (s === "connected") return info.channel_id ? `Connected to channel ${info.channel_id}` : "Connected";
+    if (s === "reauth_required") return "YouTube needs to be connected again.";
+    if (s === "missing_config") return "YouTube app credentials are not embedded in this build.";
+    if (s === "not_connected") return "YouTube is ready to connect.";
+    return "Could not load YouTube status.";
+  }
 
-            const startUrl = j.start_url || "/auth/twitch/start";
-            const abs = `${window.location.origin}${startUrl}`;
+  function getChipLabel(platform, info) {
+    const s = getPlatformState(platform, info);
+    switch (s) {
+      case "connected": return "Connected";
+      case "reauth_required": return "Reconnect needed";
+      case "missing_config": return "Unavailable";
+      case "not_connected": return "Ready";
+      default: return "Unavailable";
+    }
+  }
 
-            if (elStart && !elStart.dataset.wired) {
-                elStart.addEventListener("click", () => {
-                    window.open(startUrl, "_blank", "noopener");
-                    setStatus("Opened OAuth flow in a new tab.");
-                });
-                elStart.dataset.wired = "1";
-            }
+  function getPrimaryLabel(platform, info) {
+    const s = getPlatformState(platform, info);
+    switch (s) {
+      case "connected": return platform === "twitch" ? "Reconnect Twitch" : "Reconnect YouTube";
+      case "reauth_required": return platform === "twitch" ? "Reconnect Twitch" : "Reconnect YouTube";
+      case "missing_config": return "Unavailable";
+      case "not_connected": return platform === "twitch" ? "Connect Twitch" : "Connect YouTube";
+      default: return "Retry";
+    }
+  }
 
-            if (elCopy && !elCopy.dataset.wired) {
-                elCopy.addEventListener("click", async () => {
-                    try {
-                        await navigator.clipboard.writeText(abs);
-                        setStatus("Copied start URL.");
-                    } catch (e) {
-                        const ta = document.createElement("textarea");
-                        ta.value = abs;
-                        document.body.appendChild(ta);
-                        ta.select();
-                        document.execCommand("copy");
-                        document.body.removeChild(ta);
-                        setStatus("Copied start URL.");
-                    }
-                });
-                elCopy.dataset.wired = "1";
-            }
+  function renderPlatform(platform) {
+    const info = state[platform].info || {};
+    const s = getPlatformState(platform, info);
 
-            setStatus("");
-        } catch (e) {
-            console.warn("Failed to load Twitch OAuth info", e);
-            setStatus("Could not load OAuth info.");
-        }
+    const prefix = platform === "twitch" ? "twitch" : "youtube";
+    const primary = document.getElementById(platform === "twitch" ? "btnTwitchAuthPrimary" : "btnYouTubeAuthPrimary");
+
+    setTextSafe(`${prefix}AuthChip`, getChipLabel(platform, info));
+    setTextSafe(`${prefix}AuthSummary`, getPlatformSummary(platform, info));
+    setTextSafe(`${prefix}AuthIdentity`, info.connected_login || info.channel_id || "—");
+    setTextSafe(`${prefix}AuthScopes`, (info.scopes_readable || "—").trim() || "—");
+    setTextSafe(`${prefix}AuthAppCredentials`, (info.has_client_id && info.has_client_secret) ? "Embedded in build" : "Missing from build");
+    setHidden(`${prefix}AuthPending`, !state[platform].polling);
+
+    if (primary) {
+      primary.dataset.baseLabel = getPrimaryLabel(platform, info);
+      primary.textContent = getPrimaryLabel(platform, info);
+      primary.disabled = !!state[platform].polling || s === "missing_config";
+      primary.classList.toggle("btn--primary", s !== "missing_config");
+      primary.classList.toggle("btn--ghost", s === "missing_config");
+    }
+  }
+
+  async function fetchInfo(platform) {
+    const path = platform === "twitch" ? "/api/twitch/auth/info" : "/api/youtube/auth/info";
+    const res = await fetch(path, { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    state[platform].info = data;
+    renderPlatform(platform);
+    return data;
+  }
+
+  async function copyStartUrl(platform) {
+    const info = state[platform].info || {};
+    const startUrl = info.start_url || (platform === "twitch" ? "/auth/twitch/start" : "/auth/youtube/start");
+    await clipCopy(`${window.location.origin}${startUrl}`);
+    setTextSafe(platform === "twitch" ? "twitchSettingsStatus" : "youtubeSettingsStatus", "Copied start URL");
+  }
+
+  async function startAuth(platform) {
+    const info = state[platform].info || {};
+    const platformState = getPlatformState(platform, info);
+
+    if (platformState === "missing_config") {
+      setTextSafe(platform === "twitch" ? "twitchSettingsStatus" : "youtubeSettingsStatus", "This build does not contain embedded app credentials.");
+      return;
     }
 
-    async function loadSettings() {
+    const primary = document.getElementById(platform === "twitch" ? "btnTwitchAuthPrimary" : "btnYouTubeAuthPrimary");
+    const startUrl = info.start_url || (platform === "twitch" ? "/auth/twitch/start" : "/auth/youtube/start");
+    setButtonBusy(primary, true, "Opening browser…");
+
+    try {
+      window.open(startUrl, "_blank", "noopener");
+      setButtonBusy(primary, false);
+      state[platform].polling = window.setInterval(async () => {
         try {
-            const s = await loadSettingsGlobalOnly();
-            logLine("settings", `loaded (${s.config_path || "unknown path"})`);
-        } catch (e) {
-            logLine("settings", `load failed (${e.message})`);
-        }
+          const latest = await fetchInfo(platform);
+          const s = getPlatformState(platform, latest);
+          if (s === "connected" || s === "reauth_required" || s === "missing_config") {
+            window.clearInterval(state[platform].polling);
+            state[platform].polling = null;
+            renderPlatform(platform);
+          }
+        } catch (_) {}
+      }, 1500);
+      renderPlatform(platform);
+    } catch (e) {
+      setButtonBusy(primary, false);
+      throw e;
     }
+  }
 
-    async function saveSettings() {
-        setSettingsStatus("Saving…");
-        try {
-            const payload = {
-                twitch_login: elLogin ? elLogin.value.trim() : "",
-                twitch_client_id: elClientId ? elClientId.value.trim() : ""
-            };
+  document.getElementById("btnTwitchAuthCopy")?.addEventListener("click", () => copyStartUrl("twitch"));
+  document.getElementById("btnYouTubeAuthCopy")?.addEventListener("click", () => copyStartUrl("youtube"));
+  document.getElementById("btnTwitchAuthRefresh")?.addEventListener("click", () => fetchInfo("twitch").catch(() => {}));
+  document.getElementById("btnYouTubeAuthRefresh")?.addEventListener("click", () => fetchInfo("youtube").catch(() => {}));
+  document.getElementById("btnTwitchAuthPrimary")?.addEventListener("click", () => startAuth("twitch"));
+  document.getElementById("btnYouTubeAuthPrimary")?.addEventListener("click", () => startAuth("youtube"));
 
-            const secret = elClientSecret ? elClientSecret.value : "";
-            if (secret && secret.trim()) {
-                payload.twitch_client_secret = secret.trim();
-            }
-
-            await apiPost("/api/settings/twitch-oauth", payload);
-
-            if (elClientSecret) elClientSecret.value = "";
-            setSettingsStatus("Saved.");
-            await loadSettings();
-            await loadSettingsFromMainPageSafe();
-        } catch (e) {
-            console.warn("Failed to save Twitch settings", e);
-            setSettingsStatus(`Save failed (${e.message})`);
-        }
-    }
-
-    async function loadSettingsFromMainPageSafe() {
-        try {
-            await loadSettingsGlobalOnly();
-        } catch (_) { }
-    }
-
-    loadOauthInfo();
-    loadSettings();
-
-    elSave?.addEventListener("click", saveSettings);
+  fetchInfo("twitch").catch(() => { state.twitch.info = { ok: false }; renderPlatform("twitch"); });
+  fetchInfo("youtube").catch(() => { state.youtube.info = { ok: false }; renderPlatform("youtube"); });
 }
 
 

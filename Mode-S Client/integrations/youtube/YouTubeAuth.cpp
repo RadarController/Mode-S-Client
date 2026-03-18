@@ -1,4 +1,5 @@
 #include "YouTubeAuth.h"
+#include "../../src/oauth/EmbeddedOAuthConfig.h"
 
 // This translation unit uses cpp-httplib + nlohmann::json.
 #include "httplib.h"
@@ -32,6 +33,11 @@ static std::wstring ToW(const std::string& s) {
 }
 
 namespace {
+
+inline void LoadEmbeddedYouTubeClientCredentials(std::string& client_id, std::string& client_secret) {
+    client_id = EmbeddedOAuthConfig::YouTubeClientId();
+    client_secret = EmbeddedOAuthConfig::YouTubeClientSecret();
+}
 
 // config path: CWD first, then exe dir (same approach as TwitchAuth)
 std::filesystem::path FindConfigPath() {
@@ -217,10 +223,11 @@ std::string YouTubeAuth::BuildAuthorizeUrl(const std::string& redirect_uri, std:
 
     std::string err;
     if (client_id_.empty() || client_secret_.empty()) {
+        LoadEmbeddedYouTubeClientCredentials(client_id_, client_secret_);
         (void)LoadFromConfig(&err);
     }
-    if (client_id_.empty()) {
-        if (out_error) *out_error = err.empty() ? "Missing youtube.client_id in config.json" : err;
+    if (client_id_.empty() || client_secret_.empty()) {
+        if (out_error) *out_error = "Embedded YouTube app credentials are missing in this build";
         return {};
     }
 
@@ -268,10 +275,11 @@ bool YouTubeAuth::HandleOAuthCallback(const std::string& code,
 
     std::string err;
     if (client_id_.empty() || client_secret_.empty()) {
+        LoadEmbeddedYouTubeClientCredentials(client_id_, client_secret_);
         (void)LoadFromConfig(&err);
     }
     if (client_id_.empty() || client_secret_.empty()) {
-        if (out_error) *out_error = err.empty() ? "Missing youtube.client_id/client_secret in config.json" : err;
+        if (out_error) *out_error = "Embedded YouTube app credentials are missing in this build";
         return false;
     }
 
@@ -375,10 +383,11 @@ bool YouTubeAuth::RefreshWithGoogle(std::string* out_error) {
 
     std::string err;
     if (client_id_.empty() || client_secret_.empty()) {
+        LoadEmbeddedYouTubeClientCredentials(client_id_, client_secret_);
         (void)LoadFromConfig(&err);
     }
     if (client_id_.empty() || client_secret_.empty()) {
-        if (out_error) *out_error = err.empty() ? "Missing youtube.client_id/client_secret in config.json" : err;
+        if (out_error) *out_error = "Embedded YouTube app credentials are missing in this build";
         return false;
     }
 
@@ -574,30 +583,26 @@ bool YouTubeAuth::ValidateAndLogToken(const std::string& access_token, std::stri
 // ---- config io ----
 bool YouTubeAuth::LoadFromConfig(std::string* out_error) {
     if (out_error) out_error->clear();
+
+    LoadEmbeddedYouTubeClientCredentials(client_id_, client_secret_);
+
     const auto p = FindConfigPath();
-    json root;
+    json root = json::object();
     std::string err;
     if (!ReadJsonFile(p, &root, &err)) {
-        if (out_error) *out_error = err;
-        return false;
+        std::lock_guard<std::mutex> lock(mu_);
+        tokens_ = TokenSnapshot{};
+        channel_id_.clear();
+        if (client_id_.empty() || client_secret_.empty()) {
+            if (out_error) *out_error = "Embedded YouTube app credentials are missing in this build";
+            return false;
+        }
+        return true;
     }
 
-    // Expected structure:
-    // {
-    //   "youtube": {
-    //     "client_id": "...",
-    //     "client_secret": "...",
-    //     "access_token": "...",
-    //     "refresh_token": "...",
-    //     "expires_at_unix": 123,
-    //     "scope": "..."
-    //   }
-    // }
     const json yt = root.value("youtube", json::object());
 
     std::lock_guard<std::mutex> lock(mu_);
-    client_id_ = yt.value("client_id", "");
-    client_secret_ = yt.value("client_secret", "");
     tokens_.access_token = yt.value("access_token", "");
     tokens_.refresh_token = yt.value("refresh_token", "");
     tokens_.expires_at_unix = yt.value("expires_at_unix", (std::int64_t)0);
@@ -615,21 +620,22 @@ bool YouTubeAuth::SaveToConfig(const TokenSnapshot& snap, std::string* out_error
     std::string err;
 
     if (!ReadJsonFile(p, &root, &err)) {
-        // If config doesn't exist, we can create a new one.
         root = json::object();
     }
 
     json yt = root.value("youtube", json::object());
+    yt.erase("client_id");
+    yt.erase("client_secret");
+
     {
         std::lock_guard<std::mutex> lock(mu_);
-        yt["client_id"] = client_id_;
-        yt["client_secret"] = client_secret_;
         yt["access_token"] = snap.access_token;
         yt["refresh_token"] = snap.refresh_token;
         yt["expires_at_unix"] = snap.expires_at_unix;
         yt["token_type"] = snap.token_type;
         yt["scope"] = snap.scope_joined;
         if (!channel_id_.empty()) yt["channel_id"] = channel_id_;
+        else yt.erase("channel_id");
     }
     root["youtube"] = yt;
 

@@ -213,6 +213,7 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClInclude Include="src\log\UiLog.h" />
     <ClInclude Include="src\Mode-S Client.h" />
     <ClInclude Include="src\http\HttpServer.h" />
+    <ClInclude Include="src\oauth\EmbeddedOAuthConfig.h" />
     <ClInclude Include="src\platform\PlatformControl.h" />
     <ClInclude Include="src\ui\SplashScreen.h" />
     <ClInclude Include="src\ui\WebViewHost.h" />
