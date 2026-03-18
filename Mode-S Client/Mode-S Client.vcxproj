@@ -255,6 +255,7 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClCompile Include="src\ui\WindowLayout.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="assets\app\accounts.html" />
     <None Include="assets\app\app.css" />
     <None Include="assets\app\app.js" />
     <None Include="assets\app\bot.html" />

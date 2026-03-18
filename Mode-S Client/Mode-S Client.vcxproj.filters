@@ -343,5 +343,8 @@
     <None Include="assets\app\splash\splash.js">
       <Filter>assets\app\splash</Filter>
     </None>
+    <None Include="assets\app\accounts.html">
+      <Filter>assets\app</Filter>
+    </None>
   </ItemGroup>
 </Project>

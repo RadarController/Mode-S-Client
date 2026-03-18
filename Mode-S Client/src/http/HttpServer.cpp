@@ -1336,11 +1336,8 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
             j["scopes_readable"] = std::string(TwitchAuth::RequiredScopeReadable());
             j["scopes_encoded"] = std::string(TwitchAuth::RequiredScopeEncoded());
 
-            // Match the richer shape used by the shared Connected Accounts UI.
-            // Twitch app credentials are top-level config fields, while user tokens are nested
-            // under the "twitch" object in config.json.
-            bool has_client_id = EmbeddedOAuthConfig::HasTwitchCredentials();
-            bool has_client_secret = EmbeddedOAuthConfig::HasTwitchCredentials();
+            // App credentials are now embedded in the build, not user-configured in config.json.
+            const bool has_embedded_credentials = EmbeddedOAuthConfig::HasTwitchCredentials();
             bool has_access_token = false;
             bool has_refresh_token = false;
             bool needs_reauth = false;
@@ -1387,12 +1384,13 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
             catch (...) {
             }
 
-            j["has_client_id"] = has_client_id;
-            j["has_client_secret"] = has_client_secret;
+            j["has_client_id"] = has_embedded_credentials;
+            j["has_client_secret"] = has_embedded_credentials;
             j["has_access_token"] = has_access_token;
             j["has_refresh_token"] = has_refresh_token;
             j["needs_reauth"] = needs_reauth;
             j["connected_login"] = connected_login;
+            j["app_credentials_embedded"] = has_embedded_credentials;
 
             res.status = 200;
             res.set_content(j.dump(2), "application/json; charset=utf-8");
@@ -1451,12 +1449,12 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
                     "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
                     "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
                     "<title>Twitch authentication failed</title>"
-                    "<style>body{font-family:Segoe UI,Arial,sans-serif;background:#0b1020;color:#eef2ff;"
-                    "padding:32px} .card{max-width:640px;margin:0 auto;background:#111a36;border:1px solid rgba(255,255,255,.08);"
-                    "border-radius:16px;padding:24px} .muted{color:rgba(255,255,255,.68)} code{word-break:break-word}</style>"
+                    "<style>body{font-family:Segoe UI,Arial,sans-serif;background:#0b1020;color:#eef2ff;padding:32px}"
+                    ".card{max-width:640px;margin:0 auto;background:#111a36;border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:24px}"
+                    ".muted{color:rgba(255,255,255,.68)}</style>"
+                    "<script>(function(){try{if(window.chrome&&window.chrome.webview&&window.chrome.webview.postMessage){window.chrome.webview.postMessage({type:'auth_popup_result',platform:'twitch',status:'error',title:'Twitch sign-in failed'});}}catch(e){}})();</script>"
                     "</head><body><div class=\"card\"><h1>Twitch authentication failed</h1>"
-                    "<p class=\"muted\">Return to Mode-S Client and try again.</p><p><code>" + HtmlEscape(err) + "</code></p>"
-                    "</div></body></html>";
+                    "<p class=\"muted\">Return to Mode-S Client and try again.</p></div></body></html>";
                 res.set_content(html, "text/html; charset=utf-8");
                 return;
             }
@@ -1467,9 +1465,10 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
                 "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
                 "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
                 "<title>Twitch connected</title>"
-                "<style>body{font-family:Segoe UI,Arial,sans-serif;background:#0b1020;color:#eef2ff;"
-                "padding:32px} .card{max-width:640px;margin:0 auto;background:#111a36;border:1px solid rgba(255,255,255,.08);"
-                "border-radius:16px;padding:24px} .muted{color:rgba(255,255,255,.68)}</style>"
+                "<style>body{font-family:Segoe UI,Arial,sans-serif;background:#0b1020;color:#eef2ff;padding:32px}"
+                ".card{max-width:640px;margin:0 auto;background:#111a36;border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:24px}"
+                ".muted{color:rgba(255,255,255,.68)}</style>"
+                "<script>(function(){try{if(window.chrome&&window.chrome.webview&&window.chrome.webview.postMessage){window.chrome.webview.postMessage({type:'auth_popup_result',platform:'twitch',status:'success',title:'Twitch connected'});}}catch(e){}setTimeout(function(){try{window.close();}catch(e){}},150);})();</script>"
                 "</head><body><div class=\"card\"><h1>Twitch connected</h1>"
                 "<p class=\"muted\">You can return to Mode-S Client.</p></div></body></html>";
             res.set_content(html, "text/html; charset=utf-8");
@@ -1489,8 +1488,7 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
             j["scopes_readable"] = std::string(YouTubeAuth::RequiredScopeReadable());
             j["scopes_encoded"] = std::string(YouTubeAuth::RequiredScopeEncoded());
 
-            bool has_client_id = EmbeddedOAuthConfig::HasYouTubeCredentials();
-            bool has_client_secret = EmbeddedOAuthConfig::HasYouTubeCredentials();
+            const bool has_embedded_credentials = EmbeddedOAuthConfig::HasYouTubeCredentials();
             bool has_access_token = false;
             bool has_refresh_token = false;
             bool needs_reauth = false;
@@ -1527,12 +1525,13 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
             catch (...) {
             }
 
-            j["has_client_id"] = has_client_id;
-            j["has_client_secret"] = has_client_secret;
+            j["has_client_id"] = has_embedded_credentials;
+            j["has_client_secret"] = has_embedded_credentials;
             j["has_access_token"] = has_access_token;
             j["has_refresh_token"] = has_refresh_token;
             j["needs_reauth"] = needs_reauth;
             j["channel_id"] = channel_id;
+            j["app_credentials_embedded"] = has_embedded_credentials;
 
             if (opt_.youtube_auth_info_json) {
                 try {
@@ -1602,12 +1601,12 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
                     "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
                     "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
                     "<title>YouTube authentication failed</title>"
-                    "<style>body{font-family:Segoe UI,Arial,sans-serif;background:#0b1020;color:#eef2ff;"
-                    "padding:32px} .card{max-width:640px;margin:0 auto;background:#111a36;border:1px solid rgba(255,255,255,.08);"
-                    "border-radius:16px;padding:24px} .muted{color:rgba(255,255,255,.68)} code{word-break:break-word}</style>"
+                    "<style>body{font-family:Segoe UI,Arial,sans-serif;background:#0b1020;color:#eef2ff;padding:32px}"
+                    ".card{max-width:640px;margin:0 auto;background:#111a36;border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:24px}"
+                    ".muted{color:rgba(255,255,255,.68)}</style>"
+                    "<script>(function(){try{if(window.chrome&&window.chrome.webview&&window.chrome.webview.postMessage){window.chrome.webview.postMessage({type:'auth_popup_result',platform:'youtube',status:'error',title:'YouTube sign-in failed'});}}catch(e){}})();</script>"
                     "</head><body><div class=\"card\"><h1>YouTube authentication failed</h1>"
-                    "<p class=\"muted\">Return to Mode-S Client and try again.</p><p><code>" + HtmlEscape(err) + "</code></p>"
-                    "</div></body></html>";
+                    "<p class=\"muted\">Return to Mode-S Client and try again.</p></div></body></html>";
                 res.set_content(html, "text/html; charset=utf-8");
                 return;
             }
@@ -1618,9 +1617,10 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
                 "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
                 "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
                 "<title>YouTube connected</title>"
-                "<style>body{font-family:Segoe UI,Arial,sans-serif;background:#0b1020;color:#eef2ff;"
-                "padding:32px} .card{max-width:640px;margin:0 auto;background:#111a36;border:1px solid rgba(255,255,255,.08);"
-                "border-radius:16px;padding:24px} .muted{color:rgba(255,255,255,.68)}</style>"
+                "<style>body{font-family:Segoe UI,Arial,sans-serif;background:#0b1020;color:#eef2ff;padding:32px}"
+                ".card{max-width:640px;margin:0 auto;background:#111a36;border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:24px}"
+                ".muted{color:rgba(255,255,255,.68)}</style>"
+                "<script>(function(){try{if(window.chrome&&window.chrome.webview&&window.chrome.webview.postMessage){window.chrome.webview.postMessage({type:'auth_popup_result',platform:'youtube',status:'success',title:'YouTube connected'});}}catch(e){}setTimeout(function(){try{window.close();}catch(e){}},150);})();</script>"
                 "</head><body><div class=\"card\"><h1>YouTube connected</h1>"
                 "<p class=\"muted\">You can return to Mode-S Client.</p></div></body></html>";
             res.set_content(html, "text/html; charset=utf-8");
@@ -1637,6 +1637,8 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
 
                     if (j.contains("tiktok_unique_id"))      config_.tiktok_unique_id = j.value("tiktok_unique_id", config_.tiktok_unique_id);
                     if (j.contains("twitch_login"))          config_.twitch_login = j.value("twitch_login", config_.twitch_login);
+                    if (j.contains("twitch_client_id"))      config_.twitch_client_id = j.value("twitch_client_id", config_.twitch_client_id);
+                    if (j.contains("twitch_client_secret"))  config_.twitch_client_secret = j.value("twitch_client_secret", config_.twitch_client_secret);
                     if (j.contains("youtube_handle"))        config_.youtube_handle = j.value("youtube_handle", config_.youtube_handle);
 
                     // TikTok cookie/session fields (optional)
@@ -1737,16 +1739,15 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
             });
 
         // --- API: Twitch OAuth settings (local only) ---
-        // Legacy helper retained for compatibility. App credentials are embedded in the build;
-        // only the Twitch login remains user-editable here.
+// Used only by /app/twitch_oauth.html
         svr.Get("/api/settings/twitch-oauth", [&](const httplib::Request& req, httplib::Response& res) {
             if (!require_local(req, res)) return;
 
             json out;
             out["ok"] = true;
             out["twitch_login"] = config_.twitch_login;
-            out["app_credentials_embedded"] = EmbeddedOAuthConfig::HasTwitchCredentials();
-            out["has_twitch_client_secret"] = EmbeddedOAuthConfig::HasTwitchCredentials();
+            out["twitch_client_id"] = config_.twitch_client_id;
+            out["has_twitch_client_secret"] = !config_.twitch_client_secret.empty();
 
             res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
             res.set_header("Pragma", "no-cache");
@@ -1761,6 +1762,17 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
 
                 if (j.contains("twitch_login")) {
                     config_.twitch_login = j.value("twitch_login", config_.twitch_login);
+                }
+                if (j.contains("twitch_client_id")) {
+                    config_.twitch_client_id = j.value("twitch_client_id", config_.twitch_client_id);
+                }
+
+                // Write-only secret: only update if caller explicitly provided a non-empty value
+                if (j.contains("twitch_client_secret")) {
+                    const std::string secret = j.value("twitch_client_secret", std::string{});
+                    if (!secret.empty()) {
+                        config_.twitch_client_secret = secret;
+                    }
                 }
             }
             catch (const std::exception& e) {
@@ -1791,7 +1803,7 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
             json out;
             out["ok"] = true;
             out["path"] = cfg_path;
-            out["app_credentials_embedded"] = EmbeddedOAuthConfig::HasTwitchCredentials();
+            out["has_twitch_client_secret"] = !config_.twitch_client_secret.empty();
             res.set_content(out.dump(2), "application/json; charset=utf-8");
             });
 

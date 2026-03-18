@@ -924,6 +924,31 @@ function wireYouTubeAuthStatus() {
     });
 }
 
+
+function openPlatformAuthPopup(startUrl, platform) {
+  const absoluteUrl = /^https?:\/\//i.test(startUrl)
+    ? startUrl
+    : `${window.location.origin}${startUrl}`;
+
+  const title = platform === "twitch" ? "Twitch sign-in" : "YouTube sign-in";
+
+  try {
+    if (window.chrome?.webview?.postMessage) {
+      window.chrome.webview.postMessage({
+        type: "open_auth_popup",
+        platform,
+        url: absoluteUrl,
+        title
+      });
+      return true;
+    }
+  } catch (_) {
+    // Fall through to browser fallback below.
+  }
+
+  return false;
+}
+
 function wireConnectedAccountsPage() {
   const root = document.getElementById("connectedAccountsPage");
   if (!root) return;
@@ -1060,10 +1085,13 @@ function wireConnectedAccountsPage() {
 
     const primary = document.getElementById(platform === "twitch" ? "btnTwitchAuthPrimary" : "btnYouTubeAuthPrimary");
     const startUrl = info.start_url || (platform === "twitch" ? "/auth/twitch/start" : "/auth/youtube/start");
-    setButtonBusy(primary, true, "Opening browser…");
+    setButtonBusy(primary, true, "Opening sign-in…");
 
     try {
-      window.open(startUrl, "_blank", "noopener");
+      const openedInApp = openPlatformAuthPopup(startUrl, platform);
+      if (!openedInApp) {
+        window.open(startUrl, "_blank", "noopener");
+      }
       setButtonBusy(primary, false);
       state[platform].polling = window.setInterval(async () => {
         try {
