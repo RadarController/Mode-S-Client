@@ -213,6 +213,7 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClInclude Include="src\log\UiLog.h" />
     <ClInclude Include="src\Mode-S Client.h" />
     <ClInclude Include="src\http\HttpServer.h" />
+    <ClInclude Include="src\oauth\EmbeddedOAuthConfig.h" />
     <ClInclude Include="src\platform\PlatformControl.h" />
     <ClInclude Include="src\ui\SplashScreen.h" />
     <ClInclude Include="src\ui\WebViewHost.h" />
@@ -254,6 +255,7 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClCompile Include="src\ui\WindowLayout.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="assets\app\accounts.html" />
     <None Include="assets\app\app.css" />
     <None Include="assets\app\app.js" />
     <None Include="assets\app\bot.html" />
@@ -262,6 +264,8 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <None Include="assets\app\overlay_title.html" />
     <None Include="assets\app\settings.html" />
     <None Include="assets\app\splash\index.html" />
+    <None Include="assets\app\splash\splash.css" />
+    <None Include="assets\app\splash\splash.js" />
     <None Include="assets\app\twitch_stream.html" />
     <None Include="assets\mergedChatFeed.js" />
     <None Include="assets\overlay\alerts.css" />

@@ -138,6 +138,21 @@
     <ClInclude Include="src\app\AppRuntime.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="integrations\twitch\TwitchHelixController.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\AppPaths.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\ui\WindowEffects.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\ui\WindowLayout.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\oauth\EmbeddedOAuthConfig.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="integrations\obs\ObsWsClient.cpp">
@@ -216,6 +231,18 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="src\app\AppRuntime.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="integrations\twitch\TwitchHelixController.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\AppPaths.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ui\WindowEffects.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ui\WindowLayout.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -309,6 +336,15 @@
     </None>
     <None Include="assets\app\splash\index.html">
       <Filter>assets\app\splash</Filter>
+    </None>
+    <None Include="assets\app\splash\splash.css">
+      <Filter>assets\app\splash</Filter>
+    </None>
+    <None Include="assets\app\splash\splash.js">
+      <Filter>assets\app\splash</Filter>
+    </None>
+    <None Include="assets\app\accounts.html">
+      <Filter>assets\app</Filter>
     </None>
   </ItemGroup>
 </Project>

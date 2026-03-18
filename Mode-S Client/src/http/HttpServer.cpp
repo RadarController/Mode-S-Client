@@ -19,6 +19,7 @@
 #include "../../integrations/youtube/YouTubeAuth.h"
 #include "../../integrations/simconnect/SimConnectWorker.h"
 #include "../AppConfig.h"
+#include "../oauth/EmbeddedOAuthConfig.h"
 
 namespace {
 
@@ -92,6 +93,25 @@ namespace {
         const std::wstring& msg)
     {
         SafeOutputLog(log, L"[HttpServer][Platform] " + msg);
+    }
+
+    inline std::string HtmlEscape(const std::string& s)
+    {
+        std::string out;
+        out.reserve(s.size());
+
+        for (char c : s) {
+            switch (c) {
+            case '&':  out += "&amp;";  break;
+            case '<':  out += "&lt;";   break;
+            case '>':  out += "&gt;";   break;
+            case '"':  out += "&quot;"; break;
+            case '\'': out += "&#39;";  break;
+            default:   out += c;        break;
+            }
+        }
+
+        return out;
     }
 
 } // namespace
@@ -1315,6 +1335,63 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
             j["oauth_routes_wired"] = (bool)opt_.twitch_auth_build_authorize_url && (bool)opt_.twitch_auth_handle_callback;
             j["scopes_readable"] = std::string(TwitchAuth::RequiredScopeReadable());
             j["scopes_encoded"] = std::string(TwitchAuth::RequiredScopeEncoded());
+
+            // App credentials are now embedded in the build, not user-configured in config.json.
+            const bool has_embedded_credentials = EmbeddedOAuthConfig::HasTwitchCredentials();
+            bool has_access_token = false;
+            bool has_refresh_token = false;
+            bool needs_reauth = false;
+            std::string connected_login = config_.twitch_login;
+
+            try {
+                const std::wstring cfg_path_w = AppConfig::ConfigPath();
+                FILE* f = nullptr;
+                _wfopen_s(&f, cfg_path_w.c_str(), L"rb");
+                if (f) {
+                    fseek(f, 0, SEEK_END);
+                    long sz = ftell(f);
+                    fseek(f, 0, SEEK_SET);
+
+                    std::string data;
+                    data.resize(sz > 0 ? (size_t)sz : 0);
+                    if (sz > 0) fread(data.data(), 1, (size_t)sz, f);
+                    fclose(f);
+
+                    if (!data.empty()) {
+                        auto cfg = json::parse(data, nullptr, false);
+                        if (cfg.is_object()) {
+                            if (connected_login.empty()) {
+                                connected_login = cfg.value("twitch_login", std::string{});
+                            }
+
+                            const auto tw = cfg.value("twitch", json::object());
+                            if (tw.is_object()) {
+                                has_access_token = !tw.value("user_access_token", std::string{}).empty();
+                                has_refresh_token = !tw.value("user_refresh_token", std::string{}).empty();
+
+                                if (connected_login.empty()) {
+                                    connected_login = tw.value("login", std::string{});
+                                }
+
+                                // No explicit persisted Twitch reauth flag currently exists.
+                                // Treat "configured but no tokens" as not connected, not reauth-required.
+                                needs_reauth = tw.value("needs_reauth", false);
+                            }
+                        }
+                    }
+                }
+            }
+            catch (...) {
+            }
+
+            j["has_client_id"] = has_embedded_credentials;
+            j["has_client_secret"] = has_embedded_credentials;
+            j["has_access_token"] = has_access_token;
+            j["has_refresh_token"] = has_refresh_token;
+            j["needs_reauth"] = needs_reauth;
+            j["connected_login"] = connected_login;
+            j["app_credentials_embedded"] = has_embedded_credentials;
+
             res.status = 200;
             res.set_content(j.dump(2), "application/json; charset=utf-8");
             });
@@ -1368,17 +1445,33 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
             if (!ok) {
                 TwitchHttpLog(log_, L"OAuth callback token exchange failed: " + ToW(err));
                 res.status = 500;
-                res.set_content(std::string("OAuth callback failed: ") + err,
-                    "text/plain; charset=utf-8");
+                const std::string html =
+                    "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+                    "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+                    "<title>Twitch authentication failed</title>"
+                    "<style>body{font-family:Segoe UI,Arial,sans-serif;background:#0b1020;color:#eef2ff;padding:32px}"
+                    ".card{max-width:640px;margin:0 auto;background:#111a36;border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:24px}"
+                    ".muted{color:rgba(255,255,255,.68)}</style>"
+                    "<script>(function(){try{if(window.chrome&&window.chrome.webview&&window.chrome.webview.postMessage){window.chrome.webview.postMessage({type:'auth_popup_result',platform:'twitch',status:'error',title:'Twitch sign-in failed'});}}catch(e){}})();</script>"
+                    "</head><body><div class=\"card\"><h1>Twitch authentication failed</h1>"
+                    "<p class=\"muted\">Return to Mode-S Client and try again.</p></div></body></html>";
+                res.set_content(html, "text/html; charset=utf-8");
                 return;
             }
 
             TwitchHttpLog(log_, L"OAuth callback completed successfully");
 
-            res.set_content(
-                "OK - Twitch auth completed. You can close this tab.",
-                "text/plain; charset=utf-8"
-            );
+            const std::string html =
+                "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+                "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+                "<title>Twitch connected</title>"
+                "<style>body{font-family:Segoe UI,Arial,sans-serif;background:#0b1020;color:#eef2ff;padding:32px}"
+                ".card{max-width:640px;margin:0 auto;background:#111a36;border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:24px}"
+                ".muted{color:rgba(255,255,255,.68)}</style>"
+                "<script>(function(){try{if(window.chrome&&window.chrome.webview&&window.chrome.webview.postMessage){window.chrome.webview.postMessage({type:'auth_popup_result',platform:'twitch',status:'success',title:'Twitch connected'});}}catch(e){}setTimeout(function(){try{window.close();}catch(e){}},150);})();</script>"
+                "</head><body><div class=\"card\"><h1>Twitch connected</h1>"
+                "<p class=\"muted\">You can return to Mode-S Client.</p></div></body></html>";
+            res.set_content(html, "text/html; charset=utf-8");
             });
 
         // --- YouTube OAuth (interactive) ---
@@ -1386,6 +1479,102 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
         //   http://localhost:17845/auth/youtube/start
         // Callback:
         //   http://localhost:17845/auth/youtube/callback
+
+        svr.Get("/api/youtube/auth/info", [&](const httplib::Request& /*req*/, httplib::Response& res) {
+            json j;
+            j["ok"] = true;
+            j["start_url"] = "/auth/youtube/start";
+            j["oauth_routes_wired"] = (bool)opt_.youtube_auth_build_authorize_url && (bool)opt_.youtube_auth_handle_callback;
+            j["scopes_readable"] = std::string(YouTubeAuth::RequiredScopeReadable());
+            j["scopes_encoded"] = std::string(YouTubeAuth::RequiredScopeEncoded());
+
+            const bool has_embedded_credentials = EmbeddedOAuthConfig::HasYouTubeCredentials();
+            bool has_access_token = false;
+            bool has_refresh_token = false;
+            bool needs_reauth = false;
+            std::string channel_id;
+
+            try {
+                const std::wstring cfg_path_w = AppConfig::ConfigPath();
+                FILE* f = nullptr;
+                _wfopen_s(&f, cfg_path_w.c_str(), L"rb");
+                if (f) {
+                    fseek(f, 0, SEEK_END);
+                    long sz = ftell(f);
+                    fseek(f, 0, SEEK_SET);
+
+                    std::string data;
+                    data.resize(sz > 0 ? (size_t)sz : 0);
+                    if (sz > 0) fread(data.data(), 1, (size_t)sz, f);
+                    fclose(f);
+
+                    if (!data.empty()) {
+                        auto cfg = json::parse(data, nullptr, false);
+                        if (cfg.is_object()) {
+                            const auto yt = cfg.value("youtube", json::object());
+                            if (yt.is_object()) {
+                                has_access_token = !yt.value("access_token", std::string{}).empty();
+                                has_refresh_token = !yt.value("refresh_token", std::string{}).empty();
+                                needs_reauth = yt.value("needs_reauth", false);
+                                channel_id = yt.value("channel_id", std::string{});
+                            }
+                        }
+                    }
+                }
+            }
+            catch (...) {
+            }
+
+            j["has_client_id"] = has_embedded_credentials;
+            j["has_client_secret"] = has_embedded_credentials;
+            j["has_access_token"] = has_access_token;
+            j["has_refresh_token"] = has_refresh_token;
+            j["needs_reauth"] = needs_reauth;
+            j["channel_id"] = channel_id;
+            j["app_credentials_embedded"] = has_embedded_credentials;
+
+            if (opt_.youtube_auth_info_json) {
+                try {
+                    const auto richer = json::parse(opt_.youtube_auth_info_json(), nullptr, false);
+                    if (richer.is_object()) {
+                        for (auto it = richer.begin(); it != richer.end(); ++it) {
+                            j[it.key()] = it.value();
+                        }
+                    }
+                }
+                catch (...) {
+                }
+            }
+
+            res.status = 200;
+            res.set_content(j.dump(2), "application/json; charset=utf-8");
+        });
+
+        svr.Get("/auth/youtube/start", [&](const httplib::Request& /*req*/, httplib::Response& res) {
+            if (!opt_.youtube_auth_build_authorize_url) {
+                YouTubeHttpLog(log_, L"OAuth start requested but routes are not enabled");
+                res.status = 404;
+                res.set_content("not wired", "text/plain; charset=utf-8");
+                return;
+            }
+
+            const std::string redirect_uri =
+                std::string("http://localhost:") + std::to_string(opt_.port) + "/auth/youtube/callback";
+
+            std::string err;
+            const std::string url = opt_.youtube_auth_build_authorize_url(redirect_uri, &err);
+            if (url.empty()) {
+                YouTubeHttpLog(log_, L"OAuth start failed to build authorize URL: " + ToW(err));
+                res.status = 500;
+                res.set_content(std::string("BuildAuthorizeUrl failed: ") + err, "text/plain; charset=utf-8");
+                return;
+            }
+
+            YouTubeHttpLog(log_, L"OAuth start redirecting browser to Google");
+            res.status = 302;
+            res.set_header("Location", url);
+        });
+
         svr.Get("/auth/youtube/callback", [&](const httplib::Request& req, httplib::Response& res) {
             if (!opt_.youtube_auth_handle_callback) {
                 YouTubeHttpLog(log_, L"OAuth callback requested but routes are not enabled");
@@ -1408,14 +1597,61 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
             if (!ok) {
                 YouTubeHttpLog(log_, L"OAuth callback token exchange failed: " + ToW(err));
                 res.status = 500;
-                res.set_content(std::string("OAuth callback failed: ") + err, "text/plain; charset=utf-8");
+                const std::string html =
+                    "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+                    "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+                    "<title>YouTube authentication failed</title>"
+                    "<style>body{font-family:Segoe UI,Arial,sans-serif;background:#0b1020;color:#eef2ff;padding:32px}"
+                    ".card{max-width:640px;margin:0 auto;background:#111a36;border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:24px}"
+                    ".muted{color:rgba(255,255,255,.68)}</style>"
+                    "<script>(function(){try{if(window.chrome&&window.chrome.webview&&window.chrome.webview.postMessage){window.chrome.webview.postMessage({type:'auth_popup_result',platform:'youtube',status:'error',title:'YouTube sign-in failed'});}}catch(e){}})();</script>"
+                    "</head><body><div class=\"card\"><h1>YouTube authentication failed</h1>"
+                    "<p class=\"muted\">Return to Mode-S Client and try again.</p></div></body></html>";
+                res.set_content(html, "text/html; charset=utf-8");
                 return;
             }
 
             YouTubeHttpLog(log_, L"OAuth callback completed successfully");
 
-            res.set_content("OK - YouTube auth completed. You can close this tab.", "text/plain; charset=utf-8");
+            const std::string html =
+                "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+                "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+                "<title>YouTube connected</title>"
+                "<style>body{font-family:Segoe UI,Arial,sans-serif;background:#0b1020;color:#eef2ff;padding:32px}"
+                ".card{max-width:640px;margin:0 auto;background:#111a36;border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:24px}"
+                ".muted{color:rgba(255,255,255,.68)}</style>"
+                "<script>(function(){try{if(window.chrome&&window.chrome.webview&&window.chrome.webview.postMessage){window.chrome.webview.postMessage({type:'auth_popup_result',platform:'youtube',status:'success',title:'YouTube connected'});}}catch(e){}setTimeout(function(){try{window.close();}catch(e){}},150);})();</script>"
+                "</head><body><div class=\"card\"><h1>YouTube connected</h1>"
+                "<p class=\"muted\">You can return to Mode-S Client.</p></div></body></html>";
+            res.set_content(html, "text/html; charset=utf-8");
             });
+
+
+
+        // --- TikTok session capture (interactive) ---
+        // Start:
+        //   http://localhost:17845/auth/tiktok/start
+        // Status:
+        //   http://localhost:17845/api/tiktok/auth/info
+
+        svr.Get("/api/tiktok/auth/info", [&](const httplib::Request& /*req*/, httplib::Response& res) {
+            json out;
+            out["ok"] = true;
+            out["start_url"] = "/auth/tiktok/start";
+            out["unique_id"] = config_.tiktok_unique_id;
+            out["has_sessionid"] = !config_.tiktok_sessionid.empty();
+            out["has_sessionid_ss"] = !config_.tiktok_sessionid_ss.empty();
+            out["has_tt_target_idc"] = !config_.tiktok_tt_target_idc.empty();
+
+            res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+            res.set_header("Pragma", "no-cache");
+            res.set_content(out.dump(2), "application/json; charset=utf-8");
+        });
+
+        svr.Get("/auth/tiktok/start", [&](const httplib::Request& /*req*/, httplib::Response& res) {
+            res.status = 302;
+            res.set_header("Location", "https://www.tiktok.com/login?lang=en");
+        });
 
 
         // --- API: settings save (used by /app UI) ---
