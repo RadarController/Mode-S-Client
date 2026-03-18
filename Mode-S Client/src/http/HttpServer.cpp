@@ -1627,6 +1627,33 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
             });
 
 
+
+        // --- TikTok session capture (interactive) ---
+        // Start:
+        //   http://localhost:17845/auth/tiktok/start
+        // Status:
+        //   http://localhost:17845/api/tiktok/auth/info
+
+        svr.Get("/api/tiktok/auth/info", [&](const httplib::Request& /*req*/, httplib::Response& res) {
+            json out;
+            out["ok"] = true;
+            out["start_url"] = "/auth/tiktok/start";
+            out["unique_id"] = config_.tiktok_unique_id;
+            out["has_sessionid"] = !config_.tiktok_sessionid.empty();
+            out["has_sessionid_ss"] = !config_.tiktok_sessionid_ss.empty();
+            out["has_tt_target_idc"] = !config_.tiktok_tt_target_idc.empty();
+
+            res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+            res.set_header("Pragma", "no-cache");
+            res.set_content(out.dump(2), "application/json; charset=utf-8");
+        });
+
+        svr.Get("/auth/tiktok/start", [&](const httplib::Request& /*req*/, httplib::Response& res) {
+            res.status = 302;
+            res.set_header("Location", "https://www.tiktok.com/login?lang=en");
+        });
+
+
         // --- API: settings save (used by /app UI) ---
         // Accept both legacy and newer paths.
         auto handle_settings_save = [&](const httplib::Request& req, httplib::Response& res) {

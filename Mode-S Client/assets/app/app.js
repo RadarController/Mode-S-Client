@@ -596,12 +596,51 @@ function wireActions(){
   });
 }
 
+
+function wireNativeHostMessages() {
+  if (window.__rcNativeHostMessagesWired) return;
+  window.__rcNativeHostMessagesWired = true;
+
+  try {
+    if (!window.chrome?.webview?.addEventListener) return;
+
+    window.chrome.webview.addEventListener("message", async (event) => {
+      const msg = event?.data || {};
+      if (!msg || typeof msg !== "object") return;
+
+      if (msg.type === "tiktok_auth_cookies") {
+        try {
+          await apiPost("/api/settings/tiktok-cookies", {
+            tiktok_sessionid: String(msg.tiktok_sessionid || "").trim(),
+            tiktok_sessionid_ss: String(msg.tiktok_sessionid_ss || "").trim(),
+            tiktok_tt_target_idc: String(msg.tiktok_tt_target_idc || "").trim()
+          });
+
+          const input = document.getElementById("tiktokConnectUser");
+          const uniqueId = sanitizeTikTok((input && input.value) ? input.value : (msg.tiktok_unique_id || ""));
+          if (uniqueId) {
+            await apiPost("/api/settings/save", { tiktok_unique_id: uniqueId });
+          }
+
+          document.dispatchEvent(new CustomEvent("rc:tiktok-auth-captured", { detail: msg }));
+        } catch (e) {
+          console.error("Failed to persist captured TikTok cookies", e);
+        }
+      }
+    });
+  } catch (_) {
+    // no native host
+  }
+}
+
+
 document.addEventListener("DOMContentLoaded", async () => {
     wireSmartBackButtons();
     wireSettingsHubPage();
     wireTwitchStreamInfoPage();
     wireYouTubeAuthStatus();
     wireConnectedAccountsPage();
+    wireNativeHostMessages();
     loadYouTubeVodDraft();
     wireTikTokCookiesPage();
     wireOverlayTitlePage();
@@ -930,7 +969,10 @@ function openPlatformAuthPopup(startUrl, platform) {
     ? startUrl
     : `${window.location.origin}${startUrl}`;
 
-  const title = platform === "twitch" ? "Twitch sign-in" : "YouTube sign-in";
+  let title = "Sign in";
+  if (platform === "twitch") title = "Twitch sign-in";
+  else if (platform === "youtube") title = "YouTube sign-in";
+  else if (platform === "tiktok") title = "TikTok sign-in";
 
   try {
     if (window.chrome?.webview?.postMessage) {
@@ -949,13 +991,21 @@ function openPlatformAuthPopup(startUrl, platform) {
   return false;
 }
 
+
 function wireConnectedAccountsPage() {
   const root = document.getElementById("connectedAccountsPage");
   if (!root) return;
 
   const state = {
     twitch: { info: null, polling: null },
-    youtube: { info: null, polling: null }
+    youtube: { info: null, polling: null },
+    tiktok: { info: null, polling: null }
+  };
+
+  const paths = {
+    twitch: "/api/twitch/auth/info",
+    youtube: "/api/youtube/auth/info",
+    tiktok: "/api/tiktok/auth/info"
   };
 
   function setTextSafe(id, text) {
@@ -975,19 +1025,29 @@ function wireConnectedAccountsPage() {
     btn.textContent = busy ? (label || "Working…") : btn.dataset.baseLabel;
   }
 
-  function clipCopy(text) {
-    return navigator.clipboard.writeText(text).catch(() => {
-      const ta = document.createElement("textarea");
-      ta.value = text;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand("copy");
-      document.body.removeChild(ta);
-    });
+  function getPrimaryButton(platform) {
+    if (platform === "twitch") return document.getElementById("btnTwitchAuthPrimary");
+    if (platform === "youtube") return document.getElementById("btnYouTubeAuthPrimary");
+    return document.getElementById("btnTikTokAuthPrimary");
+  }
+
+  function getRefreshButton(platform) {
+    if (platform === "twitch") return document.getElementById("btnTwitchAuthRefresh");
+    if (platform === "youtube") return document.getElementById("btnYouTubeAuthRefresh");
+    return document.getElementById("btnTikTokAuthRefresh");
   }
 
   function getPlatformState(platform, info) {
     if (!info || info.ok === false) return "error";
+
+    if (platform === "tiktok") {
+      const hasIdentity = !!String(info.unique_id || "").trim();
+      const hasCookies = !!info.has_sessionid && !!info.has_sessionid_ss && !!info.has_tt_target_idc;
+      if (!hasIdentity) return "needs_identity";
+      if (hasCookies) return "connected";
+      return "not_connected";
+    }
+
     const hasConfig = !!info.has_client_id && !!info.has_client_secret;
     const hasTokens = !!info.has_refresh_token || !!info.has_access_token;
     if (!hasConfig) return "missing_config";
@@ -998,6 +1058,7 @@ function wireConnectedAccountsPage() {
 
   function getPlatformSummary(platform, info) {
     const s = getPlatformState(platform, info);
+
     if (platform === "twitch") {
       if (s === "connected") return info.connected_login ? `Connected as ${info.connected_login}` : "Connected";
       if (s === "reauth_required") return "Twitch needs to be connected again.";
@@ -1005,11 +1066,19 @@ function wireConnectedAccountsPage() {
       if (s === "not_connected") return "Twitch is ready to connect.";
       return "Could not load Twitch status.";
     }
-    if (s === "connected") return info.channel_id ? `Connected to channel ${info.channel_id}` : "Connected";
-    if (s === "reauth_required") return "YouTube needs to be connected again.";
-    if (s === "missing_config") return "YouTube app credentials are not embedded in this build.";
-    if (s === "not_connected") return "YouTube is ready to connect.";
-    return "Could not load YouTube status.";
+
+    if (platform === "youtube") {
+      if (s === "connected") return info.channel_id ? `Connected to channel ${info.channel_id}` : "Connected";
+      if (s === "reauth_required") return "YouTube needs to be connected again.";
+      if (s === "missing_config") return "YouTube app credentials are not embedded in this build.";
+      if (s === "not_connected") return "YouTube is ready to connect.";
+      return "Could not load YouTube status.";
+    }
+
+    if (s === "connected") return info.unique_id ? `Session saved for @${info.unique_id}` : "Session saved";
+    if (s === "needs_identity") return "Enter the TikTok account name you want to connect.";
+    if (s === "not_connected") return "TikTok is ready to capture a session.";
+    return "Could not load TikTok status.";
   }
 
   function getChipLabel(platform, info) {
@@ -1018,6 +1087,7 @@ function wireConnectedAccountsPage() {
       case "connected": return "Connected";
       case "reauth_required": return "Reconnect needed";
       case "missing_config": return "Unavailable";
+      case "needs_identity": return "Enter account";
       case "not_connected": return "Ready";
       default: return "Unavailable";
     }
@@ -1025,6 +1095,10 @@ function wireConnectedAccountsPage() {
 
   function getPrimaryLabel(platform, info) {
     const s = getPlatformState(platform, info);
+    if (platform === "tiktok") {
+      if (s === "connected") return "Reconnect TikTok";
+      return "Connect TikTok";
+    }
     switch (s) {
       case "connected": return platform === "twitch" ? "Reconnect Twitch" : "Reconnect YouTube";
       case "reauth_required": return platform === "twitch" ? "Reconnect Twitch" : "Reconnect YouTube";
@@ -1037,15 +1111,39 @@ function wireConnectedAccountsPage() {
   function renderPlatform(platform) {
     const info = state[platform].info || {};
     const s = getPlatformState(platform, info);
+    const primary = getPrimaryButton(platform);
+
+    if (platform === "tiktok") {
+      const input = document.getElementById("tiktokConnectUser");
+      if (input && !String(input.value || "").trim() && info.unique_id) {
+        input.value = `@${info.unique_id}`;
+      }
+
+      setTextSafe("tiktokAuthChip", getChipLabel(platform, info));
+      setTextSafe("tiktokAuthSummary", getPlatformSummary(platform, info));
+      setTextSafe("tiktokAuthIdentity", info.unique_id ? `@${info.unique_id}` : "—");
+      setTextSafe("tiktokCookieSession", info.has_sessionid ? "Present" : "Missing");
+      setTextSafe("tiktokCookieSessionSs", info.has_sessionid_ss ? "Present" : "Missing");
+      setTextSafe("tiktokCookieTargetIdc", info.has_tt_target_idc ? "Present" : "Missing");
+      setHidden("tiktokAuthPending", !state.tiktok.polling);
+
+      if (primary) {
+        primary.dataset.baseLabel = getPrimaryLabel(platform, info);
+        primary.textContent = getPrimaryLabel(platform, info);
+        const cleaned = sanitizeTikTok((input && input.value) || "");
+        primary.disabled = !!state.tiktok.polling || !cleaned;
+      }
+
+      const refresh = getRefreshButton(platform);
+      if (refresh) refresh.disabled = !!state.tiktok.polling;
+      return;
+    }
 
     const prefix = platform === "twitch" ? "twitch" : "youtube";
-    const primary = document.getElementById(platform === "twitch" ? "btnTwitchAuthPrimary" : "btnYouTubeAuthPrimary");
-
     setTextSafe(`${prefix}AuthChip`, getChipLabel(platform, info));
     setTextSafe(`${prefix}AuthSummary`, getPlatformSummary(platform, info));
     setTextSafe(`${prefix}AuthIdentity`, info.connected_login || info.channel_id || "—");
     setTextSafe(`${prefix}AuthScopes`, (info.scopes_readable || "—").trim() || "—");
-    setTextSafe(`${prefix}AuthAppCredentials`, (info.has_client_id && info.has_client_secret) ? "Embedded in build" : "Missing from build");
     setHidden(`${prefix}AuthPending`, !state[platform].polling);
 
     if (primary) {
@@ -1055,11 +1153,13 @@ function wireConnectedAccountsPage() {
       primary.classList.toggle("btn--primary", s !== "missing_config");
       primary.classList.toggle("btn--ghost", s === "missing_config");
     }
+
+    const refresh = getRefreshButton(platform);
+    if (refresh) refresh.disabled = !!state[platform].polling;
   }
 
   async function fetchInfo(platform) {
-    const path = platform === "twitch" ? "/api/twitch/auth/info" : "/api/youtube/auth/info";
-    const res = await fetch(path, { cache: "no-store" });
+    const res = await fetch(paths[platform], { cache: "no-store" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     state[platform].info = data;
@@ -1067,24 +1167,37 @@ function wireConnectedAccountsPage() {
     return data;
   }
 
-  async function copyStartUrl(platform) {
-    const info = state[platform].info || {};
-    const startUrl = info.start_url || (platform === "twitch" ? "/auth/twitch/start" : "/auth/youtube/start");
-    await clipCopy(`${window.location.origin}${startUrl}`);
-    setTextSafe(platform === "twitch" ? "twitchSettingsStatus" : "youtubeSettingsStatus", "Copied start URL");
+  async function saveTikTokIdentity() {
+    const input = document.getElementById("tiktokConnectUser");
+    const uniqueId = sanitizeTikTok((input && input.value) || "");
+    if (!input) return "";
+    input.value = uniqueId ? `@${uniqueId}` : "";
+    if (!uniqueId) return "";
+    await apiPost("/api/settings/save", { tiktok_unique_id: uniqueId });
+    return uniqueId;
   }
 
   async function startAuth(platform) {
     const info = state[platform].info || {};
     const platformState = getPlatformState(platform, info);
 
-    if (platformState === "missing_config") {
-      setTextSafe(platform === "twitch" ? "twitchSettingsStatus" : "youtubeSettingsStatus", "This build does not contain embedded app credentials.");
+    if (platform === "tiktok") {
+      const uniqueId = await saveTikTokIdentity();
+      if (!uniqueId) {
+        renderPlatform("tiktok");
+        return;
+      }
+    } else if (platformState === "missing_config") {
       return;
     }
 
-    const primary = document.getElementById(platform === "twitch" ? "btnTwitchAuthPrimary" : "btnYouTubeAuthPrimary");
-    const startUrl = info.start_url || (platform === "twitch" ? "/auth/twitch/start" : "/auth/youtube/start");
+    const primary = getPrimaryButton(platform);
+    const startUrl = info.start_url || (platform === "twitch"
+      ? "/auth/twitch/start"
+      : platform === "youtube"
+        ? "/auth/youtube/start"
+        : "/auth/tiktok/start");
+
     setButtonBusy(primary, true, "Opening sign-in…");
 
     try {
@@ -1092,6 +1205,7 @@ function wireConnectedAccountsPage() {
       if (!openedInApp) {
         window.open(startUrl, "_blank", "noopener");
       }
+
       setButtonBusy(primary, false);
       state[platform].polling = window.setInterval(async () => {
         try {
@@ -1104,6 +1218,7 @@ function wireConnectedAccountsPage() {
           }
         } catch (_) {}
       }, 1500);
+
       renderPlatform(platform);
     } catch (e) {
       setButtonBusy(primary, false);
@@ -1111,15 +1226,38 @@ function wireConnectedAccountsPage() {
     }
   }
 
-  document.getElementById("btnTwitchAuthCopy")?.addEventListener("click", () => copyStartUrl("twitch"));
-  document.getElementById("btnYouTubeAuthCopy")?.addEventListener("click", () => copyStartUrl("youtube"));
   document.getElementById("btnTwitchAuthRefresh")?.addEventListener("click", () => fetchInfo("twitch").catch(() => {}));
   document.getElementById("btnYouTubeAuthRefresh")?.addEventListener("click", () => fetchInfo("youtube").catch(() => {}));
+  document.getElementById("btnTikTokAuthRefresh")?.addEventListener("click", () => fetchInfo("tiktok").catch(() => {}));
+
   document.getElementById("btnTwitchAuthPrimary")?.addEventListener("click", () => startAuth("twitch"));
   document.getElementById("btnYouTubeAuthPrimary")?.addEventListener("click", () => startAuth("youtube"));
+  document.getElementById("btnTikTokAuthPrimary")?.addEventListener("click", () => startAuth("tiktok"));
+
+  const tikTokInput = document.getElementById("tiktokConnectUser");
+  tikTokInput?.addEventListener("input", () => renderPlatform("tiktok"));
+  tikTokInput?.addEventListener("blur", async () => {
+    await saveTikTokIdentity().catch(() => {});
+    fetchInfo("tiktok").catch(() => {});
+  });
+
+  document.addEventListener("rc:tiktok-auth-captured", async () => {
+    try {
+      const latest = await fetchInfo("tiktok");
+      if (state.tiktok.polling) {
+        const s = getPlatformState("tiktok", latest);
+        if (s === "connected") {
+          window.clearInterval(state.tiktok.polling);
+          state.tiktok.polling = null;
+          renderPlatform("tiktok");
+        }
+      }
+    } catch (_) {}
+  });
 
   fetchInfo("twitch").catch(() => { state.twitch.info = { ok: false }; renderPlatform("twitch"); });
   fetchInfo("youtube").catch(() => { state.youtube.info = { ok: false }; renderPlatform("youtube"); });
+  fetchInfo("tiktok").catch(() => { state.tiktok.info = { ok: false }; renderPlatform("tiktok"); });
 }
 
 

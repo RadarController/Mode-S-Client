@@ -27,13 +27,13 @@
         <div class="card__head">
           <h2>Connect account</h2>
           <p class="muted">
-            Connect Twitch and YouTube so Mode-S Client can update stream metadata and complete platform actions.
+            Connect Twitch, YouTube and TikTok so Mode-S Client can complete platform actions and keep integrations healthy.
           </p>
         </div>
 
         <div class="card__body">
           <div class="accounts-intro">
-            App credentials are embedded in this build. Complete sign-in in the Mode-S Client pop-up window when prompted. If in-app sign-in is unavailable, your browser will be used instead.
+            Complete sign-in in the Mode-S Client pop-up window when prompted. Twitch and YouTube app credentials are embedded in this build. TikTok session cookies will be captured from the in-app sign-in window.
           </div>
 
           <div class="accounts-grid">
@@ -111,6 +111,59 @@
                     <div class="kv-row">
                       <span>Permissions</span>
                       <strong id="youtubeAuthScopes">—</strong>
+                    </div>
+                  </div>
+                </details>
+              </div>
+            </section>
+            
+            <section class="account-card" data-platform="tiktok">
+              <div class="account-card__head">
+                <div class="account-card__meta">
+                  <h3>TikTok</h3>
+                  <p>TikTok session capture for live integration</p>
+                </div>
+                <span class="account-chip" id="tiktokAuthChip">Checking…</span>
+              </div>
+
+              <div class="account-card__body">
+                <div class="account-status">
+                  <div class="account-status__label">Status</div>
+                  <div class="account-status__value" id="tiktokAuthSummary">Checking TikTok connection…</div>
+                </div>
+
+                <div class="account-inline-note" id="tiktokAuthPending" hidden>
+                  Waiting for TikTok sign-in to finish…
+                </div>
+
+                <div class="field account-inline-field">
+                  <label class="field__k" for="tiktokConnectUser">Account name</label>
+                  <input class="input" id="tiktokConnectUser" type="text" autocomplete="off" placeholder="@youraccount" />
+                </div>
+
+                <div class="account-actions">
+                  <button class="btn btn--primary" id="btnTikTokAuthPrimary">Connect TikTok</button>
+                  <button class="btn btn--ghost" id="btnTikTokAuthRefresh">Refresh</button>
+                </div>
+
+                <details class="account-details">
+                  <summary>Advanced</summary>
+                  <div class="account-details__body">
+                    <div class="kv-row">
+                      <span>Configured account</span>
+                      <strong id="tiktokAuthIdentity">—</strong>
+                    </div>
+                    <div class="kv-row">
+                      <span>sessionid</span>
+                      <strong id="tiktokCookieSession">Missing</strong>
+                    </div>
+                    <div class="kv-row">
+                      <span>sessionid_ss</span>
+                      <strong id="tiktokCookieSessionSs">Missing</strong>
+                    </div>
+                    <div class="kv-row">
+                      <span>tt-target-idc</span>
+                      <strong id="tiktokCookieTargetIdc">Missing</strong>
                     </div>
                   </div>
                 </details>

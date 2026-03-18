@@ -23,6 +23,7 @@
 #include <string>
 #include <functional>
 #include <vector>
+#include <cwctype>
 
 #include "resource.h"
 #include "ui/WebViewHost.h"
@@ -31,6 +32,7 @@ using Microsoft::WRL::ComPtr;
 
 namespace {
     constexpr wchar_t kAuthPopupClassName[] = L"RCAuthPopupWindow";
+    constexpr UINT kMsgCloseAuthPopupAsync = WM_APP + 401;
 
     ComPtr<ICoreWebView2Environment> gSharedEnvironment;
     std::vector<std::function<void(ICoreWebView2Environment*)>> gSharedEnvironmentWaiters;
@@ -47,6 +49,8 @@ namespace {
     std::wstring                     gAuthPopupInitialUrl;
     std::wstring                     gAuthPopupTitle;
     std::wstring                     gAuthPopupPlatform;
+    std::atomic<bool>                gTikTokCookieCaptureInFlight{ false };
+    std::atomic<bool>                gTikTokCookiesCaptured{ false };
 
     void FlushSharedEnvironmentWaiters(ICoreWebView2Environment* env)
     {
@@ -127,6 +131,77 @@ namespace {
         return false;
     }
 
+
+    std::wstring JsonEscape(const std::wstring& s)
+    {
+        std::wstring out;
+        out.reserve(s.size() + 8);
+
+        for (wchar_t ch : s) {
+            switch (ch) {
+            case L'\\': out += L"\\\\"; break;
+            case L'"':  out += L"\\\""; break;
+            case L'\b': out += L"\\b"; break;
+            case L'\f': out += L"\\f"; break;
+            case L'\n': out += L"\\n"; break;
+            case L'\r': out += L"\\r"; break;
+            case L'\t': out += L"\\t"; break;
+            default:
+                if (ch < 0x20) {
+                    wchar_t buf[7];
+                    swprintf(buf, 7, L"\\u%04x", (unsigned int)ch);
+                    out += buf;
+                } else {
+                    out.push_back(ch);
+                }
+                break;
+            }
+        }
+
+        return out;
+    }
+
+    void PostMainWebMessageJson(const std::wstring& json)
+    {
+        if (!gMainWebView) return;
+        gMainWebView->PostWebMessageAsJson(json.c_str());
+    }
+
+    bool StartsWithNoCase(const std::wstring& value, const std::wstring& prefix)
+    {
+        if (value.size() < prefix.size()) return false;
+        for (size_t i = 0; i < prefix.size(); ++i) {
+            if (towlower(value[i]) != towlower(prefix[i])) return false;
+        }
+        return true;
+    }
+
+    bool ShouldAttemptTikTokCookieCapture(ICoreWebView2* webview)
+    {
+        if (!webview) return false;
+
+        LPWSTR srcRaw = nullptr;
+        if (FAILED(webview->get_Source(&srcRaw))) {
+            return false;
+        }
+
+        const std::wstring src = srcRaw ? srcRaw : L"";
+        if (srcRaw) CoTaskMemFree(srcRaw);
+
+        if (src.empty()) return false;
+        if (!StartsWithNoCase(src, L"https://www.tiktok.com")) return false;
+
+        // Avoid trying to capture while the user is still on the explicit login/signup screens.
+        if (src.find(L"/login") != std::wstring::npos ||
+            src.find(L"/signup") != std::wstring::npos ||
+            src.find(L"/logout") != std::wstring::npos) {
+            return false;
+        }
+
+        return true;
+    }
+
+
     RECT CenteredRectForWindow(HWND owner, int width, int height)
     {
         RECT rc{};
@@ -165,6 +240,8 @@ namespace {
         gAuthPopupInitialUrl.clear();
         gAuthPopupTitle.clear();
         gAuthPopupPlatform.clear();
+        gTikTokCookieCaptureInFlight = false;
+        gTikTokCookiesCaptured = false;
     }
 
     void CloseAuthPopup()
@@ -181,6 +258,12 @@ namespace {
         switch (msg) {
         case WM_SIZE:
             ResizeAuthPopupToClient();
+            return 0;
+
+        case kMsgCloseAuthPopupAsync:
+            if (hwnd && IsWindow(hwnd)) {
+                DestroyWindow(hwnd);
+            }
             return 0;
 
         case WM_CLOSE:
@@ -220,6 +303,85 @@ namespace {
         ShellExecuteW(nullptr, L"open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
     }
 
+
+    void MaybeCaptureTikTokCookies()
+    {
+        if (gAuthPopupPlatform != L"tiktok" || !gAuthPopupWebView || gTikTokCookieCaptureInFlight || gTikTokCookiesCaptured) {
+            return;
+        }
+
+        ComPtr<ICoreWebView2_2> webview2;
+        if (FAILED(gAuthPopupWebView.As(&webview2)) || !webview2) {
+            return;
+        }
+
+        ComPtr<ICoreWebView2CookieManager> cookieManager;
+        if (FAILED(webview2->get_CookieManager(&cookieManager)) || !cookieManager) {
+            return;
+        }
+
+        gTikTokCookieCaptureInFlight = true;
+
+        cookieManager->GetCookies(
+            L"https://www.tiktok.com",
+            Microsoft::WRL::Callback<ICoreWebView2GetCookiesCompletedHandler>(
+                [](HRESULT result, ICoreWebView2CookieList* cookieList) -> HRESULT {
+                    gTikTokCookieCaptureInFlight = false;
+
+                    if (FAILED(result) || !cookieList || gAuthPopupPlatform != L"tiktok" || gTikTokCookiesCaptured) {
+                        return S_OK;
+                    }
+
+                    std::wstring sessionid;
+                    std::wstring sessionid_ss;
+                    std::wstring target_idc;
+
+                    UINT count = 0;
+                    cookieList->get_Count(&count);
+
+                    for (UINT i = 0; i < count; ++i) {
+                        ComPtr<ICoreWebView2Cookie> cookie;
+                        if (FAILED(cookieList->GetValueAtIndex(i, &cookie)) || !cookie) continue;
+
+                        LPWSTR nameRaw = nullptr;
+                        LPWSTR valueRaw = nullptr;
+                        cookie->get_Name(&nameRaw);
+                        cookie->get_Value(&valueRaw);
+
+                        const std::wstring name = nameRaw ? nameRaw : L"";
+                        const std::wstring value = valueRaw ? valueRaw : L"";
+
+                        if (nameRaw) CoTaskMemFree(nameRaw);
+                        if (valueRaw) CoTaskMemFree(valueRaw);
+
+                        if (name == L"sessionid" && sessionid.empty()) sessionid = value;
+                        else if (name == L"sessionid_ss" && sessionid_ss.empty()) sessionid_ss = value;
+                        else if ((name == L"tt-target-idc" || name == L"tt_target_idc") && target_idc.empty()) target_idc = value;
+                    }
+
+                    if (sessionid.empty() || sessionid_ss.empty() || target_idc.empty()) {
+                        return S_OK;
+                    }
+
+                    gTikTokCookiesCaptured = true;
+
+                    std::wstring json =
+                        L"{\"type\":\"tiktok_auth_cookies\","
+                        L"\"tiktok_sessionid\":\"" + JsonEscape(sessionid) + L"\","
+                        L"\"tiktok_sessionid_ss\":\"" + JsonEscape(sessionid_ss) + L"\","
+                        L"\"tiktok_tt_target_idc\":\"" + JsonEscape(target_idc) + L"\"}";
+
+                    PostMainWebMessageJson(json);
+
+                    if (gAuthPopupHwnd && IsWindow(gAuthPopupHwnd)) {
+                        PostMessageW(gAuthPopupHwnd, kMsgCloseAuthPopupAsync, 0, 0);
+                    }
+
+                    return S_OK;
+                }).Get());
+    }
+
+
     void OpenAuthPopupInternal(HWND owner,
                                const std::wstring& url,
                                const std::wstring& title,
@@ -228,6 +390,8 @@ namespace {
         gAuthPopupInitialUrl = url;
         gAuthPopupTitle = title.empty() ? L"Sign in" : title;
         gAuthPopupPlatform = platform;
+        gTikTokCookieCaptureInFlight = false;
+        gTikTokCookiesCaptured = false;
 
         if (gAuthPopupHwnd && IsWindow(gAuthPopupHwnd)) {
             SetWindowTextW(gAuthPopupHwnd, gAuthPopupTitle.c_str());
@@ -334,6 +498,23 @@ namespace {
                                                 if (!uri.empty()) {
                                                     OpenExternalUrl(uri);
                                                     args->put_Handled(TRUE);
+                                                }
+
+                                                return S_OK;
+                                            }).Get(),
+                                        &tok);
+                                }
+
+                                {
+                                    EventRegistrationToken tok{};
+                                    gAuthPopupWebView->add_NavigationCompleted(
+                                        Microsoft::WRL::Callback<ICoreWebView2NavigationCompletedEventHandler>(
+                                            [](ICoreWebView2* sender, ICoreWebView2NavigationCompletedEventArgs* args) -> HRESULT {
+                                                BOOL success = FALSE;
+                                                if (args) args->get_IsSuccess(&success);
+
+                                                if (success && gAuthPopupPlatform == L"tiktok" && ShouldAttemptTikTokCookieCapture(sender)) {
+                                                    MaybeCaptureTikTokCookies();
                                                 }
 
                                                 return S_OK;
@@ -485,15 +666,20 @@ bool Create(HWND hwnd,
                                             }
 
                                             if (uri.find(L"/auth/twitch/start") != std::wstring::npos ||
-                                                uri.find(L"/auth/youtube/start") != std::wstring::npos) {
+                                                uri.find(L"/auth/youtube/start") != std::wstring::npos ||
+                                                uri.find(L"/auth/tiktok/start") != std::wstring::npos) {
                                                 const std::wstring title =
                                                     (uri.find(L"/auth/twitch/start") != std::wstring::npos)
                                                     ? L"Twitch sign-in"
-                                                    : L"YouTube sign-in";
+                                                    : (uri.find(L"/auth/youtube/start") != std::wstring::npos)
+                                                        ? L"YouTube sign-in"
+                                                        : L"TikTok sign-in";
                                                 const std::wstring platform =
                                                     (uri.find(L"/auth/twitch/start") != std::wstring::npos)
                                                     ? L"twitch"
-                                                    : L"youtube";
+                                                    : (uri.find(L"/auth/youtube/start") != std::wstring::npos)
+                                                        ? L"youtube"
+                                                        : L"tiktok";
 
                                                 OpenAuthPopupInternal(hwnd, uri, title, platform);
                                                 args->put_Handled(TRUE);
