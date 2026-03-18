@@ -263,6 +263,8 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <None Include="assets\app\overlay_title.html" />
     <None Include="assets\app\settings.html" />
     <None Include="assets\app\splash\index.html" />
+    <None Include="assets\app\splash\splash.css" />
+    <None Include="assets\app\splash\splash.js" />
     <None Include="assets\app\twitch_stream.html" />
     <None Include="assets\mergedChatFeed.js" />
     <None Include="assets\overlay\alerts.css" />

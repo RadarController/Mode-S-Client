@@ -4,7 +4,6 @@ const statusLine = document.getElementById("statusLine");
 const stages = Array.from(document.querySelectorAll(".stage"));
 const readyPill = document.getElementById("readyPill");
 const buildText = document.getElementById("buildText");
-const displayNameText = document.getElementById("displayNameText");
 
 const fakeStates = [
   { pct: 14, text: "Preparing local services", stage: 0 },
@@ -46,7 +45,6 @@ function tickFakeLoad(){
 }
 
 window.__setSplashMeta = function(displayName, versionText){
-  if (displayNameText && displayName) displayNameText.textContent = displayName;
   if (buildText && versionText) buildText.textContent = versionText;
 };
 
@@ -63,8 +61,6 @@ window.__onNativeReady = function(){
 
 document.addEventListener("DOMContentLoaded", () => {
   if (buildText && window.__SPLASH_VERSION) buildText.textContent = window.__SPLASH_VERSION;
-  if (displayNameText && window.__SPLASH_DISPLAY_NAME) displayNameText.textContent = window.__SPLASH_DISPLAY_NAME;
-
   tickFakeLoad();
   loop = setInterval(tickFakeLoad, 850);
 });
