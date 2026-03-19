@@ -132,19 +132,43 @@ async function apiPost(url, body){
   }
 }
 
+const HOME_PLATFORMS = ["tiktok", "twitch", "youtube"];
+let homeSettingsCache = null;
+let homeMetricsCache = null;
+let homeAuthCache = {
+  tiktok: null,
+  twitch: null,
+  youtube: null
+};
+let homePlatformStatusCache = {
+  tiktok: { requested_state: "stopped", ts_ms: 0 },
+  twitch: { requested_state: "stopped", ts_ms: 0 },
+  youtube: { requested_state: "stopped", ts_ms: 0 }
+};
+let homeActionState = {};
+
+function isHomePage(){
+  return !!document.getElementById("homePage");
+}
+
 async function loadSettings(){
   try{
     const s = await apiGet("/api/settings");
     if (!s || s.ok !== true) throw new Error("ok=false");
+
+    homeSettingsCache = s;
 
     const t = $("#tiktokUser"); if (t) t.value = sanitizeTikTok(s.tiktok_unique_id ?? "");
     const tw = $("#twitchUser"); if (tw) tw.value = sanitizeTwitch(s.twitch_login ?? "");
     const y = $("#youtubeUser"); if (y) y.value = sanitizeYouTube(s.youtube_handle ?? "");
 
     updateAllPlatformInputUi();
+    if (isHomePage()) renderHomePlatforms();
     logLine("settings", `loaded (${s.config_path || "unknown path"})`);
+    return s;
   }catch(e){
     logLine("settings", `load failed (${e.message})`);
+    throw e;
   }
 }
 
@@ -180,11 +204,14 @@ async function loadSettingsGlobalOnly() {
     const s = await apiGet("/api/settings");
     if (!s || s.ok !== true) throw new Error("ok=false");
 
+    homeSettingsCache = s;
+
     const t = $("#tiktokUser"); if (t) t.value = sanitizeTikTok(s.tiktok_unique_id ?? "");
     const tw = $("#twitchUser"); if (tw) tw.value = sanitizeTwitch(s.twitch_login ?? "");
     const y = $("#youtubeUser"); if (y) y.value = sanitizeYouTube(s.youtube_handle ?? "");
 
     updateAllPlatformInputUi();
+    if (isHomePage()) renderHomePlatforms();
     return s;
 }
 
@@ -256,6 +283,11 @@ function setBadge(platform, live, label){
 }
 
 function updateHomeSummary(){
+  if (isHomePage()) {
+    renderHomePlatforms();
+    return;
+  }
+
   const cards = $$(".platform[data-platform]");
   const linked = cards.filter(card => {
     const platform = card.dataset.platform;
@@ -323,6 +355,7 @@ function guessMetricsShape(m){
 }
 
 function applyMetrics(m){
+  homeMetricsCache = m;
   const s = guessMetricsShape(m);
 
   setText("mViewers", fmtNum(s.viewers));
@@ -439,6 +472,10 @@ function applyMetrics(m){
     if (port) parts.push(`:${port}`);
     build.textContent = parts.length ? parts.join(" ") : "—";
   }
+
+  if (isHomePage()) {
+    renderHomePlatforms();
+  }
 }
 
 async function pollMetrics(){
@@ -487,115 +524,377 @@ function wireActions(){
   $("#btnOpenBot")?.addEventListener("click", () => {
     window.location.href = "/app/bot.html";
   });
+}
 
-  ["tiktok", "twitch", "youtube"].forEach((platform) => {
-    const input = getPlatformInput(platform);
-    input?.addEventListener("input", () => updatePlatformInputUi(platform));
-    input?.addEventListener("blur", () => {
-      applySanitizedInputValue(platform);
-      updatePlatformInputUi(platform);
+
+function normalizeHomePlatform(platform){
+  return String(platform || "").toLowerCase();
+}
+
+function getHomeSettingValue(platform){
+  const s = homeSettingsCache || {};
+  switch(platform){
+    case "tiktok": return sanitizeTikTok(s.tiktok_unique_id || "");
+    case "twitch": return sanitizeTwitch(s.twitch_login || "");
+    case "youtube": return sanitizeYouTube(s.youtube_handle || "");
+    default: return "";
+  }
+}
+
+function getHomeAuthState(platform, info){
+  if (!info || info.ok === false) return "error";
+
+  if (platform === "tiktok") {
+    const hasIdentity = !!sanitizeTikTok(info.unique_id || getHomeSettingValue(platform));
+    const hasCookies = !!info.has_sessionid && !!info.has_sessionid_ss && !!info.has_tt_target_idc;
+    if (hasIdentity && hasCookies) return "connected";
+    if (hasIdentity) return "needs_auth";
+    return "not_configured";
+  }
+
+  const hasConfig = !!info.has_client_id && !!info.has_client_secret;
+  const hasTokens = !!info.has_refresh_token || !!info.has_access_token;
+  if (!hasConfig) return "missing_config";
+  if (info.needs_reauth) return "needs_auth";
+  if (hasTokens) return "connected";
+  if (getHomeSettingValue(platform)) return "selected_only";
+  return "not_configured";
+}
+
+function formatHomePrimaryIdentity(platform, value){
+  if (!value) return "No account selected";
+  if (platform === "tiktok") return value.startsWith("@") ? value : `@${value}`;
+  if (platform === "youtube") return value.replace(/^@/, "");
+  return value.startsWith("@") ? value : `@${value}`;
+}
+
+function getHomeIdentity(platform){
+  const info = homeAuthCache[platform] || {};
+  const selected = getHomeSettingValue(platform);
+
+  if (platform === "tiktok") {
+    const uniqueId = sanitizeTikTok(info.unique_id || selected);
+    return uniqueId
+      ? {
+          hasIdentity: true,
+          primary: formatHomePrimaryIdentity(platform, uniqueId),
+          secondary: ""
+        }
+      : {
+          hasIdentity: false,
+          primary: "No account selected",
+          secondary: ""
+        };
+  }
+
+  if (platform === "twitch") {
+    const login = sanitizeTwitch(info.connected_login || selected);
+    return login
+      ? {
+          hasIdentity: true,
+          primary: formatHomePrimaryIdentity(platform, login),
+          secondary: ""
+        }
+      : {
+          hasIdentity: false,
+          primary: "No account selected",
+          secondary: ""
+        };
+  }
+
+  const handle = sanitizeYouTube(selected);
+  const channelId = trim(info.channel_id || "");
+  if (handle) {
+    return {
+      hasIdentity: true,
+      primary: formatHomePrimaryIdentity(platform, handle),
+      secondary: ""
+    };
+  }
+  if (channelId) {
+    return {
+      hasIdentity: true,
+      primary: channelId,
+      secondary: ""
+    };
+  }
+  return {
+    hasIdentity: false,
+    primary: "No account selected",
+    secondary: ""
+  };
+}
+
+function getHomeConfigModel(platform){
+  const info = homeAuthCache[platform] || {};
+  const authState = getHomeAuthState(platform, info);
+  const identity = getHomeIdentity(platform);
+
+  if (platform === "tiktok") {
+    if (authState === "connected") {
+      return { label: "Configured", ready: true, issue: false, tone: "ok", hasIdentity: true, needsAuth: false };
+    }
+    if (authState === "needs_auth") {
+      return { label: "Connect required", ready: false, issue: true, tone: "warn", hasIdentity: identity.hasIdentity, needsAuth: true };
+    }
+    return { label: "Not configured", ready: false, issue: false, tone: "muted", hasIdentity: identity.hasIdentity, needsAuth: false };
+  }
+
+  switch(authState){
+    case "connected":
+      return { label: "Configured", ready: true, issue: false, tone: "ok", hasIdentity: identity.hasIdentity, needsAuth: false };
+    case "needs_auth":
+      return { label: "Needs re-auth", ready: false, issue: true, tone: "warn", hasIdentity: identity.hasIdentity, needsAuth: true };
+    case "selected_only":
+      return { label: "Account selected", ready: false, issue: true, tone: "warn", hasIdentity: identity.hasIdentity, needsAuth: true };
+    case "missing_config":
+      return { label: "Unavailable", ready: false, issue: true, tone: "warn", hasIdentity: identity.hasIdentity, needsAuth: false, unavailable: true };
+    default:
+      return { label: "Not configured", ready: false, issue: false, tone: "muted", hasIdentity: identity.hasIdentity, needsAuth: false };
+  }
+}
+
+function getHomeMetricLive(platform){
+  const m = homeMetricsCache || {};
+  const direct = m[`${platform}_live`];
+  if (direct === true || direct === 1 || direct === "true") return true;
+
+  try {
+    const shaped = guessMetricsShape(m);
+    const bucket = shaped[platform];
+    return Boolean(bucket && (bucket.live ?? bucket.is_live ?? bucket.streaming ?? false));
+  } catch (_) {
+    return false;
+  }
+}
+
+function getHomeRuntimeModel(platform){
+  const status = homePlatformStatusCache[platform] || {};
+  const requested = String(status.requested_state || "stopped").toLowerCase();
+  const running = getHomeMetricLive(platform) || requested === "running";
+  return {
+    label: running ? "Running" : "Stopped",
+    running,
+    ts_ms: Number(status.ts_ms || 0) || 0
+  };
+}
+
+function getHomePrimaryAction(platform, configModel, runtimeModel){
+  if (configModel.unavailable) {
+    return { kind: "noop", label: "Unavailable", disabled: true };
+  }
+  if (!configModel.hasIdentity) {
+    return { kind: "settings", label: "Open Settings", disabled: false };
+  }
+  if (configModel.needsAuth) {
+    return { kind: "auth", label: platform === "tiktok" ? "Connect" : "Re-auth", disabled: false };
+  }
+  return { kind: "start", label: runtimeModel.running ? "Restart" : "Start", disabled: false };
+}
+
+function homeCardHintText(platform, configModel){
+  return "";
+}
+
+function applyHomeCardTone(platform, configModel, runtimeModel){
+  const card = document.querySelector(`.platform[data-platform="${platform}"]`);
+  const badge = document.getElementById(`${platform}Badge`);
+  if (!card || !badge) return;
+
+  card.classList.toggle("platform--live", runtimeModel.running);
+  card.classList.toggle("platform--connected", configModel.ready && !runtimeModel.running);
+  card.classList.toggle("platform--issue", configModel.issue && !runtimeModel.running);
+  card.classList.toggle("platform--disconnected", !configModel.hasIdentity && !runtimeModel.running);
+
+  badge.classList.remove("badge--live", "badge--warn", "badge--muted");
+  if (runtimeModel.running) badge.classList.add("badge--live");
+  else if (configModel.issue) badge.classList.add("badge--warn");
+  else badge.classList.add("badge--muted");
+}
+
+function renderHomePlatforms(){
+  if (!isHomePage()) return;
+
+  let selectedCount = 0;
+  let runningCount = 0;
+  let issueCount = 0;
+
+  HOME_PLATFORMS.forEach((platform) => {
+    const identity = getHomeIdentity(platform);
+    const configModel = getHomeConfigModel(platform);
+    const runtimeModel = getHomeRuntimeModel(platform);
+    const primaryAction = getHomePrimaryAction(platform, configModel, runtimeModel);
+
+    if (identity.hasIdentity) selectedCount += 1;
+    if (runtimeModel.running) runningCount += 1;
+    if (configModel.issue) issueCount += 1;
+
+    setText(`${platform}IdentityPrimary`, identity.primary);
+    setText(`${platform}IdentitySecondary`, identity.secondary);
+    setText(`${platform}ConfigState`, configModel.label);
+    setText(`${platform}RuntimeState`, runtimeModel.label);
+    setText(`${platform}State`, configModel.label);
+    setText(`${platform}Badge`, runtimeModel.label);
+
+    applyHomeCardTone(platform, configModel, runtimeModel);
+
+    const primaryBtn = getPlatformButton(platform, "primary");
+    if (primaryBtn) {
+      primaryBtn.textContent = primaryAction.label;
+      primaryBtn.dataset.label = primaryAction.label;
+      primaryBtn.disabled = !!primaryAction.disabled;
+    }
+
+    const stopBtn = getPlatformButton(platform, "stop");
+    if (stopBtn) stopBtn.disabled = !runtimeModel.running;
+
+    homeActionState[platform] = {
+      primary: primaryAction,
+      runtime: runtimeModel,
+      config: configModel
+    };
+  });
+
+  setText("linkedAccountsCount", `${selectedCount} / ${HOME_PLATFORMS.length}`);
+  setText("livePlatformsCount", String(runningCount));
+  setText("issuePlatformsCount", String(issueCount));
+}
+
+async function fetchHomeAuthStatuses(){
+  if (!isHomePage()) return;
+
+  const tasks = HOME_PLATFORMS.map(async (platform) => {
+    const url = platform === "twitch"
+      ? "/api/twitch/auth/info"
+      : platform === "youtube"
+        ? "/api/youtube/auth/info"
+        : "/api/tiktok/auth/info";
+
+    try {
+      homeAuthCache[platform] = await apiGet(url);
+    } catch (_) {
+      homeAuthCache[platform] = { ok: false };
+    }
+  });
+
+  await Promise.all(tasks);
+  renderHomePlatforms();
+}
+
+async function pollHomePlatformStatus(){
+  if (!isHomePage()) return;
+
+  try {
+    const status = await apiGet("/api/platform/status");
+    HOME_PLATFORMS.forEach((platform) => {
+      const node = status?.[platform];
+      if (node && typeof node === "object") {
+        homePlatformStatusCache[platform] = {
+          requested_state: String(node.requested_state || "stopped").toLowerCase(),
+          ts_ms: Number(node.ts_ms || 0) || 0
+        };
+      }
     });
-    input?.addEventListener("keydown", async (ev) => {
-      if (ev.key !== "Enter") return;
-      ev.preventDefault();
-      if (!hasValidPlatformInput(platform)) return;
-      await saveSettingsFromInputs();
-    });
+  } catch (_) {
+    // leave the previous snapshot in place
+  }
+
+  renderHomePlatforms();
+}
+
+function openConnectedAccountsPage(){
+  window.location.href = "/app/accounts.html";
+}
+
+async function performHomePrimaryAction(platform, button){
+  const state = homeActionState[platform];
+  if (!state || !state.primary || state.primary.disabled) return;
+
+  const action = state.primary;
+  if (action.kind === "settings" || action.kind === "auth") {
+    openConnectedAccountsPage();
+    return;
+  }
+  if (action.kind !== "start") return;
+
+  setActionBusy(button, true, state.runtime.running ? "Restarting..." : "Starting...");
+  try {
+    await apiPost(`/api/platform/${platform}/start`, {});
+    logLine(platform, state.runtime.running ? "restart requested" : "start requested");
+    await pollHomePlatformStatus();
+  } catch (e) {
+    logLine(platform, `${state.runtime.running ? "restart" : "start"} failed (${e.message})`);
+  } finally {
+    setActionBusy(button, false);
+    renderHomePlatforms();
+  }
+}
+
+async function performHomeStop(platform, button){
+  setActionBusy(button, true, "Stopping...");
+  try {
+    await apiPost(`/api/platform/${platform}/stop`, {});
+    logLine(platform, "stop requested");
+    await pollHomePlatformStatus();
+  } catch (e) {
+    logLine(platform, `stop failed (${e.message})`);
+  } finally {
+    setActionBusy(button, false);
+    renderHomePlatforms();
+  }
+}
+
+function wireHomePage(){
+  const root = document.getElementById("homePage");
+  if (!root) return;
+
+  root.addEventListener("click", async (ev) => {
+    const btn = ev.target.closest("button[data-action]");
+    if (!btn) return;
+
+    const card = btn.closest(".platform[data-platform]");
+    const action = btn.getAttribute("data-action");
+    if (!card) return;
+
+    const platform = normalizeHomePlatform(card.dataset.platform);
+    if (!platform) return;
+
+    if (action === "primary") {
+      await performHomePrimaryAction(platform, btn);
+      return;
+    }
+
+    if (action === "stop") {
+      await performHomeStop(platform, btn);
+    }
   });
 
   $("#btnStartAll")?.addEventListener("click", async (ev) => {
     const btn = ev.currentTarget;
     setActionBusy(btn, true, "Starting...");
-    try{
-      const ok = await saveSettingsFromInputs();
-      if (!ok) return;
+    try {
+      const runnable = HOME_PLATFORMS.filter((platform) => homeActionState[platform]?.primary?.kind === "start");
+      if (runnable.length === 0) {
+        openConnectedAccountsPage();
+        return;
+      }
 
-      logLine("start-all", "starting all platforms");
-      const platforms = ["tiktok", "twitch", "youtube"];
-
-      for (const p of platforms) {
-        if (!hasValidPlatformInput(p)) {
-          logLine("start-all", `${p} skipped (no saved input)`);
-          continue;
-        }
+      for (const platform of runnable) {
         try {
-          await apiPost(`/api/platform/${p}/start`, {});
-          logLine("start-all", `${p} start requested`);
+          await apiPost(`/api/platform/${platform}/start`, {});
+          logLine("start-all", `${platform} ${homeActionState[platform]?.runtime?.running ? "restart" : "start"} requested`);
         } catch (e) {
-          logLine("start-all", `${p} start failed (${e.message})`);
+          logLine("start-all", `${platform} failed (${e.message})`);
         }
       }
-      logLine("start-all", "done");
+
+      await pollHomePlatformStatus();
     } finally {
       setActionBusy(btn, false);
+      renderHomePlatforms();
     }
   });
-
-  $("#btnSave")?.addEventListener("click", async () => {
-    await saveSettingsFromInputs();
-  });
-
-  $$(".platform").forEach(card => {
-    const platform = card.dataset.platform;
-    card.addEventListener("click", async (ev) => {
-      const btn = ev.target.closest("button[data-action]");
-      if (!btn) return;
-
-      const action = btn.getAttribute("data-action");
-
-      if (action === "set"){
-        if (!hasValidPlatformInput(platform)) {
-          logLine(platform, "set failed (input is empty)");
-          updatePlatformInputUi(platform);
-          return;
-        }
-        setActionBusy(btn, true, "Saving...");
-        try{
-          await saveSettingsFromInputs();
-        } finally {
-          setActionBusy(btn, false);
-        }
-        return;
-      }
-
-      if (action === "start"){
-        if (!hasValidPlatformInput(platform)) {
-          logLine(platform, "start failed (input is empty)");
-          updatePlatformInputUi(platform);
-          return;
-        }
-
-        setActionBusy(btn, true, "Starting...");
-        try{
-          const ok = await saveSettingsFromInputs();
-          if (!ok) return;
-
-          await apiPost(`/api/platform/${platform}/start`, {});
-          logLine(platform, "start requested");
-        }catch(e){
-          logLine(platform, `start failed (${e.message})`);
-        } finally {
-          setActionBusy(btn, false);
-        }
-        return;
-      }
-
-      if (action === "stop"){
-        setActionBusy(btn, true, "Stopping...");
-        try{
-          await apiPost(`/api/platform/${platform}/stop`, {});
-          logLine(platform, "stop requested");
-        }catch(e){
-          logLine(platform, `stop failed (${e.message})`);
-        } finally {
-          setActionBusy(btn, false);
-        }
-        return;
-      }
-    });
-  });
 }
-
 
 function wireNativeHostMessages() {
   if (window.__rcNativeHostMessagesWired) return;
@@ -645,10 +944,20 @@ document.addEventListener("DOMContentLoaded", async () => {
     wireTikTokCookiesPage();
     wireOverlayTitlePage();
     wireActions();
+    wireHomePage();
 
-    await loadSettings();
+    try {
+      await loadSettings();
+    } catch (_) {
+      // loadSettings already logged the failure
+    }
+
+    if (isHomePage()) {
+      await fetchHomeAuthStatuses();
+      await pollHomePlatformStatus();
+    }
+
     await pollMetrics();
-    await pollLog();
 
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
@@ -657,7 +966,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   setInterval(pollMetrics, 2000);
-  setInterval(pollLog, 1000);
+  if (isHomePage()) {
+    setInterval(fetchHomeAuthStatuses, 15000);
+    setInterval(pollHomePlatformStatus, 3000);
+  }
 });
 
 function sanitizeOverlayCallsign(input){

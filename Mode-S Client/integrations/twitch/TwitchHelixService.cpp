@@ -15,6 +15,7 @@
 #include "json.hpp"
 #include "AppConfig.h"
 #include "AppState.h"
+#include "oauth/EmbeddedOAuthConfig.h"
 
 using nlohmann::json;
 
@@ -148,8 +149,7 @@ static void DebugLog(const std::wstring& msg)
         if (f) f(v);
     }
 
-    // Fallback: if AppConfig fields are empty (e.g., mapping mismatch), try reading the JSON directly.
-    static bool TryReadTwitchFromConfigJson(std::string& login, std::string& cid, std::string& secret)
+    static bool TryReadTwitchLoginAndAccessTokenFromConfigJson(std::string& login, std::string& access_token)
     {
         try {
             const auto path = std::filesystem::absolute("config.json");
@@ -159,58 +159,60 @@ static void DebugLog(const std::wstring& msg)
             if (s.empty()) return false;
             auto j = json::parse(s);
 
-            // Prefer nested object if present.
             if (j.contains("twitch") && j["twitch"].is_object()) {
                 const auto& t = j["twitch"];
-                if (login.empty())  login  = t.value("login", "");
-                if (cid.empty())    cid    = t.value("client_id", "");
-                if (secret.empty()) secret = t.value("client_secret", "");
+                if (login.empty())        login        = t.value("login", "");
+                if (access_token.empty()) access_token = t.value("user_access_token", "");
+                if (access_token.empty()) access_token = t.value("access_token", "");
             }
 
-            // Back-compat with flat keys.
-            if (login.empty())  login  = j.value("twitch_login", "");
-            if (cid.empty())    cid    = j.value("twitch_client_id", "");
-            if (secret.empty()) secret = j.value("twitch_client_secret", "");
+            if (login.empty())          login        = j.value("twitch_login", "");
+            if (access_token.empty())   access_token = j.value("twitch_access_token", "");
+            if (access_token.empty())   access_token = j.value("twitch_oauth_access_token", "");
+            if (access_token.empty())   access_token = j.value("twitch_helix_access_token", "");
 
-            return !(login.empty() || cid.empty() || secret.empty());
+            return !(login.empty() || access_token.empty());
         }
         catch (...) {
             return false;
         }
     }
 
-
-    static bool TryReadTwitchClientAndAccessTokenFromConfigJson(std::string& cid, std::string& access_token)
+    static std::string ResolveTwitchClientId(const std::string& config_client_id = std::string())
     {
+        if (!config_client_id.empty()) return config_client_id;
+
+        const std::string embedded = EmbeddedOAuthConfig::TwitchClientId();
+        if (!embedded.empty()) return embedded;
+
         try {
             const auto path = std::filesystem::absolute("config.json");
             std::ifstream in(path, std::ios::binary);
-            if (!in) return false;
+            if (!in) return {};
             std::string s((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-            if (s.empty()) return false;
+            if (s.empty()) return {};
             auto j = json::parse(s);
 
-            // Prefer nested object if present.
             if (j.contains("twitch") && j["twitch"].is_object()) {
                 const auto& t = j["twitch"];
-                if (cid.empty())         cid         = t.value("client_id", "");
-                if (access_token.empty()) access_token = t.value("user_access_token", "");
-                if (access_token.empty()) access_token = t.value("access_token", "");
+                const std::string nested = t.value("client_id", "");
+                if (!nested.empty()) return nested;
             }
 
-            // Back-compat with flat keys.
-            if (cid.empty())          cid          = j.value("twitch_client_id", "");
-            if (access_token.empty()) access_token = j.value("twitch_access_token", "");
-
-            // Additional common aliases (defensive).
-            if (access_token.empty()) access_token = j.value("twitch_oauth_access_token", "");
-            if (access_token.empty()) access_token = j.value("twitch_helix_access_token", "");
-
-            return !(cid.empty() || access_token.empty());
+            return j.value("twitch_client_id", std::string{});
         }
         catch (...) {
-            return false;
+            return {};
         }
+    }
+
+    static bool TryReadTwitchClientAndAccessTokenFromConfigJson(std::string& cid, std::string& access_token)
+    {
+        if (cid.empty()) {
+            cid = ResolveTwitchClientId();
+        }
+        { std::string ignored_login; (void)TryReadTwitchLoginAndAccessTokenFromConfigJson(ignored_login, access_token); }
+        return !(cid.empty() || access_token.empty());
     }
 
 } // namespace
@@ -255,19 +257,17 @@ std::thread StartTwitchHelixPoller(
             }
 
             std::string login = config.twitch_login;
-            std::string cid = config.twitch_client_id;
-            std::string secret = config.twitch_client_secret;
+            std::string cid = ResolveTwitchClientId(config.twitch_client_id);
 
-            // If AppConfig hasn't been populated (or uses different JSON keys), try reading config.json directly.
-            if (login.empty() || cid.empty() || secret.empty()) {
-                (void)TryReadTwitchFromConfigJson(login, cid, secret);
+            if (login.empty()) {
+                std::string ignored_token;
+                (void)TryReadTwitchLoginAndAccessTokenFromConfigJson(login, ignored_token);
             }
 
-            if (login.empty() || cid.empty() || secret.empty()) {
-                SafeCall(cb.log, L"TWITCH: skipped (missing login/client_id/client_secret)");
-                set_status(L"Helix: missing login/client id/secret");
+            if (login.empty()) {
+                SafeCall(cb.log, L"TWITCH: helix waiting for selected channel login");
+                set_status(L"Helix: waiting for selected channel");
 
-                // Ensure metrics don't show stale values when config is missing.
                 state.set_twitch_viewers(0);
                 state.set_twitch_live(false);
                 SafeCall(cb.set_viewers, 0);
@@ -277,59 +277,44 @@ std::thread StartTwitchHelixPoller(
                 continue;
             }
 
+            if (cid.empty()) {
+                SafeCall(cb.log, L"TWITCH: helix disabled (missing embedded Twitch client id)");
+                set_status(L"Helix: missing embedded client id");
+
+                state.set_twitch_viewers(0);
+                state.set_twitch_live(false);
+                SafeCall(cb.set_viewers, 0);
+                SafeCall(cb.set_live, false);
+
+                Sleep(5000);
+                continue;
+            }
+
             const std::int64_t now = (std::int64_t)GetTickCount64();
             if (token.empty() || now + 30000 > token_expiry_ms) {
-                std::string path =
-                    "/oauth2/token?client_id=" + UrlEncode(cid) +
-                    "&client_secret=" + UrlEncode(secret) +
-                    "&grant_type=client_credentials";
+                token.clear();
+                token_expiry_ms = now + 30000;
 
-                HttpResult r = WinHttpRequest(L"POST", L"id.twitch.tv", 443, ToW(path), L"", "", true);
-                if (r.status != 200) {
-        DebugLog(L"TWITCH: SearchCategories HTTP status=" + std::to_wstring((int)r.status));
-                    set_status(L"Helix: token error (see log)");
-                    log_http("token", r);
-
-                    // Avoid stale metrics if auth fails.
-                    state.set_twitch_viewers(0);
-                    state.set_twitch_live(false);
-                    SafeCall(cb.set_viewers, 0);
-                    SafeCall(cb.set_live, false);
-
-                    Sleep(5000);
-                    continue;
+                std::string login_from_cfg = login;
+                (void)TryReadTwitchLoginAndAccessTokenFromConfigJson(login_from_cfg, token);
+                if (login.empty() && !login_from_cfg.empty()) {
+                    login = login_from_cfg;
                 }
-                try {
-                    auto j = json::parse(r.body);
-                    token = j.value("access_token", "");
-                    int expires = j.value("expires_in", 0);
-                    token_expiry_ms = now + (std::int64_t)expires * 1000;
-                    if (token.empty()) {
-                        set_status(L"Helix: token parse error");
-                        log_http("token-empty", r);
 
-                        state.set_twitch_viewers(0);
-                        state.set_twitch_live(false);
-                        SafeCall(cb.set_viewers, 0);
-                        SafeCall(cb.set_live, false);
-
-                        Sleep(5000);
-                        continue;
-                    }
-                    SafeCall(cb.log, L"TWITCH: helix token ok");
-                }
-                catch (...) {
-                    set_status(L"Helix: token parse exception");
-                    log_http("token-parse", r);
+                if (token.empty()) {
+                    SafeCall(cb.log, L"TWITCH: helix waiting for OAuth access token");
+                    set_status(L"Helix: waiting for OAuth token");
 
                     state.set_twitch_viewers(0);
                     state.set_twitch_live(false);
                     SafeCall(cb.set_viewers, 0);
                     SafeCall(cb.set_live, false);
 
-                    Sleep(5000);
+                    Sleep(1500);
                     continue;
                 }
+
+                SafeCall(cb.log, L"TWITCH: helix using OAuth user token");
             }
 
             // Resolve broadcaster id once (and re-resolve if login changes).
@@ -476,7 +461,7 @@ DebugLog(L"TWITCH: SearchCategories query='" + ToW(query) + L"'");
     std::string cid, tok;
     if (!TryReadTwitchClientAndAccessTokenFromConfigJson(cid, tok)) {
         DebugLog(L"TWITCH: SearchCategories failed: missing credentials in config.json");
-        if (out_error) *out_error = "Missing twitch client_id/access_token in config.json";
+        if (out_error) *out_error = "Missing embedded Twitch client id or OAuth access token";
         return false;
     }
 
@@ -544,24 +529,17 @@ bool TwitchHelixUpdateChannelInfo(
 {
     try {
         std::string login = config.twitch_login;
-        std::string cid = config.twitch_client_id;
-        // Access token is now stored under config.json -> twitch.user_access_token.
-        // AppConfig may not expose a flat twitch_access_token field anymore, so read from disk.
+        std::string cid = ResolveTwitchClientId(config.twitch_client_id);
         std::string tok;
 
-        // Fall back to config.json if AppConfig wasn't populated.
-        if (cid.empty() || tok.empty()) {
-            (void)TryReadTwitchClientAndAccessTokenFromConfigJson(cid, tok);
-        }
-        if (login.empty()) {
-            // Try reading login from config.json too (best-effort).
-            std::string cid2, secret2;
-            (void)TryReadTwitchFromConfigJson(login, cid2, secret2);
-            if (cid.empty()) cid = cid2;
+        if (tok.empty()) {
+            std::string login_from_cfg = login;
+            (void)TryReadTwitchLoginAndAccessTokenFromConfigJson(login_from_cfg, tok);
+            if (login.empty()) login = login_from_cfg;
         }
 
         if (cid.empty() || tok.empty()) {
-            if (out_error) *out_error = "Missing Twitch client_id/access_token";
+            if (out_error) *out_error = "Missing embedded Twitch client id or OAuth access token";
             return false;
         }
         if (login.empty()) {

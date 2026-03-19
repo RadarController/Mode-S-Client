@@ -100,6 +100,10 @@ public:
     nlohmann::json chat_json() const;
     nlohmann::json tiktok_events_json(size_t limit = 200) const;
 
+    // --- Homepage runtime state (requested start/stop actions from the control surface) ---
+    void set_platform_runtime_state(const std::string& platform, const std::string& requested_state);
+    nlohmann::json platform_runtime_state_json() const;
+
     // --- Twitch EventSub diagnostics (separate from chat) ---
     void set_twitch_eventsub_status(const nlohmann::json& status);
     nlohmann::json twitch_eventsub_status_json() const;
@@ -255,6 +259,11 @@ private:
     std::int64_t last_metrics_cache_save_ms_ = 0;
 
     Metrics metrics_{};
+    nlohmann::json platform_runtime_state_ = nlohmann::json{
+        {"tiktok", {{"requested_state", "stopped"}, {"ts_ms", 0}}},
+        {"twitch", {{"requested_state", "stopped"}, {"ts_ms", 0}}},
+        {"youtube", {{"requested_state", "stopped"}, {"ts_ms", 0}}}
+    };
     std::deque<ChatMessage> chat_; // last 200
     std::deque<EventItem> tiktok_events_; // last 200
     std::deque<EventItem> youtube_events_; // last 200

@@ -771,6 +771,12 @@ void HttpServer::RegisterRoutes() {
         res.set_content(j.dump(2), "application/json; charset=utf-8");
         });
 
+    // --- API: platform runtime status (requested state from homepage control surface) ---
+    svr.Get("/api/platform/status", [&](const httplib::Request&, httplib::Response& res) {
+        auto j = state_.platform_runtime_state_json();
+        res.set_content(j.dump(2), "application/json; charset=utf-8");
+        });
+
     // --- API: SimBrief flight plan summary (for MSFS overlays) ---
     // GET /api/simbrief/flight
     // Cached; refreshes automatically every 10 minutes in a background worker.
@@ -2785,6 +2791,7 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
             }
 
             const std::string state = (action == "start") ? "started" : "stopped";
+            state_.set_platform_runtime_state(platform, action == "start" ? "running" : "stopped");
             std::string body = std::string(R"({"ok":true,"platform":")") + platform +
                 R"(","action":")" + action +
                 R"(","state":")" + state +
