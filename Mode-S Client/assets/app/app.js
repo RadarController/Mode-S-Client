@@ -893,6 +893,40 @@ function homeAlertPlatformIcon(platform){
   return "";
 }
 
+function homeAlertCompactTypeLabel(event){
+  const raw = trim(event?.event_type || event?.type || event?.kind || event?.name || "").toLowerCase();
+  if (!raw) return "—";
+
+  const directMap = {
+    "channel.subscribe": "Subscribe",
+    "channel.subscription.gift": "Gift",
+    "channel.follow": "Follow",
+    "channel.cheer": "Cheer",
+    "member.milestone": "Member",
+    "superchat": "Superchat",
+    "new follow": "Follow",
+    "new follower": "Follow"
+  };
+
+  if (directMap[raw]) return directMap[raw];
+
+  if (raw.includes("subscribe")) return "Subscribe";
+  if (raw.includes("follow")) return "Follow";
+  if (raw.includes("superchat")) return "Superchat";
+  if (raw.includes("member")) return "Member";
+  if (raw.includes("gift")) return "Gift";
+  if (raw.includes("cheer")) return "Cheer";
+  if (raw.includes("donat")) return "Donate";
+  if (raw.includes("raid")) return "Raid";
+  if (raw.includes("like")) return "Like";
+  if (raw.includes("share")) return "Share";
+
+  const tail = raw.split(/[.:/]/).pop() || raw;
+  return tail
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
 function homeAlertTimeLabel(event){
   const ts = Number(event?.ts_ms || event?.timestamp_ms || event?.created_at_ms || 0);
   if (!Number.isFinite(ts) || ts <= 0) return "—";
@@ -908,7 +942,7 @@ function homeAlertUserLabel(event){
 }
 
 function homeAlertTypeLabel(event){
-  return trim(event?.type || event?.event_type || event?.kind || event?.name || "") || "—";
+  return homeAlertCompactTypeLabel(event);
 }
 
 function homeAlertMessageLabel(event){
@@ -928,25 +962,25 @@ function renderHomeAlertsHistory(){
   const pageItems = events.slice(startIndex, startIndex + HOME_ALERTS_PAGE_SIZE);
 
   if (homeAlertsState.loading) {
-    tbody.innerHTML = '<tr class="alerts-table__empty-row"><td colspan="6">Loading alert history…</td></tr>';
+    tbody.innerHTML = '<tr class="alerts-table__empty-row"><td colspan="5">Loading alert history…</td></tr>';
   } else if (pageItems.length === 0) {
-    tbody.innerHTML = '<tr class="alerts-table__empty-row"><td colspan="6">No alerts recorded yet.</td></tr>';
+    tbody.innerHTML = '<tr class="alerts-table__empty-row"><td colspan="5">No alerts recorded yet.</td></tr>';
   } else {
     tbody.innerHTML = pageItems.map((event) => {
       const platform = String(event?.platform || "").toLowerCase();
       const icon = homeAlertPlatformIcon(platform);
+      const platformLabel = homeAlertPlatformLabel(platform);
       const platformHtml = icon
-        ? `<span class="alerts-table__platform"><img src="${icon}" alt="${escapeHtml(homeAlertPlatformLabel(platform))}" /><span>${escapeHtml(homeAlertPlatformLabel(platform))}</span></span>`
-        : `<span class="alerts-table__platform"><span>${escapeHtml(homeAlertPlatformLabel(platform))}</span></span>`;
+        ? `<span class="alerts-table__platform" title="${escapeHtml(platformLabel)}"><img src="${icon}" alt="${escapeHtml(platformLabel)}" /></span>`
+        : `<span class="alerts-table__platform" title="${escapeHtml(platformLabel)}">${escapeHtml(platformLabel.slice(0, 1) || "—")}</span>`;
       const historyId = trim(event?.history_id || event?.id || "");
       const replayDisabled = historyId ? "" : " disabled";
       return `
         <tr>
-          <td class="alerts-table__time">${escapeHtml(homeAlertTimeLabel(event))}</td>
           <td>${platformHtml}</td>
-          <td class="alerts-table__user">${escapeHtml(homeAlertUserLabel(event))}</td>
-          <td class="alerts-table__event">${escapeHtml(homeAlertTypeLabel(event))}</td>
-          <td class="alerts-table__message">${escapeHtml(homeAlertMessageLabel(event))}</td>
+          <td><span class="alerts-table__user" title="${escapeHtml(homeAlertUserLabel(event))}">${escapeHtml(homeAlertUserLabel(event))}</span></td>
+          <td><span class="alerts-table__event" title="${escapeHtml(homeAlertTypeLabel(event))}">${escapeHtml(homeAlertTypeLabel(event))}</span></td>
+          <td><span class="alerts-table__message" title="${escapeHtml(homeAlertMessageLabel(event))}">${escapeHtml(homeAlertMessageLabel(event))}</span></td>
           <td><button class="btn btn--primary btn--small" data-alert-replay="${escapeHtml(historyId)}"${replayDisabled}>Replay</button></td>
         </tr>`;
     }).join("");
@@ -969,12 +1003,10 @@ async function loadHomeAlertsHistory(options = {}){
 
   const preservePage = !!options.preservePage;
   const silent = !!options.silent;
-  const refreshBtn = document.getElementById("btnAlertsRefresh");
   homeAlertsState.loading = true;
   if (!preservePage) homeAlertsState.page = 1;
   if (!silent) {
     homeAlertsState.status = "Loading alert history…";
-    setActionBusy(refreshBtn, true, "Refreshing...");
     renderHomeAlertsHistory();
   }
 
@@ -996,7 +1028,6 @@ async function loadHomeAlertsHistory(options = {}){
     }
   } finally {
     homeAlertsState.loading = false;
-    if (!silent) setActionBusy(refreshBtn, false);
     renderHomeAlertsHistory();
   }
 }
@@ -1010,7 +1041,7 @@ async function replayHomeAlert(historyId, button){
   try {
     await apiPost("/api/alerts/resend", { id: historyId });
     homeAlertsState.status = `Replayed ${historyId}`;
-    renderHomeAlertsHistory();
+    await loadHomeAlertsHistory({ preservePage: true });
   } catch (e) {
     homeAlertsState.status = `Replay failed (${e.message})`;
     renderHomeAlertsHistory();
@@ -1073,10 +1104,6 @@ function wireHomePage(){
       setActionBusy(btn, false);
       renderHomePlatforms();
     }
-  });
-
-  document.getElementById("btnAlertsRefresh")?.addEventListener("click", () => {
-    loadHomeAlertsHistory({ preservePage: true });
   });
 
   document.getElementById("btnAlertsPrev")?.addEventListener("click", () => {

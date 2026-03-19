@@ -1048,21 +1048,18 @@ background: rgba(59,130,246,.18);
   gap:12px;
 }
 
-.home-alerts__controls{
-  display:flex;
-  gap:10px;
-  align-items:center;
-}
 
 .home-alerts__tablewrap{
   padding:0 14px 0;
-  overflow:auto;
+  overflow-y:auto;
+  overflow-x:hidden;
   max-height:560px;
 }
 
 .alerts-table{
   width:100%;
-  min-width:760px;
+  min-width:0;
+  table-layout:fixed;
 }
 
 .alerts-table th{
@@ -1075,25 +1072,42 @@ background: rgba(59,130,246,.18);
 
 .alerts-table td,
 .alerts-table th{
-  padding:12px 10px;
+  padding:10px 8px;
+  vertical-align:middle;
 }
 
-.alerts-table td:last-child,
-.alerts-table th:last-child{
+.alerts-table th:nth-child(1),
+.alerts-table td:nth-child(1){
+  width:42px;
+  text-align:center;
+}
+
+.alerts-table th:nth-child(2),
+.alerts-table td:nth-child(2){
+  width:26%;
+}
+
+.alerts-table th:nth-child(3),
+.alerts-table td:nth-child(3){
+  width:21%;
+}
+
+.alerts-table th:nth-child(4),
+.alerts-table td:nth-child(4){
+  width:auto;
+}
+
+.alerts-table th:nth-child(5),
+.alerts-table td:nth-child(5){
+  width:88px;
   text-align:right;
-}
-
-.alerts-table__time{
-  white-space:nowrap;
-  color:var(--muted);
-  font-size:12px;
 }
 
 .alerts-table__platform{
   display:inline-flex;
   align-items:center;
-  gap:8px;
-  font-weight:700;
+  justify-content:center;
+  width:100%;
 }
 
 .alerts-table__platform img{
@@ -1103,12 +1117,27 @@ background: rgba(59,130,246,.18);
 }
 
 .alerts-table__user,
+.alerts-table__event,
+.alerts-table__message{
+  display:block;
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.alerts-table__user,
 .alerts-table__event{
   font-weight:700;
 }
 
 .alerts-table__message{
   color:rgba(255,255,255,.82);
+}
+
+.alerts-table .btn--small{
+  min-width:72px;
+  padding:7px 10px;
 }
 
 .alerts-table__empty-row td{
@@ -1183,7 +1212,31 @@ background: rgba(59,130,246,.18);
     padding:0 10px 0;
   }
 
-  .alerts-table{
-    min-width:640px;
+  .alerts-table td,
+  .alerts-table th{
+    padding:9px 7px;
   }
+}
+
+.alerts-table th.alerts-table__col-platform{
+  color:transparent;
+}
+
+.alerts-table td > .alerts-table__user,
+.alerts-table td > .alerts-table__event,
+.alerts-table td > .alerts-table__message{
+  display:block;
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.alerts-table td > .alerts-table__user,
+.alerts-table td > .alerts-table__event{
+  font-weight:700;
+}
+
+.alerts-table td > .alerts-table__message{
+  color:rgba(255,255,255,.82);
 }

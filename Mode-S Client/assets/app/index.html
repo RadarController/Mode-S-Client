@@ -203,24 +203,22 @@
           <div>
             <div class="card__title">Alert History</div>
           </div>
-          <div class="home-alerts__controls" aria-hidden="true"></div>
         </div>
 
         <div class="home-alerts__tablewrap">
           <table class="table alerts-table">
             <thead>
               <tr>
-                <th>Time</th>
-                <th>Platform</th>
-                <th>User / Callsign</th>
-                <th>Event Type</th>
-                <th>Message</th>
-                <th>Action</th>
+                <th class="alerts-table__col-platform"></th>
+                <th class="alerts-table__col-user">User / Callsign</th>
+                <th class="alerts-table__col-event">Event</th>
+                <th class="alerts-table__col-message">Message</th>
+                <th class="alerts-table__col-action">Action</th>
               </tr>
             </thead>
             <tbody id="alertsHistoryBody">
               <tr class="alerts-table__empty-row">
-                <td colspan="6">Loading alert history…</td>
+                <td colspan="5">Loading alert history…</td>
               </tr>
             </tbody>
           </table>
