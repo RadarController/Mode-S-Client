@@ -1010,7 +1010,7 @@ async function replayHomeAlert(historyId, button){
   try {
     await apiPost("/api/alerts/resend", { id: historyId });
     homeAlertsState.status = `Replayed ${historyId}`;
-    await loadHomeAlertsHistory({ preservePage: true });
+    renderHomeAlertsHistory();
   } catch (e) {
     homeAlertsState.status = `Replay failed (${e.message})`;
     renderHomeAlertsHistory();
