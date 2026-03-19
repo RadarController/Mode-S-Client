@@ -32,8 +32,8 @@
       <div class="pill"><span class="pill__k">Aircraft</span><span class="pill__v" id="mAircraft">—</span></div>
     </div>
 
-    <main class="grid grid--single">
-      <section class="card card--wide home-platforms">
+    <main class="home-main-grid">
+      <section class="card home-platforms home-panel home-panel--platforms">
         <div class="card__head home-platforms__head">
           <div>
             <div class="card__title">Platforms</div>
@@ -54,7 +54,7 @@
           </div>
         </div>
 
-        <div class="platforms platforms--home">
+        <div class="platforms platforms--home platforms--stacked">
           <div class="platform platform--home platform--disconnected" data-platform="tiktok">
             <div class="platform__head">
               <div class="platform__identity">
@@ -197,6 +197,48 @@
           </div>
         </div>
       </section>
+
+      <section class="card home-alerts home-panel home-panel--alerts">
+        <div class="card__head home-alerts__head">
+          <div>
+            <div class="card__title">Alert History</div>
+          </div>
+          <div class="home-alerts__controls">
+            <button class="btn btn--ghost" id="btnAlertsRefresh" type="button">Refresh</button>
+          </div>
+        </div>
+
+        <div class="home-alerts__tablewrap">
+          <table class="table alerts-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Platform</th>
+                <th>User / Callsign</th>
+                <th>Event Type</th>
+                <th>Message</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="alertsHistoryBody">
+              <tr class="alerts-table__empty-row">
+                <td colspan="6">Loading alert history…</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="home-alerts__footer">
+          <div class="home-alerts__status mono" id="alertsHistoryStatus">—</div>
+          <div class="home-alerts__pager">
+            <button class="btn btn--ghost btn--small" id="btnAlertsPrev" type="button">Previous</button>
+            <span class="home-alerts__page mono" id="alertsHistoryPage">Page 1 / 1</span>
+            <button class="btn btn--ghost btn--small" id="btnAlertsNext" type="button">Next</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="card home-panel home-panel--blank home-blank" aria-hidden="true"></section>
     </main>
 
     <footer class="footer">
