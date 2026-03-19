@@ -36,8 +36,7 @@
       <section class="card card--wide home-platforms">
         <div class="card__head home-platforms__head">
           <div>
-            <div class="card__title">Integrations</div>
-            <div class="card__hint">Selected accounts come from Connected Accounts. This page is now read-only and focused on runtime control.</div>
+            <div class="card__title">Platforms</div>
           </div>
           <div class="home-platforms__summary">
             <div class="home-kpi">
@@ -77,7 +76,7 @@
               <div class="platform__section-label">Selected account</div>
               <div class="platform__account">
                 <div class="platform__account-main" id="tiktokIdentityPrimary">No account selected</div>
-                <div class="platform__account-sub" id="tiktokIdentitySecondary">Choose the account in Connected Accounts.</div>
+                <div class="platform__account-sub" id="tiktokIdentitySecondary"></div>
               </div>
 
               <div class="platform__status-grid">
@@ -99,11 +98,6 @@
               <div class="platform__actions">
                 <button class="btn btn--primary" data-action="primary">Open Settings</button>
                 <button class="btn btn--danger" data-action="stop" disabled>Stop</button>
-              </div>
-
-              <div class="platform__linkrow">
-                <button class="btn btn--ghost btn--small" data-action="settings">Connected Accounts</button>
-                <span class="platform__linkhint" id="tiktokCardHint">Select the channel in Connected Accounts.</span>
               </div>
             </div>
           </div>
@@ -129,7 +123,7 @@
               <div class="platform__section-label">Selected account</div>
               <div class="platform__account">
                 <div class="platform__account-main" id="twitchIdentityPrimary">No account selected</div>
-                <div class="platform__account-sub" id="twitchIdentitySecondary">Choose the account in Connected Accounts.</div>
+                <div class="platform__account-sub" id="twitchIdentitySecondary"></div>
               </div>
 
               <div class="platform__status-grid">
@@ -151,11 +145,6 @@
               <div class="platform__actions">
                 <button class="btn btn--primary" data-action="primary">Open Settings</button>
                 <button class="btn btn--danger" data-action="stop" disabled>Stop</button>
-              </div>
-
-              <div class="platform__linkrow">
-                <button class="btn btn--ghost btn--small" data-action="settings">Connected Accounts</button>
-                <span class="platform__linkhint" id="twitchCardHint">Select the channel in Connected Accounts.</span>
               </div>
             </div>
           </div>
@@ -181,7 +170,7 @@
               <div class="platform__section-label">Selected account</div>
               <div class="platform__account">
                 <div class="platform__account-main" id="youtubeIdentityPrimary">No account selected</div>
-                <div class="platform__account-sub" id="youtubeIdentitySecondary">Choose the account in Connected Accounts.</div>
+                <div class="platform__account-sub" id="youtubeIdentitySecondary"></div>
               </div>
 
               <div class="platform__status-grid">
@@ -204,23 +193,8 @@
                 <button class="btn btn--primary" data-action="primary">Open Settings</button>
                 <button class="btn btn--danger" data-action="stop" disabled>Stop</button>
               </div>
-
-              <div class="platform__linkrow">
-                <button class="btn btn--ghost btn--small" data-action="settings">Connected Accounts</button>
-                <span class="platform__linkhint" id="youtubeCardHint">Select the channel in Connected Accounts.</span>
-              </div>
             </div>
           </div>
-        </div>
-
-        <div class="home-activity">
-          <div class="home-activity__head">
-            <div>
-              <div class="platform__section-label">Recent activity</div>
-              <div class="home-activity__hint">The homepage now surfaces runtime requests and service logs instead of account entry fields.</div>
-            </div>
-          </div>
-          <div class="log log--compact" id="log"></div>
         </div>
       </section>
     </main>

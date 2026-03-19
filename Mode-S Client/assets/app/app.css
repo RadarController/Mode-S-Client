@@ -575,6 +575,10 @@ background: rgba(59,130,246,.18);
   word-break:break-word;
 }
 
+.platform__account-sub:empty{
+  display:none;
+}
+
 .platform__status-grid{
   display:grid;
   grid-template-columns:repeat(2, minmax(0, 1fr));

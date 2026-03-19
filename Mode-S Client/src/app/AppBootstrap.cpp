@@ -13,6 +13,7 @@
 #include <unordered_map>
 
 #include "AppConfig.h"
+#include "oauth/EmbeddedOAuthConfig.h"
 #include "AppState.h"
 #include "chat/ChatAggregator.h"
 #include "core/StringUtil.h"
@@ -218,10 +219,10 @@ void InitializeUiAndState(
         std::wstring snap = L"CONFIG: AppConfig snapshot ";
         snap += L"twitch_login='";
         snap += ToW(deps.config.twitch_login);
-        snap += L"' twitch_client_id='";
-        snap += ToW(deps.config.twitch_client_id);
-        snap += L"' twitch_client_secret_len=";
-        snap += std::to_wstring(deps.config.twitch_client_secret.size());
+        snap += L"' embedded_twitch_credentials=";
+        snap += EmbeddedOAuthConfig::HasTwitchCredentials() ? L"yes" : L"no";
+        snap += L" config_twitch_client_id_present=";
+        snap += deps.config.twitch_client_id.empty() ? L"no" : L"yes";
         LogLine(snap.c_str());
     }
 
@@ -336,8 +337,18 @@ void StartBackend(
 
         if (!ok) return false;
 
+        std::string eventSubClientId = config.twitch_client_id;
+        if (eventSubClientId.empty()) {
+            eventSubClientId = EmbeddedOAuthConfig::TwitchClientId();
+        }
+
+        if (eventSubClientId.empty()) {
+            LogLine(L"TWITCH: EventSub not started - missing embedded Twitch client id");
+            return true;
+        }
+
         twitchEventSub.Start(
-            config.twitch_client_id,
+            eventSubClientId,
             token,
             config.twitch_login,
             [&](const ChatMessage& msg) {
@@ -533,7 +544,7 @@ void StartBackend(
         };
 
     if (!twitchAuth.Start()) {
-        LogLine(L"TWITCH: OAuth token refresh/start failed (check config: twitch_client_id / twitch_client_secret / twitch.user_refresh_token)");
+        LogLine(L"TWITCH: OAuth token refresh/start failed (check embedded Twitch credentials and twitch.user_refresh_token)");
     }
     else {
         LogLine(L"TWITCH: OAuth token refresh worker started");

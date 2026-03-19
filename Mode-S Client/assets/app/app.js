@@ -564,10 +564,7 @@ function getHomeAuthState(platform, info){
 function formatHomePrimaryIdentity(platform, value){
   if (!value) return "No account selected";
   if (platform === "tiktok") return value.startsWith("@") ? value : `@${value}`;
-  if (platform === "youtube") {
-    if (value.startsWith("UC")) return value;
-    return value.startsWith("@") ? value : `@${value}`;
-  }
+  if (platform === "youtube") return value.replace(/^@/, "");
   return value.startsWith("@") ? value : `@${value}`;
 }
 
@@ -581,12 +578,12 @@ function getHomeIdentity(platform){
       ? {
           hasIdentity: true,
           primary: formatHomePrimaryIdentity(platform, uniqueId),
-          secondary: "Selected in Connected Accounts"
+          secondary: ""
         }
       : {
           hasIdentity: false,
           primary: "No account selected",
-          secondary: "Choose the account in Connected Accounts."
+          secondary: ""
         };
   }
 
@@ -596,12 +593,12 @@ function getHomeIdentity(platform){
       ? {
           hasIdentity: true,
           primary: formatHomePrimaryIdentity(platform, login),
-          secondary: "Selected in Connected Accounts"
+          secondary: ""
         }
       : {
           hasIdentity: false,
           primary: "No account selected",
-          secondary: "Choose the account in Connected Accounts."
+          secondary: ""
         };
   }
 
@@ -611,20 +608,20 @@ function getHomeIdentity(platform){
     return {
       hasIdentity: true,
       primary: formatHomePrimaryIdentity(platform, handle),
-      secondary: channelId || "Selected in Connected Accounts"
+      secondary: ""
     };
   }
   if (channelId) {
     return {
       hasIdentity: true,
       primary: channelId,
-      secondary: "Connected account"
+      secondary: ""
     };
   }
   return {
     hasIdentity: false,
     primary: "No account selected",
-    secondary: "Choose the account in Connected Accounts."
+    secondary: ""
   };
 }
 
@@ -696,10 +693,7 @@ function getHomePrimaryAction(platform, configModel, runtimeModel){
 }
 
 function homeCardHintText(platform, configModel){
-  if (configModel.unavailable) return "This platform is unavailable in the current build.";
-  if (!configModel.hasIdentity) return "Select the channel in Connected Accounts.";
-  if (configModel.needsAuth) return "Open Connected Accounts to reconnect this platform.";
-  return "Identity is managed in Connected Accounts. Runtime controls stay here.";
+  return "";
 }
 
 function applyHomeCardTone(platform, configModel, runtimeModel){
@@ -741,7 +735,6 @@ function renderHomePlatforms(){
     setText(`${platform}RuntimeState`, runtimeModel.label);
     setText(`${platform}State`, configModel.label);
     setText(`${platform}Badge`, runtimeModel.label);
-    setText(`${platform}CardHint`, homeCardHintText(platform, configModel));
 
     applyHomeCardTone(platform, configModel, runtimeModel);
 
@@ -866,11 +859,6 @@ function wireHomePage(){
     const platform = normalizeHomePlatform(card.dataset.platform);
     if (!platform) return;
 
-    if (action === "settings") {
-      openConnectedAccountsPage();
-      return;
-    }
-
     if (action === "primary") {
       await performHomePrimaryAction(platform, btn);
       return;
@@ -970,7 +958,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     await pollMetrics();
-    await pollLog();
 
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
@@ -979,7 +966,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   setInterval(pollMetrics, 2000);
-  setInterval(pollLog, 1000);
   if (isHomePage()) {
     setInterval(fetchHomeAuthStatuses, 15000);
     setInterval(pollHomePlatformStatus, 3000);
