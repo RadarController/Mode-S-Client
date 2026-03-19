@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="/app/app.css" />
 </head>
 <body>
-  <div class="app">
+  <div class="app" id="homePage">
     <header class="topbar">
       <div class="brand">
         <div class="brand__mark"><img src="/assets/icons/RClogo.svg" alt="RadarController" style="width:100%;height:100%;display:block;opacity:0.8;border-radius:inherit;" /></div>
@@ -36,23 +36,27 @@
       <section class="card card--wide home-platforms">
         <div class="card__head home-platforms__head">
           <div>
-            <div class="card__title">Platforms</div>
-            <div class="card__hint">Manage your linked accounts, or start or stop each platform.</div>
+            <div class="card__title">Integrations</div>
+            <div class="card__hint">Selected accounts come from Connected Accounts. This page is now read-only and focused on runtime control.</div>
           </div>
           <div class="home-platforms__summary">
             <div class="home-kpi">
-              <span class="home-kpi__k">Linked accounts</span>
+              <span class="home-kpi__k">Selected accounts</span>
               <span class="home-kpi__v" id="linkedAccountsCount">0 / 3</span>
             </div>
             <div class="home-kpi">
-              <span class="home-kpi__k">Live platforms</span>
+              <span class="home-kpi__k">Running platforms</span>
               <span class="home-kpi__v" id="livePlatformsCount">0</span>
+            </div>
+            <div class="home-kpi">
+              <span class="home-kpi__k">Needs attention</span>
+              <span class="home-kpi__v" id="issuePlatformsCount">0</span>
             </div>
           </div>
         </div>
 
         <div class="platforms platforms--home">
-          <div class="platform platform--home" data-platform="tiktok">
+          <div class="platform platform--home platform--disconnected" data-platform="tiktok">
             <div class="platform__head">
               <div class="platform__identity">
                 <img class="platform__icon" src="/assets/icons/tiktok-icon.svg" alt="TikTok" />
@@ -60,24 +64,32 @@
                   <div class="platform__name">TikTok</div>
                   <div class="platform__statusline">
                     <span class="platform__state-dot" id="tiktokStateDot" aria-hidden="true"></span>
-                    <span class="platform__sub" id="tiktokState">Disconnected</span>
+                    <span class="platform__sub" id="tiktokState">Not configured</span>
                   </div>
                 </div>
               </div>
               <div class="platform__right">
-                <span class="badge" id="tiktokBadge">Offline</span>
+                <span class="badge badge--muted" id="tiktokBadge">Stopped</span>
               </div>
             </div>
 
             <div class="platform__body">
-              <div class="platform__section-label">Linked account</div>
-              <label class="field field--account">
-                <span class="field__k">Username</span>
-                <div class="field__row field__row--account">
-                  <input class="input" id="tiktokUser" placeholder="@username" />
-                  <button class="btn btn--ghost" data-action="set">Save</button>
+              <div class="platform__section-label">Selected account</div>
+              <div class="platform__account">
+                <div class="platform__account-main" id="tiktokIdentityPrimary">No account selected</div>
+                <div class="platform__account-sub" id="tiktokIdentitySecondary">Choose the account in Connected Accounts.</div>
+              </div>
+
+              <div class="platform__status-grid">
+                <div class="stat stat--compact">
+                  <div class="stat__k">Config</div>
+                  <div class="stat__v stat__v--small" id="tiktokConfigState">Not configured</div>
                 </div>
-              </label>
+                <div class="stat stat--compact">
+                  <div class="stat__k">Service</div>
+                  <div class="stat__v stat__v--small" id="tiktokRuntimeState">Stopped</div>
+                </div>
+              </div>
 
               <div class="platform__stats">
                 <div class="stat"><div class="stat__k">Viewers</div><div class="stat__v" id="tiktokViewers">—</div></div>
@@ -85,13 +97,18 @@
               </div>
 
               <div class="platform__actions">
-                <button class="btn btn--primary" data-action="start">Start / Restart</button>
+                <button class="btn btn--primary" data-action="primary">Open Settings</button>
                 <button class="btn btn--danger" data-action="stop" disabled>Stop</button>
+              </div>
+
+              <div class="platform__linkrow">
+                <button class="btn btn--ghost btn--small" data-action="settings">Connected Accounts</button>
+                <span class="platform__linkhint" id="tiktokCardHint">Select the channel in Connected Accounts.</span>
               </div>
             </div>
           </div>
 
-          <div class="platform platform--home" data-platform="twitch">
+          <div class="platform platform--home platform--disconnected" data-platform="twitch">
             <div class="platform__head">
               <div class="platform__identity">
                 <img class="platform__icon" src="/assets/icons/twitch-icon.svg" alt="Twitch" />
@@ -99,24 +116,32 @@
                   <div class="platform__name">Twitch</div>
                   <div class="platform__statusline">
                     <span class="platform__state-dot" id="twitchStateDot" aria-hidden="true"></span>
-                    <span class="platform__sub" id="twitchState">Disconnected</span>
+                    <span class="platform__sub" id="twitchState">Not configured</span>
                   </div>
                 </div>
               </div>
               <div class="platform__right">
-                <span class="badge" id="twitchBadge">Offline</span>
+                <span class="badge badge--muted" id="twitchBadge">Stopped</span>
               </div>
             </div>
 
             <div class="platform__body">
-              <div class="platform__section-label">Linked account</div>
-              <label class="field field--account">
-                <span class="field__k">Channel</span>
-                <div class="field__row field__row--account">
-                  <input class="input" id="twitchUser" placeholder="channel_name" />
-                  <button class="btn btn--ghost" data-action="set">Save</button>
+              <div class="platform__section-label">Selected account</div>
+              <div class="platform__account">
+                <div class="platform__account-main" id="twitchIdentityPrimary">No account selected</div>
+                <div class="platform__account-sub" id="twitchIdentitySecondary">Choose the account in Connected Accounts.</div>
+              </div>
+
+              <div class="platform__status-grid">
+                <div class="stat stat--compact">
+                  <div class="stat__k">Config</div>
+                  <div class="stat__v stat__v--small" id="twitchConfigState">Not configured</div>
                 </div>
-              </label>
+                <div class="stat stat--compact">
+                  <div class="stat__k">Service</div>
+                  <div class="stat__v stat__v--small" id="twitchRuntimeState">Stopped</div>
+                </div>
+              </div>
 
               <div class="platform__stats">
                 <div class="stat"><div class="stat__k">Viewers</div><div class="stat__v" id="twitchViewers">—</div></div>
@@ -124,13 +149,18 @@
               </div>
 
               <div class="platform__actions">
-                <button class="btn btn--primary" data-action="start">Start / Restart</button>
+                <button class="btn btn--primary" data-action="primary">Open Settings</button>
                 <button class="btn btn--danger" data-action="stop" disabled>Stop</button>
+              </div>
+
+              <div class="platform__linkrow">
+                <button class="btn btn--ghost btn--small" data-action="settings">Connected Accounts</button>
+                <span class="platform__linkhint" id="twitchCardHint">Select the channel in Connected Accounts.</span>
               </div>
             </div>
           </div>
 
-          <div class="platform platform--home" data-platform="youtube">
+          <div class="platform platform--home platform--disconnected" data-platform="youtube">
             <div class="platform__head">
               <div class="platform__identity">
                 <img class="platform__icon" src="/assets/icons/youtube-icon.svg" alt="YouTube" />
@@ -138,24 +168,32 @@
                   <div class="platform__name">YouTube</div>
                   <div class="platform__statusline">
                     <span class="platform__state-dot" id="youtubeStateDot" aria-hidden="true"></span>
-                    <span class="platform__sub" id="youtubeState">Disconnected</span>
+                    <span class="platform__sub" id="youtubeState">Not configured</span>
                   </div>
                 </div>
               </div>
               <div class="platform__right">
-                <span class="badge" id="youtubeBadge">Offline</span>
+                <span class="badge badge--muted" id="youtubeBadge">Stopped</span>
               </div>
             </div>
 
             <div class="platform__body">
-              <div class="platform__section-label">Linked account</div>
-              <label class="field field--account">
-                <span class="field__k">Handle / Channel</span>
-                <div class="field__row field__row--account">
-                  <input class="input" id="youtubeUser" placeholder="UC... or @handle" />
-                  <button class="btn btn--ghost" data-action="set">Save</button>
+              <div class="platform__section-label">Selected account</div>
+              <div class="platform__account">
+                <div class="platform__account-main" id="youtubeIdentityPrimary">No account selected</div>
+                <div class="platform__account-sub" id="youtubeIdentitySecondary">Choose the account in Connected Accounts.</div>
+              </div>
+
+              <div class="platform__status-grid">
+                <div class="stat stat--compact">
+                  <div class="stat__k">Config</div>
+                  <div class="stat__v stat__v--small" id="youtubeConfigState">Not configured</div>
                 </div>
-              </label>
+                <div class="stat stat--compact">
+                  <div class="stat__k">Service</div>
+                  <div class="stat__v stat__v--small" id="youtubeRuntimeState">Stopped</div>
+                </div>
+              </div>
 
               <div class="platform__stats">
                 <div class="stat"><div class="stat__k">Viewers</div><div class="stat__v" id="youtubeViewers">—</div></div>
@@ -163,22 +201,26 @@
               </div>
 
               <div class="platform__actions">
-                <button class="btn btn--primary" data-action="start">Start / Restart</button>
+                <button class="btn btn--primary" data-action="primary">Open Settings</button>
                 <button class="btn btn--danger" data-action="stop" disabled>Stop</button>
+              </div>
+
+              <div class="platform__linkrow">
+                <button class="btn btn--ghost btn--small" data-action="settings">Connected Accounts</button>
+                <span class="platform__linkhint" id="youtubeCardHint">Select the channel in Connected Accounts.</span>
               </div>
             </div>
           </div>
         </div>
 
-        <div class="home-strip">
-          <div class="home-strip__item">
-            <span class="home-strip__dot"></span>
-            <span class="home-strip__text">Connected means the platform is configured and the client can currently see or talk to that integration. In short, you're ready to go live.</span>
+        <div class="home-activity">
+          <div class="home-activity__head">
+            <div>
+              <div class="platform__section-label">Recent activity</div>
+              <div class="home-activity__hint">The homepage now surfaces runtime requests and service logs instead of account entry fields.</div>
+            </div>
           </div>
-          <div class="home-strip__item">
-            <span class="home-strip__dot home-strip__dot--blue"></span>
-            <span class="home-strip__text">Problems, errors and alerts related to the app are now in the Diagnostics page. Stream alerts show up in the chat window.</span>
-          </div>
+          <div class="log log--compact" id="log"></div>
         </div>
       </section>
     </main>

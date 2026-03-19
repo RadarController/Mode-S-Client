@@ -323,6 +323,47 @@ nlohmann::json AppState::metrics_json() const {
     };
 }
 
+void AppState::set_platform_runtime_state(const std::string& platform, const std::string& requested_state) {
+    std::lock_guard<std::mutex> lk(mtx_);
+
+    if (!platform_runtime_state_.is_object()) {
+        platform_runtime_state_ = nlohmann::json::object();
+    }
+
+    const std::string key = ToLower(platform);
+    if (key != "tiktok" && key != "twitch" && key != "youtube") {
+        return;
+    }
+
+    platform_runtime_state_[key] = nlohmann::json{
+        {"requested_state", requested_state},
+        {"ts_ms", now_ms()}
+    };
+}
+
+nlohmann::json AppState::platform_runtime_state_json() const {
+    std::lock_guard<std::mutex> lk(mtx_);
+    nlohmann::json out = platform_runtime_state_;
+    if (!out.is_object()) {
+        out = nlohmann::json::object();
+    }
+
+    auto ensure_platform = [&](const char* platform) {
+        if (!out.contains(platform) || !out[platform].is_object()) {
+            out[platform] = nlohmann::json::object();
+        }
+        auto& node = out[platform];
+        if (!node.contains("requested_state")) node["requested_state"] = "stopped";
+        if (!node.contains("ts_ms")) node["ts_ms"] = 0;
+    };
+
+    ensure_platform("tiktok");
+    ensure_platform("twitch");
+    ensure_platform("youtube");
+    out["ok"] = true;
+    return out;
+}
+
 nlohmann::json AppState::chat_json() const {
     nlohmann::json arr = nlohmann::json::array();
     for (auto& c : recent_chat()) {
