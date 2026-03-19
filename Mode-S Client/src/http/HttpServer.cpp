@@ -2536,7 +2536,6 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
         res.set_content(j.dump(2), "application/json; charset=utf-8");
         });
 
-#ifndef NDEBUG
     // POST /api/alerts/resend  (localhost-only)
     // Body: { "id": "hist-123" } or { "ids": ["hist-123","hist-124"] }
     svr.Post("/api/alerts/resend", [&](const httplib::Request& req, httplib::Response& res) {
@@ -2604,12 +2603,6 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
             return;
         }
 });
-#else
-    svr.Post("/api/alerts/resend", [&](const httplib::Request&, httplib::Response& res) {
-        res.status = 404;
-        res.set_content(R"({"ok":false,"error":"not_found"})", "application/json; charset=utf-8");
-        });
-#endif
 
 
     // --- Overlay: special chat.html injection ---

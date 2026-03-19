@@ -133,6 +133,7 @@ async function apiPost(url, body){
 }
 
 const HOME_PLATFORMS = ["tiktok", "twitch", "youtube"];
+const HOME_ALERTS_PAGE_SIZE = 10;
 let homeSettingsCache = null;
 let homeMetricsCache = null;
 let homeAuthCache = {
@@ -146,6 +147,13 @@ let homePlatformStatusCache = {
   youtube: { requested_state: "stopped", ts_ms: 0 }
 };
 let homeActionState = {};
+let homeAlertsState = {
+  events: [],
+  page: 1,
+  total: 0,
+  loading: false,
+  status: "Loading alert history…"
+};
 
 function isHomePage(){
   return !!document.getElementById("homePage");
@@ -564,7 +572,10 @@ function getHomeAuthState(platform, info){
 function formatHomePrimaryIdentity(platform, value){
   if (!value) return "No account selected";
   if (platform === "tiktok") return value.startsWith("@") ? value : `@${value}`;
-  if (platform === "youtube") return value.replace(/^@/, "");
+  if (platform === "youtube") {
+    if (value.startsWith("UC")) return value;
+    return value.startsWith("@") ? value : `@${value}`;
+  }
   return value.startsWith("@") ? value : `@${value}`;
 }
 
@@ -578,12 +589,12 @@ function getHomeIdentity(platform){
       ? {
           hasIdentity: true,
           primary: formatHomePrimaryIdentity(platform, uniqueId),
-          secondary: ""
+          secondary: "Selected in Connected Accounts"
         }
       : {
           hasIdentity: false,
           primary: "No account selected",
-          secondary: ""
+          secondary: "Choose the account in Connected Accounts."
         };
   }
 
@@ -593,12 +604,12 @@ function getHomeIdentity(platform){
       ? {
           hasIdentity: true,
           primary: formatHomePrimaryIdentity(platform, login),
-          secondary: ""
+          secondary: "Selected in Connected Accounts"
         }
       : {
           hasIdentity: false,
           primary: "No account selected",
-          secondary: ""
+          secondary: "Choose the account in Connected Accounts."
         };
   }
 
@@ -608,20 +619,20 @@ function getHomeIdentity(platform){
     return {
       hasIdentity: true,
       primary: formatHomePrimaryIdentity(platform, handle),
-      secondary: ""
+      secondary: channelId || "Selected in Connected Accounts"
     };
   }
   if (channelId) {
     return {
       hasIdentity: true,
       primary: channelId,
-      secondary: ""
+      secondary: "Connected account"
     };
   }
   return {
     hasIdentity: false,
     primary: "No account selected",
-    secondary: ""
+    secondary: "Choose the account in Connected Accounts."
   };
 }
 
@@ -693,7 +704,10 @@ function getHomePrimaryAction(platform, configModel, runtimeModel){
 }
 
 function homeCardHintText(platform, configModel){
-  return "";
+  if (configModel.unavailable) return "This platform is unavailable in the current build.";
+  if (!configModel.hasIdentity) return "Select the channel in Connected Accounts.";
+  if (configModel.needsAuth) return "Open Connected Accounts to reconnect this platform.";
+  return "Identity is managed in Connected Accounts. Runtime controls stay here.";
 }
 
 function applyHomeCardTone(platform, configModel, runtimeModel){
@@ -735,6 +749,7 @@ function renderHomePlatforms(){
     setText(`${platform}RuntimeState`, runtimeModel.label);
     setText(`${platform}State`, configModel.label);
     setText(`${platform}Badge`, runtimeModel.label);
+    setText(`${platform}CardHint`, homeCardHintText(platform, configModel));
 
     applyHomeCardTone(platform, configModel, runtimeModel);
 
@@ -844,6 +859,197 @@ async function performHomeStop(platform, button){
   }
 }
 
+function escapeHtml(value){
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function homeAlertEventsFromPayload(payload){
+  if (!payload) return [];
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload.events)) return payload.events;
+  if (Array.isArray(payload.items)) return payload.items;
+  if (Array.isArray(payload.history)) return payload.history;
+  return [];
+}
+
+function homeAlertPlatformLabel(platform){
+  const p = String(platform || "").toLowerCase();
+  if (p === "tiktok") return "TikTok";
+  if (p === "twitch") return "Twitch";
+  if (p === "youtube") return "YouTube";
+  return p ? (p.charAt(0).toUpperCase() + p.slice(1)) : "—";
+}
+
+function homeAlertPlatformIcon(platform){
+  const p = String(platform || "").toLowerCase();
+  if (p === "tiktok") return "/assets/icons/tiktok-icon.svg";
+  if (p === "twitch") return "/assets/icons/twitch-icon.svg";
+  if (p === "youtube") return "/assets/icons/youtube-icon.svg";
+  return "";
+}
+
+function homeAlertCompactTypeLabel(event){
+  const raw = trim(event?.event_type || event?.type || event?.kind || event?.name || "").toLowerCase();
+  if (!raw) return "—";
+
+  const directMap = {
+    "channel.subscribe": "Subscribe",
+    "channel.subscription.gift": "Gift",
+    "channel.follow": "Follow",
+    "channel.cheer": "Cheer",
+    "member.milestone": "Member",
+    "superchat": "Superchat",
+    "new follow": "Follow",
+    "new follower": "Follow"
+  };
+
+  if (directMap[raw]) return directMap[raw];
+
+  if (raw.includes("subscribe")) return "Subscribe";
+  if (raw.includes("follow")) return "Follow";
+  if (raw.includes("superchat")) return "Superchat";
+  if (raw.includes("member")) return "Member";
+  if (raw.includes("gift")) return "Gift";
+  if (raw.includes("cheer")) return "Cheer";
+  if (raw.includes("donat")) return "Donate";
+  if (raw.includes("raid")) return "Raid";
+  if (raw.includes("like")) return "Like";
+  if (raw.includes("share")) return "Share";
+
+  const tail = raw.split(/[.:/]/).pop() || raw;
+  return tail
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
+function homeAlertTimeLabel(event){
+  const ts = Number(event?.ts_ms || event?.timestamp_ms || event?.created_at_ms || 0);
+  if (!Number.isFinite(ts) || ts <= 0) return "—";
+  try {
+    return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  } catch (_) {
+    return "—";
+  }
+}
+
+function homeAlertUserLabel(event){
+  return trim(event?.user || event?.user_name || event?.username || event?.display_name || event?.callsign || event?.author || event?.member_name || "") || "—";
+}
+
+function homeAlertTypeLabel(event){
+  return homeAlertCompactTypeLabel(event);
+}
+
+function homeAlertMessageLabel(event){
+  return trim(event?.message || event?.text || event?.body || event?.title || event?.summary || event?.alert_text || "") || "—";
+}
+
+function renderHomeAlertsHistory(){
+  const tbody = document.getElementById("alertsHistoryBody");
+  if (!tbody) return;
+
+  const events = Array.isArray(homeAlertsState.events) ? homeAlertsState.events : [];
+  const total = events.length;
+  const totalPages = Math.max(1, Math.ceil(total / HOME_ALERTS_PAGE_SIZE));
+  homeAlertsState.page = Math.min(Math.max(1, homeAlertsState.page || 1), totalPages);
+
+  const startIndex = total === 0 ? 0 : (homeAlertsState.page - 1) * HOME_ALERTS_PAGE_SIZE;
+  const pageItems = events.slice(startIndex, startIndex + HOME_ALERTS_PAGE_SIZE);
+
+  if (homeAlertsState.loading) {
+    tbody.innerHTML = '<tr class="alerts-table__empty-row"><td colspan="5">Loading alert history…</td></tr>';
+  } else if (pageItems.length === 0) {
+    tbody.innerHTML = '<tr class="alerts-table__empty-row"><td colspan="5">No alerts recorded yet.</td></tr>';
+  } else {
+    tbody.innerHTML = pageItems.map((event) => {
+      const platform = String(event?.platform || "").toLowerCase();
+      const icon = homeAlertPlatformIcon(platform);
+      const platformLabel = homeAlertPlatformLabel(platform);
+      const platformHtml = icon
+        ? `<span class="alerts-table__platform" title="${escapeHtml(platformLabel)}"><img src="${icon}" alt="${escapeHtml(platformLabel)}" /></span>`
+        : `<span class="alerts-table__platform" title="${escapeHtml(platformLabel)}">${escapeHtml(platformLabel.slice(0, 1) || "—")}</span>`;
+      const historyId = trim(event?.history_id || event?.id || "");
+      const replayDisabled = historyId ? "" : " disabled";
+      return `
+        <tr>
+          <td>${platformHtml}</td>
+          <td><span class="alerts-table__user" title="${escapeHtml(homeAlertUserLabel(event))}">${escapeHtml(homeAlertUserLabel(event))}</span></td>
+          <td><span class="alerts-table__event" title="${escapeHtml(homeAlertTypeLabel(event))}">${escapeHtml(homeAlertTypeLabel(event))}</span></td>
+          <td><span class="alerts-table__message" title="${escapeHtml(homeAlertMessageLabel(event))}">${escapeHtml(homeAlertMessageLabel(event))}</span></td>
+          <td><button class="btn btn--primary btn--small" data-alert-replay="${escapeHtml(historyId)}"${replayDisabled}>Replay</button></td>
+        </tr>`;
+    }).join("");
+  }
+
+  const startShown = total === 0 ? 0 : startIndex + 1;
+  const endShown = total === 0 ? 0 : Math.min(startIndex + pageItems.length, total);
+  setText("alertsHistoryStatus", homeAlertsState.status || `${startShown}-${endShown} of ${total}`);
+  setText("alertsHistoryPage", `Page ${homeAlertsState.page} / ${totalPages}`);
+
+  const prev = document.getElementById("btnAlertsPrev");
+  const next = document.getElementById("btnAlertsNext");
+  if (prev) prev.disabled = homeAlertsState.loading || homeAlertsState.page <= 1;
+  if (next) next.disabled = homeAlertsState.loading || homeAlertsState.page >= totalPages;
+}
+
+async function loadHomeAlertsHistory(options = {}){
+  if (!isHomePage()) return;
+  if (homeAlertsState.loading) return;
+
+  const preservePage = !!options.preservePage;
+  const silent = !!options.silent;
+  homeAlertsState.loading = true;
+  if (!preservePage) homeAlertsState.page = 1;
+  if (!silent) {
+    homeAlertsState.status = "Loading alert history…";
+    renderHomeAlertsHistory();
+  }
+
+  try {
+    const payload = await apiGet("/api/alerts/history?limit=200");
+    homeAlertsState.events = homeAlertEventsFromPayload(payload);
+    homeAlertsState.total = homeAlertsState.events.length;
+    const totalPages = Math.max(1, Math.ceil(homeAlertsState.total / HOME_ALERTS_PAGE_SIZE));
+    homeAlertsState.page = preservePage ? Math.min(Math.max(1, homeAlertsState.page), totalPages) : 1;
+    const startShown = homeAlertsState.total === 0 ? 0 : ((homeAlertsState.page - 1) * HOME_ALERTS_PAGE_SIZE) + 1;
+    const endShown = homeAlertsState.total === 0 ? 0 : Math.min(homeAlertsState.page * HOME_ALERTS_PAGE_SIZE, homeAlertsState.total);
+    homeAlertsState.status = `${startShown}-${endShown} of ${homeAlertsState.total}`;
+  } catch (e) {
+    if (!silent) {
+      homeAlertsState.events = [];
+      homeAlertsState.total = 0;
+      homeAlertsState.page = 1;
+      homeAlertsState.status = `Load failed (${e.message})`;
+    }
+  } finally {
+    homeAlertsState.loading = false;
+    renderHomeAlertsHistory();
+  }
+}
+
+async function replayHomeAlert(historyId, button){
+  if (!historyId) return;
+  setActionBusy(button, true, "Replaying...");
+  homeAlertsState.status = `Replaying ${historyId}…`;
+  renderHomeAlertsHistory();
+
+  try {
+    await apiPost("/api/alerts/resend", { id: historyId });
+    homeAlertsState.status = `Replayed ${historyId}`;
+    await loadHomeAlertsHistory({ preservePage: true });
+  } catch (e) {
+    homeAlertsState.status = `Replay failed (${e.message})`;
+    renderHomeAlertsHistory();
+  } finally {
+    setActionBusy(button, false);
+  }
+}
+
 function wireHomePage(){
   const root = document.getElementById("homePage");
   if (!root) return;
@@ -858,6 +1064,11 @@ function wireHomePage(){
 
     const platform = normalizeHomePlatform(card.dataset.platform);
     if (!platform) return;
+
+    if (action === "settings") {
+      openConnectedAccountsPage();
+      return;
+    }
 
     if (action === "primary") {
       await performHomePrimaryAction(platform, btn);
@@ -893,6 +1104,31 @@ function wireHomePage(){
       setActionBusy(btn, false);
       renderHomePlatforms();
     }
+  });
+
+  document.getElementById("btnAlertsPrev")?.addEventListener("click", () => {
+    homeAlertsState.page = Math.max(1, (homeAlertsState.page || 1) - 1);
+    const total = homeAlertsState.events.length;
+    const startShown = total === 0 ? 0 : ((homeAlertsState.page - 1) * HOME_ALERTS_PAGE_SIZE) + 1;
+    const endShown = total === 0 ? 0 : Math.min(homeAlertsState.page * HOME_ALERTS_PAGE_SIZE, total);
+    homeAlertsState.status = `${startShown}-${endShown} of ${total}`;
+    renderHomeAlertsHistory();
+  });
+
+  document.getElementById("btnAlertsNext")?.addEventListener("click", () => {
+    const totalPages = Math.max(1, Math.ceil((homeAlertsState.events.length || 0) / HOME_ALERTS_PAGE_SIZE));
+    homeAlertsState.page = Math.min(totalPages, (homeAlertsState.page || 1) + 1);
+    const total = homeAlertsState.events.length;
+    const startShown = total === 0 ? 0 : ((homeAlertsState.page - 1) * HOME_ALERTS_PAGE_SIZE) + 1;
+    const endShown = total === 0 ? 0 : Math.min(homeAlertsState.page * HOME_ALERTS_PAGE_SIZE, total);
+    homeAlertsState.status = `${startShown}-${endShown} of ${total}`;
+    renderHomeAlertsHistory();
+  });
+
+  document.getElementById("alertsHistoryBody")?.addEventListener("click", async (ev) => {
+    const replayBtn = ev.target.closest("button[data-alert-replay]");
+    if (!replayBtn) return;
+    await replayHomeAlert(replayBtn.getAttribute("data-alert-replay") || "", replayBtn);
   });
 }
 
@@ -955,9 +1191,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (isHomePage()) {
       await fetchHomeAuthStatuses();
       await pollHomePlatformStatus();
+      await loadHomeAlertsHistory();
     }
 
     await pollMetrics();
+    if (!isHomePage()) {
+      await pollLog();
+    }
 
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
@@ -969,6 +1209,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (isHomePage()) {
     setInterval(fetchHomeAuthStatuses, 15000);
     setInterval(pollHomePlatformStatus, 3000);
+    setInterval(() => { loadHomeAlertsHistory({ preservePage: true, silent: true }); }, 3000);
+  } else {
+    setInterval(pollLog, 1000);
   }
 });
 

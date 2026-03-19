@@ -575,10 +575,6 @@ background: rgba(59,130,246,.18);
   word-break:break-word;
 }
 
-.platform__account-sub:empty{
-  display:none;
-}
-
 .platform__status-grid{
   display:grid;
   grid-template-columns:repeat(2, minmax(0, 1fr));
@@ -1002,4 +998,245 @@ background: rgba(59,130,246,.18);
 }
 .account-inline-field .input{
   margin-top:6px;
+}
+
+/* ------------------------------
+   Homepage 3-column layout with alert history
+--------------------------------- */
+.home-main-grid{
+  display:grid;
+  grid-template-columns:minmax(280px, 1fr) minmax(0, 2fr) minmax(280px, 1fr);
+  gap:16px;
+  margin-top:16px;
+  align-items:start;
+}
+
+.home-panel{
+  min-height:620px;
+}
+
+.home-panel--platforms,
+.home-panel--alerts,
+.home-panel--blank{
+  padding:0;
+}
+
+.platforms--stacked{
+  grid-template-columns:1fr;
+  padding:16px;
+}
+
+.home-panel--platforms .home-platforms__head{
+  flex-direction:column;
+  align-items:stretch;
+}
+
+.home-panel--platforms .home-platforms__summary{
+  display:grid;
+  grid-template-columns:1fr;
+  gap:10px;
+}
+
+.home-panel--platforms .home-kpi{
+  min-width:unset;
+}
+
+.home-alerts__head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+}
+
+
+.home-alerts__tablewrap{
+  padding:0 14px 0;
+  overflow-y:auto;
+  overflow-x:hidden;
+  max-height:560px;
+}
+
+.alerts-table{
+  width:100%;
+  min-width:0;
+  table-layout:fixed;
+}
+
+.alerts-table th{
+  position:sticky;
+  top:0;
+  z-index:1;
+  background:rgba(15,23,48,.98);
+  backdrop-filter:blur(10px);
+}
+
+.alerts-table td,
+.alerts-table th{
+  padding:10px 8px;
+  vertical-align:middle;
+}
+
+.alerts-table th:nth-child(1),
+.alerts-table td:nth-child(1){
+  width:42px;
+  text-align:center;
+}
+
+.alerts-table th:nth-child(2),
+.alerts-table td:nth-child(2){
+  width:26%;
+}
+
+.alerts-table th:nth-child(3),
+.alerts-table td:nth-child(3){
+  width:21%;
+}
+
+.alerts-table th:nth-child(4),
+.alerts-table td:nth-child(4){
+  width:auto;
+}
+
+.alerts-table th:nth-child(5),
+.alerts-table td:nth-child(5){
+  width:88px;
+  text-align:right;
+}
+
+.alerts-table__platform{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:100%;
+}
+
+.alerts-table__platform img{
+  width:18px;
+  height:18px;
+  display:block;
+}
+
+.alerts-table__user,
+.alerts-table__event,
+.alerts-table__message{
+  display:block;
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.alerts-table__user,
+.alerts-table__event{
+  font-weight:700;
+}
+
+.alerts-table__message{
+  color:rgba(255,255,255,.82);
+}
+
+.alerts-table .btn--small{
+  min-width:72px;
+  padding:7px 10px;
+}
+
+.alerts-table__empty-row td{
+  padding:18px 10px;
+  color:var(--muted);
+  text-align:center;
+}
+
+.home-alerts__footer{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:14px;
+  border-top:1px solid rgba(255,255,255,.06);
+}
+
+.home-alerts__status{
+  color:var(--muted);
+  font-size:12px;
+}
+
+.home-alerts__pager{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  margin-left:auto;
+}
+
+.home-alerts__page{
+  color:rgba(255,255,255,.75);
+  font-size:12px;
+  min-width:88px;
+  text-align:center;
+}
+
+.home-blank{
+  background:linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.02));
+}
+
+@media (max-width: 1280px){
+  .home-main-grid{
+    grid-template-columns:minmax(260px, .95fr) minmax(0, 1.8fr) minmax(240px, .9fr);
+  }
+}
+
+@media (max-width: 1100px){
+  .home-main-grid{
+    grid-template-columns:1fr;
+  }
+
+  .home-panel{
+    min-height:unset;
+  }
+
+  .home-panel--blank{
+    min-height:140px;
+  }
+
+  .home-alerts__footer{
+    flex-direction:column;
+    align-items:flex-start;
+  }
+
+  .home-alerts__pager{
+    margin-left:0;
+  }
+}
+
+@media (max-width: 760px){
+  .home-alerts__tablewrap{
+    padding:0 10px 0;
+  }
+
+  .alerts-table td,
+  .alerts-table th{
+    padding:9px 7px;
+  }
+}
+
+.alerts-table th.alerts-table__col-platform{
+  color:transparent;
+}
+
+.alerts-table td > .alerts-table__user,
+.alerts-table td > .alerts-table__event,
+.alerts-table td > .alerts-table__message{
+  display:block;
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.alerts-table td > .alerts-table__user,
+.alerts-table td > .alerts-table__event{
+  font-weight:700;
+}
+
+.alerts-table td > .alerts-table__message{
+  color:rgba(255,255,255,.82);
 }

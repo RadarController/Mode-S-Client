@@ -148,8 +148,9 @@ const auto ts = now_ms();
             return false;
         }
 
-        // Record the replay too (so it shows up in history with its replay id).
-        record_alert_history_(replay);
+        // Do not record replayed alerts back into alert history.
+        // The replay should fire the live alert path only; the original history entry
+        // remains the single source record in the history table.
     }
     catch (const std::exception& ex) {
         if (err) *err = std::string("exception:") + ex.what();
