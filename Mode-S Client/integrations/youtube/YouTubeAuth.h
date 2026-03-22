@@ -72,8 +72,10 @@ public:
         const std::string& refresh_token,
         const std::string& channel_id)> on_tokens_updated;
 
-    // Minimal scope set for updating YouTube metadata.
-    // (If you later need more, update these and re-auth.)
+    // Scope set required for current YouTube features:
+    // - youtube.force-ssl for existing YouTube Data API usage
+    // - youtube.channel-memberships.creator for channel member reads
+    // If more scopes are added later, re-auth will be required.
     static const char* RequiredScopeEncoded();
     static const char* RequiredScopeReadable();
 

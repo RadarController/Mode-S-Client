@@ -24,9 +24,7 @@
     overflow:hidden;
   }
 
-  body{
-    display:block;
-  }
+  body{ display:block; }
 
   .stage{
     position:fixed;
@@ -103,6 +101,7 @@
     align-items:center;
     gap:16px;
     min-width:0;
+    flex:1 1 auto;
   }
 
   .badge{
@@ -118,7 +117,7 @@
     font-weight:700;
     letter-spacing:.10em;
     text-transform:uppercase;
-    font-size:15px;
+    font-size:12px;
     color:var(--text);
     white-space:nowrap;
     overflow:hidden;
@@ -156,31 +155,33 @@
     justify-content:center;
   }
 
-  .stat svg{
-    width:16px;
-    height:16px;
-    fill:var(--text);
-    opacity:.92;
-    flex:0 0 auto;
-  }
+  .stat svg{ width:16px; height:16px; fill:var(--text); opacity:.92; flex:0 0 auto; }
 
   .main{
     position:absolute;
     inset:clamp(108px, 7.1vh, 136px) clamp(24px, 2.8vw, 36px) clamp(24px, 2.8vw, 36px) clamp(24px, 2.8vw, 36px);
     display:grid;
-    grid-template-rows:auto auto 1fr auto;
-    gap:24px;
+    grid-template-rows:auto auto minmax(300px, 1fr) auto;
+    gap:16px;
     z-index:2;
+    min-height:0;
   }
 
-  .hero{
-    padding:clamp(24px, 2.4vw, 36px) clamp(24px, 2.4vw, 34px) clamp(24px, 2.4vw, 34px);
+  .hero,
+  .discordCard,
+  .platformCard,
+  .subscribersCard,
+  .footer{
     border-radius:24px;
     background:var(--panel);
     backdrop-filter:blur(8px);
     -webkit-backdrop-filter:blur(8px);
     border:1px solid var(--stroke);
-    box-shadow:0 24px 60px rgba(0,0,0,.22);
+    box-shadow:0 24px 60px rgba(0,0,0,.20);
+  }
+
+  .hero{
+    padding:20px 22px 22px;
     text-align:left;
   }
 
@@ -210,9 +211,9 @@
   }
 
   .endTitle{
-    margin:0 0 16px 0;
+    margin:0 0 12px 0;
     color:var(--text);
-    font-size:clamp(86px, 11.5vw, 124px);
+    font-size:clamp(72px, 10vw, 104px);
     line-height:.88;
     font-weight:900;
     letter-spacing:.01em;
@@ -224,7 +225,7 @@
     margin:0;
     max-width:920px;
     color:var(--muted);
-    font-size:clamp(18px, 2.2vw, 24px);
+    font-size:clamp(15px, 1.9vw, 20px);
     line-height:1.38;
     letter-spacing:.01em;
   }
@@ -232,21 +233,11 @@
   .ctaWrap{
     display:grid;
     grid-template-columns:1fr;
-    gap:24px;
-  }
-
-  .discordCard,
-  .platformCard{
-    border-radius:24px;
-    background:var(--panel);
-    backdrop-filter:blur(8px);
-    -webkit-backdrop-filter:blur(8px);
-    border:1px solid var(--stroke);
-    box-shadow:0 24px 60px rgba(0,0,0,.20);
+    gap:16px;
   }
 
   .discordCard{
-    padding:clamp(24px, 2.3vw, 34px) clamp(24px, 2.3vw, 34px) clamp(22px, 2.1vw, 32px);
+    padding:20px 22px 20px;
     position:relative;
     overflow:hidden;
     background:
@@ -310,48 +301,15 @@
     text-transform:uppercase;
   }
 
-  .discordAction svg{
-    width:28px;
-    height:28px;
-    fill:var(--text);
-    opacity:.94;
-    flex:0 0 auto;
-  }
+  .discordAction svg{ width:28px; height:28px; fill:var(--text); opacity:.94; flex:0 0 auto; }
 
-  .platformCard{
-    padding:28px;
-  }
+  .platformCard{ padding:24px; }
 
-  .platformIntro{
-    display:flex;
-    align-items:flex-end;
-    justify-content:space-between;
-    gap:20px;
-    margin-bottom:18px;
-  }
+  .platformIntro{ display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin-bottom:16px; }
+  .platformTitle{ margin:0; color:var(--text); font-size:44px; line-height:1; font-weight:900; letter-spacing:.03em; text-transform:uppercase; }
+  .platformSub{ margin:8px 0 0; color:var(--muted); font-size:20px; line-height:1.32; }
 
-  .platformTitle{
-    margin:0;
-    color:var(--text);
-    font-size:44px;
-    line-height:1;
-    font-weight:900;
-    letter-spacing:.03em;
-    text-transform:uppercase;
-  }
-
-  .platformSub{
-    margin:8px 0 0;
-    color:var(--muted);
-    font-size:20px;
-    line-height:1.32;
-  }
-
-  .platformGrid{
-    display:grid;
-    grid-template-columns:1fr;
-    gap:14px;
-  }
+  .platformGrid{ display:grid; grid-template-columns:1fr; gap:14px; }
 
   .platformItem{
     display:grid;
@@ -365,134 +323,137 @@
   }
 
   .platformIcon{
-    width:66px;
-    height:66px;
-    border-radius:18px;
-    display:grid;
-    place-items:center;
-    background:rgba(255,255,255,.08);
-    border:1px solid rgba(255,255,255,.12);
+    width:66px; height:66px; border-radius:18px; display:grid; place-items:center;
+    background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.12);
   }
+  .platformIcon svg{ width:26px; height:26px; fill:var(--text); opacity:.96; }
+  .platformMeta{ min-width:0; }
+  .platformName{ color:var(--text); font-size:26px; font-weight:900; letter-spacing:.05em; text-transform:uppercase; line-height:1.05; }
+  .platformHandle{ margin-top:4px; color:var(--muted); font-size:20px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .platformTag{ padding:10px 12px; border-radius:999px; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.06); color:var(--text); font-size:13px; font-weight:900; letter-spacing:.10em; text-transform:uppercase; white-space:nowrap; }
 
-  .platformIcon svg{
-    width:26px;
-    height:26px;
-    fill:var(--text);
-    opacity:.96;
-  }
-
-  .platformMeta{
-    min-width:0;
-  }
-
-  .platformName{
-    color:var(--text);
-    font-size:26px;
-    font-weight:900;
-    letter-spacing:.05em;
-    text-transform:uppercase;
-    line-height:1.05;
-  }
-
-  .platformHandle{
-    margin-top:4px;
-    color:var(--muted);
-    font-size:20px;
-    font-weight:700;
-    white-space:nowrap;
+  .subscribersCard{
+    padding:14px 14px 12px;
+    display:flex;
+    flex-direction:column;
+    min-height:0;
     overflow:hidden;
-    text-overflow:ellipsis;
+    position:relative;
   }
 
-  .platformTag{
-    padding:10px 12px;
-    border-radius:999px;
-    border:1px solid rgba(255,255,255,.12);
-    background:rgba(255,255,255,.06);
+  .subHeader{
+    display:flex;
+    align-items:flex-end;
+    justify-content:space-between;
+    gap:16px;
+    margin-bottom:10px;
+    flex:0 0 auto;
+  }
+
+  .subscribersTitle{
+    margin:0;
     color:var(--text);
-    font-size:13px;
+    font-size:28px;
+    line-height:.94;
     font-weight:900;
-    letter-spacing:.10em;
+    letter-spacing:.04em;
+    text-transform:uppercase;
+  }
+
+  .subscribersSub{
+    margin:5px 0 0;
+    color:var(--muted);
+    font-size:12px;
+    font-weight:800;
+    letter-spacing:.12em;
+    text-transform:uppercase;
+  }
+
+  .subscribersCount{
+    color:var(--muted);
+    font-size:12px;
+    font-weight:900;
+    letter-spacing:.14em;
     text-transform:uppercase;
     white-space:nowrap;
+  }
+
+  .subViewport{
+    position:relative;
+    min-height:220px;
+    flex:1 1 auto;
+    min-height:0;
+    overflow:hidden;
+    border-radius:20px;
+    background:rgba(10,14,18,.28);
+    border:1px solid rgba(255,255,255,.10);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+  }
+
+  .subViewport::before,
+  .subViewport::after{
+    content:"";
+    position:absolute;
+    left:0; right:0;
+    height:28px;
+    z-index:2;
+    pointer-events:none;
+  }
+  .subViewport::before{ top:0; background:linear-gradient(180deg, rgba(16,20,26,.92), rgba(16,20,26,0)); }
+  .subViewport::after{ bottom:0; background:linear-gradient(0deg, rgba(16,20,26,.96), rgba(16,20,26,0)); }
+
+  .subTrack{ position:absolute; left:0; right:0; top:0; will-change:transform; }
+  .subGroup{ display:flex; flex-direction:column; gap:8px; padding:10px; }
+
+  .subRow{
+    display:grid;
+    grid-template-columns:50px 1fr auto;
+    align-items:center;
+    gap:14px;
+    min-height:56px;
+    padding:8px 10px;
+    border-radius:18px;
+    background:rgba(255,255,255,.03);
+    border:1px solid rgba(255,255,255,.09);
+  }
+
+  .subIcon{
+    width:36px; height:36px; border-radius:16px; display:grid; place-items:center;
+    background:rgba(30,109,255,.16); border:1px solid rgba(255,255,255,.12);
+  }
+  .subIcon svg{ width:16px; height:16px; fill:var(--text); opacity:.96; }
+
+  .subMeta{ min-width:0; }
+  .subName{ color:var(--text); font-size:14px; font-weight:900; line-height:1.06; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .subType{ margin-top:2px; color:var(--muted); font-size:10px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .subBadge{ padding:6px 8px; border-radius:999px; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.06); color:var(--text); font-size:10px; font-weight:900; letter-spacing:.08em; text-transform:uppercase; white-space:nowrap; }
+
+  .subEmpty{
+    height:100%; display:grid; place-items:center; padding:22px; text-align:center; color:var(--muted);
+    font-size:14px; line-height:1.45;
   }
 
   .footer{
     display:flex;
     align-items:center;
     justify-content:space-between;
-    gap:16px;
-    padding:24px 26px;
-    border-radius:22px;
+    gap:12px;
+    padding:14px 18px;
     background:var(--panel-strong);
-    border:1px solid var(--stroke);
     color:var(--text);
   }
 
-  .footerLeft{
-    display:flex;
-    align-items:center;
-    gap:14px;
-    min-width:0;
-  }
+  .footerLeft{ display:flex; align-items:center; gap:14px; min-width:0; }
+  .footerLeft svg{ width:30px; height:30px; fill:var(--text); opacity:.95; flex:0 0 auto; }
+  .footerText{ min-width:0; }
+  .footerTitle{ font-size:14px; font-weight:900; letter-spacing:.08em; text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .footerSub{ margin-top:3px; color:var(--muted); font-size:12px; letter-spacing:.04em; }
+  .footerRight{ text-align:right; flex:0 0 auto; }
+  .site{ font-size:26px; font-weight:900; letter-spacing:.10em; text-transform:uppercase; }
+  .offline{ margin-top:2px; color:var(--muted); font-size:10px; letter-spacing:.18em; text-transform:uppercase; }
 
-  .footerLeft svg{
-    width:30px;
-    height:30px;
-    fill:var(--text);
-    opacity:.95;
-    flex:0 0 auto;
-  }
-
-  .footerText{
-    min-width:0;
-  }
-
-  .footerTitle{
-    font-size:18px;
-    font-weight:900;
-    letter-spacing:.08em;
-    text-transform:uppercase;
-    white-space:nowrap;
-    overflow:hidden;
-    text-overflow:ellipsis;
-  }
-
-  .footerSub{
-    margin-top:3px;
-    color:var(--muted);
-    font-size:15px;
-    letter-spacing:.04em;
-  }
-
-  .footerRight{
-    text-align:right;
-    flex:0 0 auto;
-  }
-
-  .site{
-    font-size:26px;
-    font-weight:900;
-    letter-spacing:.10em;
-    text-transform:uppercase;
-  }
-
-  .offline{
-    margin-top:4px;
-    color:var(--muted);
-    font-size:14px;
-    letter-spacing:.18em;
-    text-transform:uppercase;
-  }
-
-  .pulse{
-    animation:pulse 2.6s ease-in-out infinite;
-  }
-
-  @keyframes pulse{
-    0%,100%{ transform:scale(1); opacity:.94; }
-    50%{ transform:scale(1.018); opacity:1; }
-  }
+  .pulse{ animation:pulse 2.6s ease-in-out infinite; }
+  @keyframes pulse{ 0%,100%{ transform:scale(1); opacity:.94; } 50%{ transform:scale(1.018); opacity:1; } }
 
   @media (max-width: 1080px), (max-height: 1920px){
     .stage{
@@ -500,7 +461,6 @@
       height:min(100vh, calc(100vw * 1920 / 1080));
     }
   }
-
   </style>
 </head>
 <body>
@@ -562,46 +522,41 @@
 
           <div class="platformGrid">
             <div class="platformItem">
-              <div class="platformIcon">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3h18v11l-5 5h-5l-3 3H6v-3H4V3zm2 2v12h3v3l3-3h6l3-3V5H6zm10 3h2v6h-2V8zm-5 0h2v6h-2V8z"/></svg>
-              </div>
-              <div class="platformMeta">
-                <div class="platformName">Twitch</div>
-                <div class="platformHandle">RADARCONTROLLER</div>
-              </div>
+              <div class="platformIcon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3h18v11l-5 5h-5l-3 3H6v-3H4V3zm2 2v12h3v3l3-3h6l3-3V5H6zm10 3h2v6h-2V8zm-5 0h2v6h-2V8z"/></svg></div>
+              <div class="platformMeta"><div class="platformName">Twitch</div><div class="platformHandle">RADARCONTROLLER</div></div>
               <div class="platformTag">Live streams</div>
             </div>
-
             <div class="platformItem">
-              <div class="platformIcon">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21.6 7.2c-.2-1-1-1.8-2-2C17.8 4.8 12 4.8 12 4.8s-5.8 0-7.6.4c-1 .2-1.8 1-2 2C2 9 2 12 2 12s0 3 .4 4.8c.2 1 1 1.8 2 2 1.8.4 7.6.4 7.6.4s5.8 0 7.6-.4c1-.2 1.8-1 2-2 .4-1.8.4-4.8.4-4.8s0-3-.4-4.8zM10 15.5v-7l6 3.5-6 3.5z"/></svg>
-              </div>
-              <div class="platformMeta">
-                <div class="platformName">YouTube</div>
-                <div class="platformHandle">@RADARCONTROLLER</div>
-              </div>
-              <div class="platformTag">Videos & VODs</div>
+              <div class="platformIcon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21.6 7.2c-.2-1-1-1.8-2-2C17.8 4.8 12 4.8 12 4.8s-5.8 0-7.6.4c-1 .2-1.8-1-2 2C2 9 2 12 2 12s0 3 .4 4.8c.2 1 1 1.8 2 2 1.8.4 7.6.4 7.6.4s5.8 0 7.6-.4c1-.2 1.8-1 2-2 .4-1.8.4-4.8.4-4.8s0-3-.4-4.8zM10 15.5v-7l6 3.5-6 3.5z"/></svg></div>
+              <div class="platformMeta"><div class="platformName">YouTube</div><div class="platformHandle">@RADARCONTROLLER</div></div>
+              <div class="platformTag">Videos &amp; VODs</div>
             </div>
-
             <div class="platformItem">
-              <div class="platformIcon">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 3c.6 3.4 2.6 5.4 6 5.9V12c-2.3-.1-4.3-.9-6-2.4V16c0 4-3.1 7-7.1 7C5 23 2 19.9 2 16.1 2 12.3 5.1 9.2 8.9 9.2c.5 0 1 .1 1.5.2v3.8c-.4-.2-.9-.4-1.5-.4-1.8 0-3.1 1.4-3.1 3.3 0 1.9 1.4 3.3 3.2 3.3 1.8 0 3.5-1.2 3.5-4V3h3z"/></svg>
-              </div>
-              <div class="platformMeta">
-                <div class="platformName">TikTok</div>
-                <div class="platformHandle">@RADARCONTROLLER</div>
-              </div>
-              <div class="platformTag">Clips & live</div>
+              <div class="platformIcon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 3c.6 3.4 2.6 5.4 6 5.9V12c-2.3-.1-4.3-.9-6-2.4V16c0 4-3.1 7-7.1 7C5 23 2 19.9 2 16.1 2 12.3 5.1 9.2 8.9 9.2c.5 0 1 .1 1.5.2v3.8c-.4-.2-.9-.4-1.5-.4-1.8 0-3.1 1.4-3.1 3.3 0 1.9 1.4 3.3 3.2 3.3 1.8 0 3.5-1.2 3.5-4V3h3z"/></svg></div>
+              <div class="platformMeta"><div class="platformName">TikTok</div><div class="platformHandle">@RADARCONTROLLER</div></div>
+              <div class="platformTag">Clips &amp; live</div>
             </div>
           </div>
         </div>
       </section>
 
+      <section class="subscribersCard">
+        <div class="subHeader">
+          <div>
+            <h2 class="subscribersTitle">CURRENT SUBSCRIBERS</h2>
+            <div class="subscribersSub">Twitch supporters • live roster</div>
+          </div>
+          <div class="subscribersCount" id="subCount">Loading…</div>
+        </div>
+        <div class="subViewport" id="subViewport">
+          <div class="subTrack" id="subTrack"></div>
+          <div class="subEmpty" id="subEmpty" hidden></div>
+        </div>
+      </section>
+
       <footer class="footer">
         <div class="footerLeft">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M7 9h10a5 5 0 0 1 5 5v1a5 5 0 0 1-5 5h-2l-2-2H11l-2 2H7a5 5 0 0 1-5-5v-1a5 5 0 0 1 5-5zm2.2 5.2h-1.4V13H6.6v1.4H5.2v1.2h1.4V17h1.2v-1.4h1.4v-1.2zm9.2-.2a1 1 0 1 0 0 2 1 1 0 0 0 0-2zm-2.6 2a1 1 0 1 0 0 2 1 1 0 0 0 0-2z"/>
-          </svg>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9h10a5 5 0 0 1 5 5v1a5 5 0 0 1-5 5h-2l-2-2H11l-2 2H7a5 5 0 0 1-5-5v-1a5 5 0 0 1 5-5zm2.2 5.2h-1.4V13H6.6v1.4H5.2v1.2h1.4V17h1.2v-1.4h1.4v-1.2zm9.2-.2a1 1 0 1 0 0 2 1 1 0 0 0 0-2zm-2.6 2a1 1 0 1 0 0 2 1 1 0 0 0 0-2z"/></svg>
           <div class="footerText">
             <div class="footerTitle">Thanks for watching</div>
             <div class="footerSub">Follow the channels. Join the server. Catch the next stream.</div>
@@ -614,5 +569,152 @@
       </footer>
     </div>
   </div>
+
+  <script>
+    const ENDPOINT = '/api/supporters/recent?limit=100';
+    const track = document.getElementById('subTrack');
+    const empty = document.getElementById('subEmpty');
+    const count = document.getElementById('subCount');
+    const viewport = document.getElementById('subViewport');
+
+    let animationFrame = null;
+    let scrollOffset = 0;
+    let loopHeight = 0;
+    let speed = 0.08;
+    let lastTs = 0;
+    let currentSignature = '';
+
+    function tierWeight(value) {
+      const v = String(value || '').toUpperCase();
+      if (v.includes('TIER 3')) return 0;
+      if (v.includes('TIER 2')) return 1;
+      if (v.includes('TIER 1')) return 2;
+      if (v.includes('GIFT')) return 3;
+      return 4;
+    }
+
+    function typeLine(item) {
+      const bits = ['Twitch subscriber'];
+      if (item.is_renewal) bits.push('renewal');
+      if (item.is_gift) bits.push('gifted');
+      return bits.join(' • ');
+    }
+
+    function badgeText(item) {
+      if (item.tier_name && item.tier_name.trim()) return item.tier_name.trim();
+      if (item.is_gift) return 'Gifted';
+      return 'Supporter';
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function rowMarkup(item) {
+      return `
+        <div class="subRow">
+          <div class="subIcon">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3h18v11l-5 5h-5l-3 3H6v-3H4V3zm2 2v12h3v3l3-3h6l3-3V5H6zm10 3h2v6h-2V8zm-5 0h2v6h-2V8z"/></svg>
+          </div>
+          <div class="subMeta">
+            <div class="subName">${escapeHtml(item.display_name || 'Unknown')}</div>
+            <div class="subType">${escapeHtml(typeLine(item))}</div>
+          </div>
+          <div class="subBadge">${escapeHtml(badgeText(item))}</div>
+        </div>`;
+    }
+
+    function stopScroll() {
+      if (animationFrame) cancelAnimationFrame(animationFrame);
+      animationFrame = null;
+      lastTs = 0;
+      scrollOffset = 0;
+      if (track) track.style.transform = 'translateY(0px)';
+    }
+
+    function startScroll() {
+      stopScroll();
+      if (!loopHeight || loopHeight <= viewport.clientHeight + 4) {
+        track.style.transform = 'translateY(0px)';
+        return;
+      }
+
+      function frame(ts) {
+        if (!lastTs) lastTs = ts;
+        const dt = Math.min(32, ts - lastTs);
+        lastTs = ts;
+        scrollOffset += speed * dt;
+        if (scrollOffset >= loopHeight) scrollOffset -= loopHeight;
+        track.style.transform = `translateY(${-scrollOffset}px)`;
+        animationFrame = requestAnimationFrame(frame);
+      }
+      animationFrame = requestAnimationFrame(frame);
+    }
+
+    function render(items) {
+      const sorted = [...items].sort((a, b) => {
+        const tw = tierWeight(a.tier_name) - tierWeight(b.tier_name);
+        if (tw !== 0) return tw;
+        return String(a.display_name || '').localeCompare(String(b.display_name || ''), undefined, { sensitivity: 'base' });
+      });
+
+      count.textContent = `${sorted.length} on file`;
+
+      if (!sorted.length) {
+        stopScroll();
+        track.innerHTML = '';
+        empty.hidden = false;
+        return;
+      }
+
+      empty.hidden = true;
+      const signature = JSON.stringify(sorted.map(x => [x.id, x.display_name, x.tier_name, x.is_gift, x.is_renewal]));
+      if (signature === currentSignature && track.children.length) return;
+      currentSignature = signature;
+
+      const listHtml = sorted.map(rowMarkup).join('');
+      track.innerHTML = `<div class="subGroup" id="subGroupA">${listHtml}</div><div class="subGroup" aria-hidden="true">${listHtml}</div>`;
+
+      requestAnimationFrame(() => {
+        const groupA = document.getElementById('subGroupA');
+        loopHeight = groupA ? groupA.offsetHeight : 0;
+        startScroll();
+      });
+    }
+
+    async function loadSubscribers() {
+      try {
+        const res = await fetch(ENDPOINT, { cache: 'no-store' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const items = Array.isArray(data.items) ? data.items : [];
+        const twitchOnly = items.filter(item => String(item.platform || '').toLowerCase() === 'twitch');
+        render(twitchOnly);
+      } catch (err) {
+        count.textContent = 'Unavailable';
+        stopScroll();
+        track.innerHTML = '';
+        empty.hidden = false;
+        empty.textContent = '';
+      }
+    }
+
+    loadSubscribers();
+    setInterval(loadSubscribers, 45000);
+    window.addEventListener('resize', () => requestAnimationFrame(startScroll));
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        if (animationFrame) cancelAnimationFrame(animationFrame);
+        animationFrame = null;
+      } else {
+        startScroll();
+      }
+    });
+  </script>
 </body>
 </html>

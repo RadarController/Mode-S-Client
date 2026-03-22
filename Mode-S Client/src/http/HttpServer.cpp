@@ -20,6 +20,7 @@
 #include "../../integrations/simconnect/SimConnectWorker.h"
 #include "../AppConfig.h"
 #include "../oauth/EmbeddedOAuthConfig.h"
+#include "../supporter/SupporterFeedService.h"
 
 namespace {
 
@@ -775,6 +776,27 @@ void HttpServer::RegisterRoutes() {
     svr.Get("/api/platform/status", [&](const httplib::Request&, httplib::Response& res) {
         auto j = state_.platform_runtime_state_json();
         res.set_content(j.dump(2), "application/json; charset=utf-8");
+        });
+
+    svr.Get("/api/supporters/recent", [&](const httplib::Request& req, httplib::Response& res) {
+        int limit = 16;
+        if (req.has_param("limit")) {
+            try { limit = std::stoi(req.get_param_value("limit")); }
+            catch (...) { limit = 16; }
+        }
+
+        supporter::SupporterFeedService feed(
+            state_,
+            config_.twitch_login,
+            opt_.twitch_get_access_token,
+            opt_.twitch_get_client_id,
+            opt_.youtube_get_access_token,
+            opt_.youtube_get_channel_id,
+            log_);
+
+        const auto payload = supporter::ToJson(feed.FetchRecent(limit));
+        res.status = 200;
+        res.set_content(payload.dump(2), "application/json; charset=utf-8");
         });
 
     // --- API: SimBrief flight plan summary (for MSFS overlays) ---

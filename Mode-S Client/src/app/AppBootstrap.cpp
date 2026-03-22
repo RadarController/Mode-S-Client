@@ -461,8 +461,22 @@ void StartBackend(
             return ok;
         };
 
+    opt.twitch_get_access_token = [&twitchAuth]() -> std::optional<std::string> {
+        return twitchAuth.GetAccessToken();
+        };
+
+    opt.twitch_get_client_id = []() -> std::optional<std::string> {
+        const std::string client_id = EmbeddedOAuthConfig::TwitchClientId();
+        if (client_id.empty()) return std::nullopt;
+        return client_id;
+        };
+
     opt.youtube_get_access_token = [&youtubeAuth]() -> std::optional<std::string> {
         return youtubeAuth.GetAccessToken();
+        };
+
+    opt.youtube_get_channel_id = [&youtubeAuth]() -> std::optional<std::string> {
+        return youtubeAuth.GetChannelId();
         };
 
     opt.youtube_auth_info_json = [&youtubeAuth]() {
