@@ -53,8 +53,11 @@ public:
                            const std::string& redirect_uri,
                            std::string* out_error)> youtube_auth_handle_callback;
 
-        // YouTube API access token (non-interactive). Used by /api/youtube/vod/* endpoints.
+        // Platform API accessors used by local HTTP endpoints.
+        std::function<std::optional<std::string>()> twitch_get_access_token;
+        std::function<std::optional<std::string>()> twitch_get_client_id;
         std::function<std::optional<std::string>()> youtube_get_access_token;
+        std::function<std::optional<std::string>()> youtube_get_channel_id;
     };
 
     using LogFn = std::function<void(const std::wstring&)>;

@@ -153,6 +153,18 @@
     <ClInclude Include="src\oauth\EmbeddedOAuthConfig.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="src\supporter\RecentSupporter.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\supporter\SupporterFeedService.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="integrations\twitch\TwitchSupporterProvider.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="integrations\youtube\YouTubeSupporterProvider.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="integrations\obs\ObsWsClient.cpp">
@@ -243,6 +255,18 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="src\ui\WindowLayout.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\supporter\RecentSupporter.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\supporter\SupporterFeedService.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="integrations\twitch\TwitchSupporterProvider.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="integrations\youtube\YouTubeSupporterProvider.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

@@ -106,11 +106,13 @@ void YouTubeAuth::LogUi(const std::string& msg) {
 // ---- scopes ----
 const char* YouTubeAuth::RequiredScopeReadable() {
     // Minimum required for updating YouTube metadata (videos.update, liveBroadcasts.update, etc.)
-    return "youtube.force-ssl";
+    return "https://www.googleapis.com/auth/youtube.force-ssl "
+        "https://www.googleapis.com/auth/youtube.channel-memberships.creator";
 }
 const char* YouTubeAuth::RequiredScopeEncoded() {
     // URL-encoded space-delimited scopes. (Single scope here.)
-    return "https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fyoutube.force-ssl";
+    return "https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fyoutube.force-ssl%20"
+        "https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fyoutube.channel-memberships.creator";
 }
 
 // ---- lifecycle ----
