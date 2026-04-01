@@ -690,24 +690,24 @@ function getHomeRuntimeModel(platform){
   };
 }
 
-function getHomePrimaryAction(platform, configModel, runtimeModel){
-  if (configModel.unavailable) {
-    return { kind: "noop", label: "Unavailable", disabled: true };
-  }
-  if (!configModel.hasIdentity) {
-    return { kind: "settings", label: "Open Settings", disabled: false };
-  }
-  if (configModel.needsAuth) {
-    return { kind: "auth", label: platform === "tiktok" ? "Connect" : "Re-auth", disabled: false };
-  }
-  return { kind: "start", label: runtimeModel.running ? "Restart" : "Start", disabled: false };
+function getHomePrimaryAction(platform, configModel, runtimeModel) {
+    if (configModel.unavailable) {
+        return { kind: "noop", label: "Unavailable", disabled: true };
+    }
+    if (!configModel.hasIdentity) {
+        return { kind: "settings", label: "Open Settings", disabled: false };
+    }
+    if (configModel.needsAuth) {
+        return { kind: "auth", label: platform === "tiktok" ? "Connect" : "Reconnect", disabled: false };
+    }
+    return { kind: "settings", label: "Connected Accounts", disabled: false };
 }
 
-function homeCardHintText(platform, configModel){
-  if (configModel.unavailable) return "This platform is unavailable in the current build.";
-  if (!configModel.hasIdentity) return "Select the channel in Connected Accounts.";
-  if (configModel.needsAuth) return "Open Connected Accounts to reconnect this platform.";
-  return "Identity is managed in Connected Accounts. Runtime controls stay here.";
+function homeCardHintText(platform, configModel) {
+    if (configModel.unavailable) return "This platform is unavailable in the current build.";
+    if (!configModel.hasIdentity) return "Select the channel in Connected Accounts.";
+    if (configModel.needsAuth) return "Open Connected Accounts to reconnect this platform.";
+    return "Use Start Platforms in the top bar to start or restart services.";
 }
 
 function applyHomeCardTone(platform, configModel, runtimeModel){
@@ -821,28 +821,17 @@ function openConnectedAccountsPage(){
   window.location.href = "/app/accounts.html";
 }
 
-async function performHomePrimaryAction(platform, button){
-  const state = homeActionState[platform];
-  if (!state || !state.primary || state.primary.disabled) return;
+async function performHomePrimaryAction(platform, button) {
+    const state = homeActionState[platform];
+    if (!state || !state.primary || state.primary.disabled) return;
 
-  const action = state.primary;
-  if (action.kind === "settings" || action.kind === "auth") {
-    openConnectedAccountsPage();
-    return;
-  }
-  if (action.kind !== "start") return;
+    const action = state.primary;
+    if (action.kind === "settings" || action.kind === "auth") {
+        openConnectedAccountsPage();
+        return;
+    }
 
-  setActionBusy(button, true, state.runtime.running ? "Restarting..." : "Starting...");
-  try {
-    await apiPost(`/api/platform/${platform}/start`, {});
-    logLine(platform, state.runtime.running ? "restart requested" : "start requested");
-    await pollHomePlatformStatus();
-  } catch (e) {
-    logLine(platform, `${state.runtime.running ? "restart" : "start"} failed (${e.message})`);
-  } finally {
-    setActionBusy(button, false);
     renderHomePlatforms();
-  }
 }
 
 async function performHomeStop(platform, button){
@@ -1080,31 +1069,45 @@ function wireHomePage(){
     }
   });
 
-  $("#btnStartAll")?.addEventListener("click", async (ev) => {
-    const btn = ev.currentTarget;
-    setActionBusy(btn, true, "Starting...");
-    try {
-      const runnable = HOME_PLATFORMS.filter((platform) => homeActionState[platform]?.primary?.kind === "start");
-      if (runnable.length === 0) {
-        openConnectedAccountsPage();
-        return;
-      }
+    $("#btnStartAll")?.addEventListener("click", async (ev) => {
+        const btn = ev.currentTarget;
+        setActionBusy(btn, true, "Starting platforms...");
 
-      for (const platform of runnable) {
         try {
-          await apiPost(`/api/platform/${platform}/start`, {});
-          logLine("start-all", `${platform} ${homeActionState[platform]?.runtime?.running ? "restart" : "start"} requested`);
-        } catch (e) {
-          logLine("start-all", `${platform} failed (${e.message})`);
-        }
-      }
+            for (const platform of HOME_PLATFORMS) {
+                const state = homeActionState[platform] || {};
+                const config = state.config || getHomeConfigModel(platform);
+                const runtime = state.runtime || getHomeRuntimeModel(platform);
 
-      await pollHomePlatformStatus();
-    } finally {
-      setActionBusy(btn, false);
-      renderHomePlatforms();
-    }
-  });
+                if (config.unavailable) {
+                    logLine("start-platforms", `${platform} skipped (unavailable in this build)`);
+                    continue;
+                }
+
+                if (!config.hasIdentity) {
+                    logLine("start-platforms", `${platform} skipped (no account selected)`);
+                    continue;
+                }
+
+                if (config.needsAuth) {
+                    logLine("start-platforms", `${platform} skipped (reconnection required)`);
+                    continue;
+                }
+
+                try {
+                    await apiPost(`/api/platform/${platform}/start`, {});
+                    logLine("start-platforms", `${platform} ${runtime.running ? "restart" : "start"} requested`);
+                } catch (e) {
+                    logLine("start-platforms", `${platform} failed (${e.message})`);
+                }
+            }
+
+            await pollHomePlatformStatus();
+        } finally {
+            setActionBusy(btn, false);
+            renderHomePlatforms();
+        }
+    });
 
   document.getElementById("btnAlertsPrev")?.addEventListener("click", () => {
     homeAlertsState.page = Math.max(1, (homeAlertsState.page || 1) - 1);
@@ -1648,11 +1651,25 @@ function wireConnectedAccountsPage() {
     }
   }
 
+  function isYouTubeExternalLaunch(info) {
+    const mode = String(info?.oauth_launch_mode || "").trim().toLowerCase();
+    return mode === "external_browser" || mode === "external" || mode === "browser";
+  }
+
   function getPrimaryLabel(platform, info) {
     const s = getPlatformState(platform, info);
     if (platform === "tiktok") {
       if (s === "connected") return "Reconnect TikTok";
       return "Connect TikTok";
+    }
+    if (platform === "youtube" && isYouTubeExternalLaunch(info)) {
+      switch (s) {
+        case "connected": return "Reconnect YouTube in Browser";
+        case "reauth_required": return "Reconnect YouTube in Browser";
+        case "missing_config": return "Unavailable";
+        case "not_connected": return "Connect YouTube in Browser";
+        default: return "Retry";
+      }
     }
     switch (s) {
       case "connected": return platform === "twitch" ? "Reconnect Twitch" : "Reconnect YouTube";
@@ -1756,9 +1773,14 @@ function wireConnectedAccountsPage() {
     setButtonBusy(primary, true, "Opening sign-in…");
 
     try {
-      const openedInApp = openPlatformAuthPopup(startUrl, platform);
-      if (!openedInApp) {
-        window.open(startUrl, "_blank", "noopener");
+      const forceExternalBrowser = platform === "youtube" && isYouTubeExternalLaunch(info);
+      if (forceExternalBrowser) {
+        await apiPost("/api/youtube/auth/launch-external");
+      } else {
+        const openedInApp = openPlatformAuthPopup(startUrl, platform);
+        if (!openedInApp) {
+          window.open(startUrl, "_blank", "noopener");
+        }
       }
 
       setButtonBusy(primary, false);

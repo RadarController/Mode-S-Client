@@ -2,6 +2,7 @@
 #include "log/UiLog.h"
 #include "core/StringUtil.h"
 #include <Windows.h>
+#include <shellapi.h>
 
 #include <fstream>
 #include <sstream>
@@ -1521,6 +1522,7 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
             bool has_refresh_token = false;
             bool needs_reauth = false;
             std::string channel_id;
+            std::string oauth_launch_mode = "embedded";
 
             try {
                 const std::wstring cfg_path_w = AppConfig::ConfigPath();
@@ -1539,6 +1541,7 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
                     if (!data.empty()) {
                         auto cfg = json::parse(data, nullptr, false);
                         if (cfg.is_object()) {
+                            oauth_launch_mode = cfg.value("youtube_oauth_launch_mode", std::string{"embedded"});
                             const auto yt = cfg.value("youtube", json::object());
                             if (yt.is_object()) {
                                 has_access_token = !yt.value("access_token", std::string{}).empty();
@@ -1559,6 +1562,7 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
             j["has_refresh_token"] = has_refresh_token;
             j["needs_reauth"] = needs_reauth;
             j["channel_id"] = channel_id;
+            j["oauth_launch_mode"] = oauth_launch_mode;
             j["app_credentials_embedded"] = has_embedded_credentials;
 
             if (opt_.youtube_auth_info_json) {
@@ -1576,6 +1580,46 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
 
             res.status = 200;
             res.set_content(j.dump(2), "application/json; charset=utf-8");
+        });
+
+        svr.Post("/api/youtube/auth/launch-external", [&](const httplib::Request& /*req*/, httplib::Response& res) {
+            if (!opt_.youtube_auth_build_authorize_url) {
+                YouTubeHttpLog(log_, L"External OAuth launch requested but routes are not enabled");
+                res.status = 404;
+                res.set_content(R"({"ok":false,"error":"not_wired"})", "application/json; charset=utf-8");
+                return;
+            }
+
+            const std::wstring start_url =
+                L"http://127.0.0.1:" + std::to_wstring(opt_.port) + L"/auth/youtube/start";
+
+            HINSTANCE open_result = ShellExecuteW(
+                nullptr,
+                L"open",
+                start_url.c_str(),
+                nullptr,
+                nullptr,
+                SW_SHOWNORMAL);
+
+            const auto rc = reinterpret_cast<INT_PTR>(open_result);
+            if (rc <= 32) {
+                YouTubeHttpLog(log_, L"Failed to launch external browser for YouTube OAuth. ShellExecuteW rc=" + std::to_wstring(rc));
+                res.status = 500;
+                json out;
+                out["ok"] = false;
+                out["error"] = "shell_execute_failed";
+                out["code"] = static_cast<int>(rc);
+                res.set_content(out.dump(2), "application/json; charset=utf-8");
+                return;
+            }
+
+            YouTubeHttpLog(log_, L"Launched external browser for YouTube OAuth");
+            json out;
+            out["ok"] = true;
+            out["launched"] = true;
+            out["url"] = std::string("http://127.0.0.1:") + std::to_string(opt_.port) + "/auth/youtube/start";
+            res.status = 200;
+            res.set_content(out.dump(2), "application/json; charset=utf-8");
         });
 
         svr.Get("/auth/youtube/start", [&](const httplib::Request& /*req*/, httplib::Response& res) {

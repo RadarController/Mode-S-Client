@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="viewport" content="width=1080,height=1920,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
   <title>RadarController – Stream Ended</title>
   <style>
   :root{
@@ -16,21 +16,33 @@
   }
 
   html,body{
-    width:100%;
-    height:100%;
+    width:1080px !important;
+    min-width:1080px !important;
+    max-width:1080px !important;
+    height:1920px !important;
+    min-height:1920px !important;
+    max-height:1920px !important;
     margin:0;
+    padding:0;
     background:transparent;
     font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif;
-    overflow:hidden;
+    overflow:hidden !important;
   }
 
-  body{ display:block; }
+  *, *::before, *::after{ box-sizing:border-box; }
+
+  body{ display:block; position:relative; }
 
   .stage{
-    position:fixed;
-    inset:0;
-    width:100vw;
-    height:100vh;
+    position:absolute;
+    top:0;
+    left:0;
+    width:1080px !important;
+    min-width:1080px !important;
+    max-width:1080px !important;
+    height:1920px !important;
+    min-height:1920px !important;
+    max-height:1920px !important;
     overflow:hidden;
     background:
       radial-gradient(1100px 760px at 18% 18%, rgba(255,255,255,.08), transparent 58%),
@@ -77,7 +89,7 @@
   .header{
     position:absolute;
     top:0; left:0; right:0;
-    height:clamp(88px, 5.9vh, 112px);
+    height:88px;
     z-index:2;
   }
 
@@ -87,7 +99,7 @@
     display:flex;
     align-items:center;
     justify-content:space-between;
-    padding:0 clamp(20px, 2.2vw, 30px);
+    padding:0 24px;
     box-sizing:border-box;
     background:var(--panel);
     backdrop-filter:blur(8px);
@@ -99,7 +111,7 @@
   .left{
     display:flex;
     align-items:center;
-    gap:16px;
+    gap:12px;
     min-width:0;
     flex:1 1 auto;
   }
@@ -122,7 +134,7 @@
     white-space:nowrap;
     overflow:hidden;
     text-overflow:ellipsis;
-    max-width:52vw;
+    max-width:500px;
   }
 
   .sub{
@@ -143,7 +155,7 @@
     display:flex;
     align-items:center;
     gap:8px;
-    padding:10px 14px;
+    padding:8px 12px;
     border-radius:14px;
     background:rgba(10,14,18,.36);
     border:1px solid rgba(255,255,255,.12);
@@ -159,10 +171,13 @@
 
   .main{
     position:absolute;
-    inset:clamp(108px, 7.1vh, 136px) clamp(24px, 2.8vw, 36px) clamp(24px, 2.8vw, 36px) clamp(24px, 2.8vw, 36px);
+    top:104px;
+    left:24px;
+    right:24px;
+    bottom:24px;
     display:grid;
-    grid-template-rows:auto auto minmax(300px, 1fr) auto;
-    gap:16px;
+    grid-template-rows:auto auto minmax(0, 1fr) auto;
+    gap:12px;
     z-index:2;
     min-height:0;
   }
@@ -181,7 +196,7 @@
   }
 
   .hero{
-    padding:20px 22px 22px;
+    padding:18px 20px 20px;
     text-align:left;
   }
 
@@ -189,13 +204,13 @@
     display:inline-flex;
     align-items:center;
     gap:10px;
-    margin-bottom:18px;
-    padding:10px 14px;
+    margin-bottom:14px;
+    padding:8px 12px;
     border-radius:999px;
     background:rgba(10,14,18,.32);
     border:1px solid rgba(255,255,255,.13);
     color:var(--text);
-    font-size:13px;
+    font-size:11px;
     font-weight:800;
     letter-spacing:.12em;
     text-transform:uppercase;
@@ -213,7 +228,7 @@
   .endTitle{
     margin:0 0 12px 0;
     color:var(--text);
-    font-size:clamp(72px, 10vw, 104px);
+    font-size:82px;
     line-height:.88;
     font-weight:900;
     letter-spacing:.01em;
@@ -223,9 +238,9 @@
 
   .lede{
     margin:0;
-    max-width:920px;
+    max-width:none;
     color:var(--muted);
-    font-size:clamp(15px, 1.9vw, 20px);
+    font-size:18px;
     line-height:1.38;
     letter-spacing:.01em;
   }
@@ -233,11 +248,11 @@
   .ctaWrap{
     display:grid;
     grid-template-columns:1fr;
-    gap:16px;
+    gap:12px;
   }
 
   .discordCard{
-    padding:20px 22px 20px;
+    padding:18px 20px 18px;
     position:relative;
     overflow:hidden;
     background:
@@ -260,7 +275,7 @@
 
   .cardLabel{
     color:var(--soft);
-    font-size:12px;
+    font-size:11px;
     font-weight:800;
     letter-spacing:.16em;
     text-transform:uppercase;
@@ -270,70 +285,70 @@
   .discordHeadline{
     margin:0 0 12px 0;
     color:var(--text);
-    font-size:68px;
+    font-size:56px;
     line-height:.92;
     font-weight:900;
     letter-spacing:.01em;
     text-transform:uppercase;
-    max-width:760px;
+    max-width:none;
   }
 
   .discordBody{
-    margin:0 0 22px 0;
+    margin:0 0 18px 0;
     color:var(--muted);
-    font-size:24px;
-    line-height:1.38;
-    max-width:860px;
+    font-size:20px;
+    line-height:1.34;
+    max-width:none;
   }
 
   .discordAction{
     display:inline-flex;
     align-items:center;
     gap:14px;
-    padding:18px 22px;
+    padding:16px 18px;
     border-radius:18px;
     background:rgba(10,14,18,.44);
     border:1px solid rgba(255,255,255,.14);
     color:var(--text);
     font-weight:900;
-    font-size:24px;
+    font-size:20px;
     letter-spacing:.08em;
     text-transform:uppercase;
   }
 
   .discordAction svg{ width:28px; height:28px; fill:var(--text); opacity:.94; flex:0 0 auto; }
 
-  .platformCard{ padding:24px; }
+  .platformCard{ padding:18px; }
 
-  .platformIntro{ display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin-bottom:16px; }
-  .platformTitle{ margin:0; color:var(--text); font-size:44px; line-height:1; font-weight:900; letter-spacing:.03em; text-transform:uppercase; }
-  .platformSub{ margin:8px 0 0; color:var(--muted); font-size:20px; line-height:1.32; }
+  .platformIntro{ display:flex; align-items:flex-end; justify-content:space-between; gap:12px; margin-bottom:12px; }
+  .platformTitle{ margin:0; color:var(--text); font-size:40px; line-height:1; font-weight:900; letter-spacing:.03em; text-transform:uppercase; }
+  .platformSub{ margin:6px 0 0; color:var(--muted); font-size:18px; line-height:1.28; }
 
-  .platformGrid{ display:grid; grid-template-columns:1fr; gap:14px; }
+  .platformGrid{ display:grid; grid-template-columns:1fr; gap:10px; }
 
   .platformItem{
     display:grid;
-    grid-template-columns:66px 1fr auto;
+    grid-template-columns:58px 1fr auto;
     align-items:center;
-    gap:16px;
-    padding:20px 20px;
+    gap:14px;
+    padding:14px 16px;
     border-radius:20px;
     background:rgba(10,14,18,.34);
     border:1px solid rgba(255,255,255,.10);
   }
 
   .platformIcon{
-    width:66px; height:66px; border-radius:18px; display:grid; place-items:center;
+    width:58px; height:58px; border-radius:16px; display:grid; place-items:center;
     background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.12);
   }
-  .platformIcon svg{ width:26px; height:26px; fill:var(--text); opacity:.96; }
+  .platformIcon svg{ width:24px; height:24px; fill:var(--text); opacity:.96; }
   .platformMeta{ min-width:0; }
-  .platformName{ color:var(--text); font-size:26px; font-weight:900; letter-spacing:.05em; text-transform:uppercase; line-height:1.05; }
-  .platformHandle{ margin-top:4px; color:var(--muted); font-size:20px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .platformTag{ padding:10px 12px; border-radius:999px; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.06); color:var(--text); font-size:13px; font-weight:900; letter-spacing:.10em; text-transform:uppercase; white-space:nowrap; }
+  .platformName{ color:var(--text); font-size:22px; font-weight:900; letter-spacing:.05em; text-transform:uppercase; line-height:1.05; }
+  .platformHandle{ margin-top:3px; color:var(--muted); font-size:18px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .platformTag{ padding:8px 10px; border-radius:999px; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.06); color:var(--text); font-size:12px; font-weight:900; letter-spacing:.10em; text-transform:uppercase; white-space:nowrap; }
 
   .subscribersCard{
-    padding:14px 14px 12px;
+    padding:12px;
     display:flex;
     flex-direction:column;
     min-height:0;
@@ -345,15 +360,15 @@
     display:flex;
     align-items:flex-end;
     justify-content:space-between;
-    gap:16px;
-    margin-bottom:10px;
+    gap:12px;
+    margin-bottom:8px;
     flex:0 0 auto;
   }
 
   .subscribersTitle{
     margin:0;
     color:var(--text);
-    font-size:28px;
+    font-size:24px;
     line-height:.94;
     font-weight:900;
     letter-spacing:.04em;
@@ -363,7 +378,7 @@
   .subscribersSub{
     margin:5px 0 0;
     color:var(--muted);
-    font-size:12px;
+    font-size:11px;
     font-weight:800;
     letter-spacing:.12em;
     text-transform:uppercase;
@@ -371,7 +386,7 @@
 
   .subscribersCount{
     color:var(--muted);
-    font-size:12px;
+    font-size:11px;
     font-weight:900;
     letter-spacing:.14em;
     text-transform:uppercase;
@@ -380,9 +395,9 @@
 
   .subViewport{
     position:relative;
-    min-height:220px;
-    flex:1 1 auto;
     min-height:0;
+    height:100%;
+    flex:1 1 auto;
     overflow:hidden;
     border-radius:20px;
     background:rgba(10,14,18,.28);
@@ -403,30 +418,30 @@
   .subViewport::after{ bottom:0; background:linear-gradient(0deg, rgba(16,20,26,.96), rgba(16,20,26,0)); }
 
   .subTrack{ position:absolute; left:0; right:0; top:0; will-change:transform; }
-  .subGroup{ display:flex; flex-direction:column; gap:8px; padding:10px; }
+  .subGroup{ display:flex; flex-direction:column; gap:6px; padding:8px; }
 
   .subRow{
     display:grid;
-    grid-template-columns:50px 1fr auto;
+    grid-template-columns:44px 1fr auto;
     align-items:center;
-    gap:14px;
-    min-height:56px;
-    padding:8px 10px;
+    gap:12px;
+    min-height:48px;
+    padding:7px 8px;
     border-radius:18px;
     background:rgba(255,255,255,.03);
     border:1px solid rgba(255,255,255,.09);
   }
 
   .subIcon{
-    width:36px; height:36px; border-radius:16px; display:grid; place-items:center;
+    width:32px; height:32px; border-radius:14px; display:grid; place-items:center;
     background:rgba(30,109,255,.16); border:1px solid rgba(255,255,255,.12);
   }
-  .subIcon svg{ width:16px; height:16px; fill:var(--text); opacity:.96; }
+  .subIcon svg{ width:14px; height:14px; fill:var(--text); opacity:.96; }
 
   .subMeta{ min-width:0; }
-  .subName{ color:var(--text); font-size:14px; font-weight:900; line-height:1.06; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .subType{ margin-top:2px; color:var(--muted); font-size:10px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .subBadge{ padding:6px 8px; border-radius:999px; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.06); color:var(--text); font-size:10px; font-weight:900; letter-spacing:.08em; text-transform:uppercase; white-space:nowrap; }
+  .subName{ color:var(--text); font-size:13px; font-weight:900; line-height:1.06; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .subType{ margin-top:2px; color:var(--muted); font-size:9px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .subBadge{ padding:5px 7px; border-radius:999px; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.06); color:var(--text); font-size:9px; font-weight:900; letter-spacing:.08em; text-transform:uppercase; white-space:nowrap; }
 
   .subEmpty{
     height:100%; display:grid; place-items:center; padding:22px; text-align:center; color:var(--muted);
@@ -438,7 +453,7 @@
     align-items:center;
     justify-content:space-between;
     gap:12px;
-    padding:14px 18px;
+    padding:12px 16px;
     background:var(--panel-strong);
     color:var(--text);
   }
@@ -446,21 +461,15 @@
   .footerLeft{ display:flex; align-items:center; gap:14px; min-width:0; }
   .footerLeft svg{ width:30px; height:30px; fill:var(--text); opacity:.95; flex:0 0 auto; }
   .footerText{ min-width:0; }
-  .footerTitle{ font-size:14px; font-weight:900; letter-spacing:.08em; text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .footerSub{ margin-top:3px; color:var(--muted); font-size:12px; letter-spacing:.04em; }
+  .footerTitle{ font-size:13px; font-weight:900; letter-spacing:.08em; text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .footerSub{ margin-top:3px; color:var(--muted); font-size:11px; letter-spacing:.04em; }
   .footerRight{ text-align:right; flex:0 0 auto; }
-  .site{ font-size:26px; font-weight:900; letter-spacing:.10em; text-transform:uppercase; }
+  .site{ font-size:22px; font-weight:900; letter-spacing:.10em; text-transform:uppercase; }
   .offline{ margin-top:2px; color:var(--muted); font-size:10px; letter-spacing:.18em; text-transform:uppercase; }
 
   .pulse{ animation:pulse 2.6s ease-in-out infinite; }
   @keyframes pulse{ 0%,100%{ transform:scale(1); opacity:.94; } 50%{ transform:scale(1.018); opacity:1; } }
 
-  @media (max-width: 1080px), (max-height: 1920px){
-    .stage{
-      width:min(100vw, calc(100vh * 1080 / 1920));
-      height:min(100vh, calc(100vw * 1920 / 1080));
-    }
-  }
   </style>
 </head>
 <body>
@@ -527,7 +536,7 @@
               <div class="platformTag">Live streams</div>
             </div>
             <div class="platformItem">
-              <div class="platformIcon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21.6 7.2c-.2-1-1-1.8-2-2C17.8 4.8 12 4.8 12 4.8s-5.8 0-7.6.4c-1 .2-1.8-1-2 2C2 9 2 12 2 12s0 3 .4 4.8c.2 1 1 1.8 2 2 1.8.4 7.6.4 7.6.4s5.8 0 7.6-.4c1-.2 1.8-1 2-2 .4-1.8.4-4.8.4-4.8s0-3-.4-4.8zM10 15.5v-7l6 3.5-6 3.5z"/></svg></div>
+              <div class="platformIcon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21.6 7.2c-.2-1-1-1.8-2-2C17.8 4.8 12 4.8 12 4.8s-5.8 0-7.6.4c-1 .2-1.8 1-2 2C2 9 2 12 2 12s0 3 .4 4.8c.2 1 1 1.8 2 2 1.8.4 7.6.4 7.6.4s5.8 0 7.6-.4c1-.2 1.8-1 2-2 .4-1.8.4-4.8.4-4.8s0-3-.4-4.8zM10 15.5v-7l6 3.5-6 3.5z"/></svg></div>
               <div class="platformMeta"><div class="platformName">YouTube</div><div class="platformHandle">@RADARCONTROLLER</div></div>
               <div class="platformTag">Videos &amp; VODs</div>
             </div>
@@ -571,6 +580,29 @@
   </div>
 
   <script>
+    (function lockCanvas(){
+      const root = document.documentElement;
+      const body = document.body;
+      [root, body].forEach((el) => {
+        el.style.width = '1080px';
+        el.style.minWidth = '1080px';
+        el.style.maxWidth = '1080px';
+        el.style.height = '1920px';
+        el.style.minHeight = '1920px';
+        el.style.maxHeight = '1920px';
+        el.style.overflow = 'hidden';
+      });
+      const stage = document.querySelector('.stage');
+      if (stage) {
+        stage.style.width = '1080px';
+        stage.style.minWidth = '1080px';
+        stage.style.maxWidth = '1080px';
+        stage.style.height = '1920px';
+        stage.style.minHeight = '1920px';
+        stage.style.maxHeight = '1920px';
+      }
+    })();
+
     const ENDPOINT = '/api/supporters/recent?limit=100';
     const track = document.getElementById('subTrack');
     const empty = document.getElementById('subEmpty');
