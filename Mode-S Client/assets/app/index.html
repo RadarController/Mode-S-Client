@@ -1,258 +1,203 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>RadarController — Mode‑S Client</title>
-  <link rel="stylesheet" href="/app/app.css" />
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RadarController — Mode‑S Client</title>
+    <link rel="stylesheet" href="/app/app.css" />
 </head>
 <body>
-  <div class="app" id="homePage">
-    <header class="topbar">
-      <div class="brand">
-        <div class="brand__mark"><img src="/assets/icons/RClogo.svg" alt="RadarController" style="width:100%;height:100%;display:block;opacity:0.8;border-radius:inherit;" /></div>
-        <div class="brand__text">
-          <div class="brand__title">RadarController</div>
-          <div class="brand__subtitle">Mode‑S Client</div>
+    <div class="app" id="homePage">
+        <header class="topbar">
+            <div class="brand">
+                <div class="brand__mark"><img src="/assets/icons/RClogo.svg" alt="RadarController" style="width:100%;height:100%;display:block;opacity:0.8;border-radius:inherit;" /></div>
+                <div class="brand__text">
+                    <div class="brand__title">RadarController</div>
+                    <div class="brand__subtitle">Mode‑S Client</div>
+                </div>
+            </div>
+
+            <div class="topbar__actions">
+                <button class="btn btn--primary" id="btnStartAll">Start All Platforms</button>
+                <button class="btn btn--ghost" id="btnOpenDiagnostics" type="button">Diagnostics</button>
+                <button class="btn btn--primary" id="btnOpenChat">Open Chat</button>
+            </div>
+        </header>
+
+        <div class="topbar__metrics" id="topMetrics">
+            <div class="pill"><span class="pill__k">Viewers</span><span class="pill__v" id="mViewers">—</span></div>
+            <div class="pill"><span class="pill__k">Followers</span><span class="pill__v" id="mFollowers">—</span></div>
+            <div class="pill pill--status"><span class="dot" id="mDot"></span><span class="pill__k">Status</span><span class="pill__v" id="mStatus">Idle</span></div>
+            <div class="pill"><span class="pill__k">Aircraft</span><span class="pill__v" id="mAircraft">—</span></div>
         </div>
-      </div>
 
-      <div class="topbar__actions">
-        <button class="btn btn--primary" id="btnStartAll">Start All Platforms</button>
-        <button class="btn btn--ghost" id="btnOpenSettings">Settings</button>
-        <button class="btn btn--ghost" id="btnOpenDiagnostics" type="button">Diagnostics</button>
-        <button class="btn btn--primary" id="btnOpenChat">Open Chat</button>
-      </div>
-    </header>
+        <main class="home-main-grid">
+            <section class="card home-platforms home-panel home-panel--platforms">
+                <div class="card__head home-platforms__head">
+                    <div class="card__title">Platforms</div>
+                    <div class="home-platforms__summary" hidden></div>
+                </div>
 
-    <div class="topbar__metrics" id="topMetrics">
-      <div class="pill"><span class="pill__k">Viewers</span><span class="pill__v" id="mViewers">—</span></div>
-      <div class="pill"><span class="pill__k">Followers</span><span class="pill__v" id="mFollowers">—</span></div>
-      <div class="pill pill--status"><span class="dot" id="mDot"></span><span class="pill__k">Status</span><span class="pill__v" id="mStatus">Idle</span></div>
-      <div class="pill"><span class="pill__k">Aircraft</span><span class="pill__v" id="mAircraft">—</span></div>
+                <div class="platforms platforms--home platforms--stacked">
+                    <div class="platform platform--home platform--disconnected" data-platform="tiktok">
+                        <div class="platform__head">
+                            <div class="platform__identity">
+                                <img class="platform__icon" src="/assets/icons/tiktok-icon.svg" alt="TikTok" />
+                                <div class="platform__meta">
+                                    <div class="platform__name">TikTok</div>
+                                    <div class="platform__statusline">
+                                        <span class="platform__state-dot" id="tiktokStateDot" aria-hidden="true"></span>
+                                        <span class="platform__sub" id="tiktokState">Not configured</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="platform__right">
+                                <span class="badge badge--muted" id="tiktokBadge">Stopped</span>
+                            </div>
+                        </div>
+
+                        <div class="platform__body">
+                            <div class="platform__account" hidden>
+                                <div class="platform__account-main" id="tiktokIdentityPrimary">No account selected</div>
+                                <div class="platform__account-sub" id="tiktokIdentitySecondary"></div>
+                            </div>
+
+                            <div class="platform__stats">
+                                <div class="stat"><div class="stat__k">Viewers</div><div class="stat__v" id="tiktokViewers">—</div></div>
+                                <div class="stat"><div class="stat__k">Followers</div><div class="stat__v" id="tiktokFollowers">—</div></div>
+                            </div>
+
+                            <div class="platform__actions">
+                                <button class="btn btn--danger" data-action="stop" disabled>Stop</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="platform platform--home platform--disconnected" data-platform="twitch">
+                        <div class="platform__head">
+                            <div class="platform__identity">
+                                <img class="platform__icon" src="/assets/icons/twitch-icon.svg" alt="Twitch" />
+                                <div class="platform__meta">
+                                    <div class="platform__name">Twitch</div>
+                                    <div class="platform__statusline">
+                                        <span class="platform__state-dot" id="twitchStateDot" aria-hidden="true"></span>
+                                        <span class="platform__sub" id="twitchState">Not configured</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="platform__right">
+                                <span class="badge badge--muted" id="twitchBadge">Stopped</span>
+                            </div>
+                        </div>
+
+                        <div class="platform__body">
+                            <div class="platform__account" hidden>
+                                <div class="platform__account-main" id="twitchIdentityPrimary">No account selected</div>
+                                <div class="platform__account-sub" id="twitchIdentitySecondary"></div>
+                            </div>
+
+                            <div class="platform__stats">
+                                <div class="stat"><div class="stat__k">Viewers</div><div class="stat__v" id="twitchViewers">—</div></div>
+                                <div class="stat"><div class="stat__k">Followers</div><div class="stat__v" id="twitchFollowers">—</div></div>
+                            </div>
+
+                            <div class="platform__actions">
+                                <button class="btn btn--danger" data-action="stop" disabled>Stop</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="platform platform--home platform--disconnected" data-platform="youtube">
+                        <div class="platform__head">
+                            <div class="platform__identity">
+                                <img class="platform__icon" src="/assets/icons/youtube-icon.svg" alt="YouTube" />
+                                <div class="platform__meta">
+                                    <div class="platform__name">YouTube</div>
+                                    <div class="platform__statusline">
+                                        <span class="platform__state-dot" id="youtubeStateDot" aria-hidden="true"></span>
+                                        <span class="platform__sub" id="youtubeState">Not configured</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="platform__right">
+                                <span class="badge badge--muted" id="youtubeBadge">Stopped</span>
+                            </div>
+                        </div>
+
+                        <div class="platform__body">
+                            <div class="platform__account" hidden>
+                                <div class="platform__account-main" id="youtubeIdentityPrimary">No account selected</div>
+                                <div class="platform__account-sub" id="youtubeIdentitySecondary"></div>
+                            </div>
+
+                            <div class="platform__stats">
+                                <div class="stat"><div class="stat__k">Viewers</div><div class="stat__v" id="youtubeViewers">—</div></div>
+                                <div class="stat"><div class="stat__k">Subscribers</div><div class="stat__v" id="youtubeFollowers">—</div></div>
+                            </div>
+
+                            <div class="platform__actions">
+                                <button class="btn btn--danger" data-action="stop" disabled>Stop</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="card home-alerts home-panel home-panel--alerts">
+                <div class="card__head home-alerts__head">
+                    <div>
+                        <div class="card__title">Alert History</div>
+                    </div>
+                </div>
+
+                <div class="home-alerts__tablewrap">
+                    <table class="table alerts-table">
+                        <thead>
+                            <tr>
+                                <th class="alerts-table__col-platform"></th>
+                                <th class="alerts-table__col-user">User / Callsign</th>
+                                <th class="alerts-table__col-event">Event</th>
+                                <th class="alerts-table__col-message">Message</th>
+                                <th class="alerts-table__col-action">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="alertsHistoryBody">
+                            <tr class="alerts-table__empty-row">
+                                <td colspan="5">Loading alert history…</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="home-alerts__footer">
+                    <div class="home-alerts__status mono" id="alertsHistoryStatus">—</div>
+                    <div class="home-alerts__pager">
+                        <button class="btn btn--ghost btn--small" id="btnAlertsPrev" type="button">Previous</button>
+                        <span class="home-alerts__page mono" id="alertsHistoryPage">Page 1 / 1</span>
+                        <button class="btn btn--ghost btn--small" id="btnAlertsNext" type="button">Next</button>
+                    </div>
+                </div>
+            </section>
+
+            <section class="card home-panel home-panel--blank home-blank" aria-hidden="true"></section>
+        </main>
+
+        <footer class="footer">
+            <div class="footer__left">Local UI at <span class="mono">/app</span> (served by the built‑in HTTP server).</div>
+            <div class="footer__right"><span class="mono" id="buildInfo">—</span></div>
+        </footer>
     </div>
 
-    <main class="home-main-grid">
-      <section class="card home-platforms home-panel home-panel--platforms">
-        <div class="card__head home-platforms__head">
-          <div>
-            <div class="card__title">Platforms</div>
-          </div>
-          <div class="home-platforms__summary">
-            <div class="home-kpi">
-              <span class="home-kpi__k">Selected accounts</span>
-              <span class="home-kpi__v" id="linkedAccountsCount">0 / 3</span>
-            </div>
-            <div class="home-kpi">
-              <span class="home-kpi__k">Running platforms</span>
-              <span class="home-kpi__v" id="livePlatformsCount">0</span>
-            </div>
-            <div class="home-kpi">
-              <span class="home-kpi__k">Needs attention</span>
-              <span class="home-kpi__v" id="issuePlatformsCount">0</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="platforms platforms--home platforms--stacked">
-          <div class="platform platform--home platform--disconnected" data-platform="tiktok">
-            <div class="platform__head">
-              <div class="platform__identity">
-                <img class="platform__icon" src="/assets/icons/tiktok-icon.svg" alt="TikTok" />
-                <div class="platform__meta">
-                  <div class="platform__name">TikTok</div>
-                  <div class="platform__statusline">
-                    <span class="platform__state-dot" id="tiktokStateDot" aria-hidden="true"></span>
-                    <span class="platform__sub" id="tiktokState">Not configured</span>
-                  </div>
-                </div>
-              </div>
-              <div class="platform__right">
-                <span class="badge badge--muted" id="tiktokBadge">Stopped</span>
-              </div>
-            </div>
-
-            <div class="platform__body">
-              <div class="platform__section-label">Selected account</div>
-              <div class="platform__account">
-                <div class="platform__account-main" id="tiktokIdentityPrimary">No account selected</div>
-                <div class="platform__account-sub" id="tiktokIdentitySecondary"></div>
-              </div>
-
-              <div class="platform__status-grid">
-                <div class="stat stat--compact">
-                  <div class="stat__k">Config</div>
-                  <div class="stat__v stat__v--small" id="tiktokConfigState">Not configured</div>
-                </div>
-                <div class="stat stat--compact">
-                  <div class="stat__k">Service</div>
-                  <div class="stat__v stat__v--small" id="tiktokRuntimeState">Stopped</div>
-                </div>
-              </div>
-
-              <div class="platform__stats">
-                <div class="stat"><div class="stat__k">Viewers</div><div class="stat__v" id="tiktokViewers">—</div></div>
-                <div class="stat"><div class="stat__k">Followers</div><div class="stat__v" id="tiktokFollowers">—</div></div>
-              </div>
-
-              <div class="platform__actions">
-                <button class="btn btn--primary" data-action="primary">Open Settings</button>
-                <button class="btn btn--danger" data-action="stop" disabled>Stop</button>
-              </div>
-            </div>
-          </div>
-
-          <div class="platform platform--home platform--disconnected" data-platform="twitch">
-            <div class="platform__head">
-              <div class="platform__identity">
-                <img class="platform__icon" src="/assets/icons/twitch-icon.svg" alt="Twitch" />
-                <div class="platform__meta">
-                  <div class="platform__name">Twitch</div>
-                  <div class="platform__statusline">
-                    <span class="platform__state-dot" id="twitchStateDot" aria-hidden="true"></span>
-                    <span class="platform__sub" id="twitchState">Not configured</span>
-                  </div>
-                </div>
-              </div>
-              <div class="platform__right">
-                <span class="badge badge--muted" id="twitchBadge">Stopped</span>
-              </div>
-            </div>
-
-            <div class="platform__body">
-              <div class="platform__section-label">Selected account</div>
-              <div class="platform__account">
-                <div class="platform__account-main" id="twitchIdentityPrimary">No account selected</div>
-                <div class="platform__account-sub" id="twitchIdentitySecondary"></div>
-              </div>
-
-              <div class="platform__status-grid">
-                <div class="stat stat--compact">
-                  <div class="stat__k">Config</div>
-                  <div class="stat__v stat__v--small" id="twitchConfigState">Not configured</div>
-                </div>
-                <div class="stat stat--compact">
-                  <div class="stat__k">Service</div>
-                  <div class="stat__v stat__v--small" id="twitchRuntimeState">Stopped</div>
-                </div>
-              </div>
-
-              <div class="platform__stats">
-                <div class="stat"><div class="stat__k">Viewers</div><div class="stat__v" id="twitchViewers">—</div></div>
-                <div class="stat"><div class="stat__k">Followers</div><div class="stat__v" id="twitchFollowers">—</div></div>
-              </div>
-
-              <div class="platform__actions">
-                <button class="btn btn--primary" data-action="primary">Open Settings</button>
-                <button class="btn btn--danger" data-action="stop" disabled>Stop</button>
-              </div>
-            </div>
-          </div>
-
-          <div class="platform platform--home platform--disconnected" data-platform="youtube">
-            <div class="platform__head">
-              <div class="platform__identity">
-                <img class="platform__icon" src="/assets/icons/youtube-icon.svg" alt="YouTube" />
-                <div class="platform__meta">
-                  <div class="platform__name">YouTube</div>
-                  <div class="platform__statusline">
-                    <span class="platform__state-dot" id="youtubeStateDot" aria-hidden="true"></span>
-                    <span class="platform__sub" id="youtubeState">Not configured</span>
-                  </div>
-                </div>
-              </div>
-              <div class="platform__right">
-                <span class="badge badge--muted" id="youtubeBadge">Stopped</span>
-              </div>
-            </div>
-
-            <div class="platform__body">
-              <div class="platform__section-label">Selected account</div>
-              <div class="platform__account">
-                <div class="platform__account-main" id="youtubeIdentityPrimary">No account selected</div>
-                <div class="platform__account-sub" id="youtubeIdentitySecondary"></div>
-              </div>
-
-              <div class="platform__status-grid">
-                <div class="stat stat--compact">
-                  <div class="stat__k">Config</div>
-                  <div class="stat__v stat__v--small" id="youtubeConfigState">Not configured</div>
-                </div>
-                <div class="stat stat--compact">
-                  <div class="stat__k">Service</div>
-                  <div class="stat__v stat__v--small" id="youtubeRuntimeState">Stopped</div>
-                </div>
-              </div>
-
-              <div class="platform__stats">
-                <div class="stat"><div class="stat__k">Viewers</div><div class="stat__v" id="youtubeViewers">—</div></div>
-                <div class="stat"><div class="stat__k">Subscribers</div><div class="stat__v" id="youtubeFollowers">—</div></div>
-              </div>
-
-              <div class="platform__actions">
-                <button class="btn btn--primary" data-action="primary">Open Settings</button>
-                <button class="btn btn--danger" data-action="stop" disabled>Stop</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section class="card home-alerts home-panel home-panel--alerts">
-        <div class="card__head home-alerts__head">
-          <div>
-            <div class="card__title">Alert History</div>
-          </div>
-        </div>
-
-        <div class="home-alerts__tablewrap">
-          <table class="table alerts-table">
-            <thead>
-              <tr>
-                <th class="alerts-table__col-platform"></th>
-                <th class="alerts-table__col-user">User / Callsign</th>
-                <th class="alerts-table__col-event">Event</th>
-                <th class="alerts-table__col-message">Message</th>
-                <th class="alerts-table__col-action">Action</th>
-              </tr>
-            </thead>
-            <tbody id="alertsHistoryBody">
-              <tr class="alerts-table__empty-row">
-                <td colspan="5">Loading alert history…</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <div class="home-alerts__footer">
-          <div class="home-alerts__status mono" id="alertsHistoryStatus">—</div>
-          <div class="home-alerts__pager">
-            <button class="btn btn--ghost btn--small" id="btnAlertsPrev" type="button">Previous</button>
-            <span class="home-alerts__page mono" id="alertsHistoryPage">Page 1 / 1</span>
-            <button class="btn btn--ghost btn--small" id="btnAlertsNext" type="button">Next</button>
-          </div>
-        </div>
-      </section>
-
-      <section class="card home-panel home-panel--blank home-blank" aria-hidden="true"></section>
-    </main>
-
-    <footer class="footer">
-      <div class="footer__left">Local UI at <span class="mono">/app</span> (served by the built‑in HTTP server).</div>
-      <div class="footer__right"><span class="mono" id="buildInfo">—</span></div>
-    </footer>
-  </div>
-
-  <script src="/app/app.js"></script>
-  <script>
-    (function () {
-      const btn = document.getElementById('btnOpenDiagnostics');
-      if (btn) {
-        btn.addEventListener('click', function () {
-          window.location.href = '/app/diagnostics.html';
-        });
-      }
-    })();
-  </script>
+    <script src="/app/app.js"></script>
+    <script>
+        (function () {
+            const btn = document.getElementById('btnOpenDiagnostics');
+            if (btn) {
+                btn.addEventListener('click', function () {
+                    window.location.href = '/app/diagnostics.html';
+                });
+            }
+        })();
+    </script>
 </body>
 </html>
