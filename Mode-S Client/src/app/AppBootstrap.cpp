@@ -324,7 +324,12 @@ void StartBackend(
         }
 
         if (twitchHelixBoundLogin != config.twitch_login) {
-            restartTwitchHelixPoller("web dashboard start");
+            if (restartTwitchHelixPoller) {
+                restartTwitchHelixPoller("web dashboard start");
+            }
+            else {
+                LogLine(L"TWITCH: Helix poller restart callback is not wired.");
+            }
         }
 
         const bool ok = PlatformControl::StartOrRestartTwitchIrc(
