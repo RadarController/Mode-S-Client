@@ -14,13 +14,17 @@
   }
 
   html,body{
-    width: 1080px;
-    height: 1920px;
+    width:100%;
+    height:100%;
+    min-height:100%;
     margin:0;
     background:transparent;
     font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif;
     overflow:hidden;
   }
+
+  html{background:transparent;}
+  body{position:relative;}
 
   .bar{
     width:100%;
@@ -154,10 +158,27 @@
 
   /* ===== Starting scene layout (uses the same vars as your overlays) ===== */
 
+  .stageHost{
+    position:fixed;
+    inset:0;
+    overflow:hidden;
+    display:grid;
+    place-items:start center;
+  }
+
+  .stageFrame{
+    position:relative;
+    width: calc(1080px * var(--stage-scale, 1));
+    height: calc(1920px * var(--stage-scale, 1));
+    overflow:hidden;
+  }
+
   .stage{
     position: relative;
     width: 1080px;
     height: 1920px;
+    transform-origin: top center;
+    transform: scale(var(--stage-scale, 1));
   }
 
   /* Glassy blue field behind content (transparent overall) */
@@ -447,7 +468,9 @@
 </head>
 
 <body>
-  <div class="stage">
+  <div class="stageHost">
+    <div class="stageFrame">
+      <div class="stage">
     <div class="field"></div>
     <div class="header">
       <div class="bar">
@@ -504,10 +527,21 @@
     <span class="sweep"></span>
   </div>
 </div>
+      </div>
     </div>
   </div>
 
   <script>
+    function fitStageToViewport() {
+      const root = document.documentElement;
+      const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 1920;
+      const scale = viewportHeight / 1920;
+      root.style.setProperty('--stage-scale', String(scale));
+    }
+
+    fitStageToViewport();
+    window.addEventListener('resize', fitStageToViewport);
+
     // Optional: rotate “status” pills for variety without any backend
     const pills = [
       ["STANDBY", "RADAR CONTACT: PENDING", "AUDIO CHECK", "SCENE: MSFS"],

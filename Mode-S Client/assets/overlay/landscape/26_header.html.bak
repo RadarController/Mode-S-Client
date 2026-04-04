@@ -14,13 +14,9 @@
     --stroke-strong: rgba(255,255,255,.18);
     --text: rgba(233,238,247,.92);
     --muted: rgba(233,238,247,.70);
-
-    --logo-drop:32px;
-    --logo-shell-size:76px;
-    --logo-shell-left:8px;
-    --logo-size:56px;
-    --logo-offset-in-shell:10px;
-    --bar-left-pad:120px;
+    --logo-drop:34px;
+    --logo-width:180px;
+    --bar-left-pad:150px;
   }
 
   html,body{
@@ -42,7 +38,6 @@
 
   .bar{
     position:relative;
-    isolation:isolate;
     width:100%;
     height:calc(100% - var(--logo-drop));
     min-height:40px;
@@ -59,44 +54,6 @@
     overflow:visible;
   }
 
-  .bar::before{
-    content:"";
-    position:absolute;
-    left:var(--logo-shell-left);
-    bottom:calc(-1 * var(--logo-drop));
-    width:var(--logo-shell-size);
-    height:var(--logo-shell-size);
-    border-radius:50%;
-    background:var(--panel);
-    backdrop-filter:blur(8px);
-    -webkit-backdrop-filter:blur(8px);
-    border:1px solid var(--stroke);
-    box-shadow:0 10px 22px rgba(0,0,0,.24);
-    z-index:0;
-    pointer-events:none;
-  }
-
-  .bar::after{
-    content:"";
-    position:absolute;
-    left:var(--logo-shell-left);
-    top:0;
-    width:var(--logo-shell-size);
-    height:calc(100% - 1px);
-    background:var(--panel);
-    z-index:1;
-    pointer-events:none;
-  }
-
-  .left,
-  .right{
-    z-index:2;
-  }
-
-  .right{
-    position:relative;
-  }
-
   .left{
     display:flex;
     align-items:center;
@@ -107,23 +64,25 @@
 
   .brand{
     position:absolute;
-    left:calc(var(--logo-shell-left) + ((var(--logo-shell-size) - var(--logo-size)) / 2));
-    bottom:calc(((var(--logo-shell-size) - var(--logo-size)) / 2) - var(--logo-drop));
-    width:var(--logo-size);
-    height:var(--logo-size);
+    left:24px;
+    top:10px;
+    width:var(--logo-width);
+    height:calc(100% + var(--logo-drop));
     overflow:visible;
     pointer-events:none;
-    z-index:3;
   }
 
   .logo-wrap{
-    position:relative;
-    width:100%;
+    position:absolute;
+    left:0;
+    top:0;
     height:100%;
-    display:block;
+    aspect-ratio:1 / 1;
+    display:flex;
+    align-items:flex-start;
+    justify-content:flex-start;
     overflow:hidden;
     border-radius:50%;
-    padding-left:1px;
   }
 
   .logo-wrap img{
@@ -133,7 +92,7 @@
     object-position:center;
     display:block;
     border-radius:50%;
-    filter:drop-shadow(0 6px 12px rgba(0,0,0,.22));
+    filter:drop-shadow(0 10px 18px rgba(0,0,0,.28));
   }
 
   .copy{
@@ -217,12 +176,9 @@
 
   @media (max-width: 1100px) {
     :root{
-      --logo-drop:30px;
-      --logo-shell-size:70px;
-      --logo-shell-left:8px;
-      --logo-size:50px;
-      --logo-offset-in-shell:10px;
-      --bar-left-pad:110px;
+      --logo-drop:80px;
+      --logo-width:160px;
+      --bar-left-pad:136px;
     }
 
     .bar{
@@ -246,12 +202,9 @@
 
   @media (max-width: 900px) {
     :root{
-      --logo-drop:24px;
-      --logo-shell-size:64px;
-      --logo-shell-left:8px;
-      --logo-size:46px;
-      --logo-offset-in-shell:9px;
-      --bar-left-pad:102px;
+      --logo-drop:22px;
+      --logo-width:136px;
+      --bar-left-pad:126px;
     }
 
     .bar{
@@ -281,12 +234,9 @@
 
   @media (max-width: 600px) {
     :root{
-      --logo-drop:20px;
-      --logo-shell-size:56px;
-      --logo-shell-left:6px;
-      --logo-size:40px;
-      --logo-offset-in-shell:8px;
-      --bar-left-pad:88px;
+      --logo-drop:18px;
+      --logo-width:112px;
+      --bar-left-pad:104px;
     }
 
     .right{
@@ -335,8 +285,8 @@
       </div>
       <div class="stat">
         <span class="dot"></span>
-        <span class="label">TWITCH SUBS</span>
-        <span id="subscribers">0</span>
+        <span class="label">SUPPORTERS</span>
+        <span id="supporters">0</span>
       </div>
     </div>
   </div>
@@ -348,7 +298,7 @@
 
   const elViewers    = document.getElementById("viewers");
   const elFollowers  = document.getElementById("followers");
-  const elSubscribers = document.getElementById("subscribers");
+  const elSupporters = document.getElementById("supporters");
 
   const HEADER_URL = "/api/overlay/header";
   const elHdrTitle = document.getElementById("hdrTitle");
@@ -388,15 +338,26 @@
     return found ? sum : null;
   }
 
-  function getTwitchSubscribers(j){
+  function getSupporters(j){
     const explicitTotal = firstFinite([
-      j?.twitch_subscribers,
+      j?.total_supporters,
+      j?.supporters,
+      j?.total_paid_supporters,
+      j?.total_subscribers,
+      j?.total_channel_members
+    ]);
+    if (explicitTotal !== null) return explicitTotal;
+
+    const combined = sumFinite([
       j?.twitch?.subscribers,
       j?.twitch?.subscriber_count,
       j?.twitch?.total_subscribers,
-      j?.total_subscribers
+      j?.youtube?.members,
+      j?.youtube?.member_count,
+      j?.youtube?.total_members,
+      j?.youtube?.channel_members
     ]);
-    if (explicitTotal !== null) return explicitTotal;
+    if (combined !== null) return combined;
 
     return 0;
   }
@@ -455,12 +416,12 @@
 
   const animViewers    = makeAnimator(elViewers);
   const animFollowers  = makeAnimator(elFollowers);
-  const animSubscribers = makeAnimator(elSubscribers);
+  const animSupporters = makeAnimator(elSupporters);
 
   (function raf(){
     animViewers.tick();
     animFollowers.tick();
-    animSubscribers.tick();
+    animSupporters.tick();
     requestAnimationFrame(raf);
   })();
 
@@ -474,7 +435,7 @@
         let p;
         p = animViewers.target;    animViewers.set(j?.total_viewers);     animViewers.bump(p);
         p = animFollowers.target;  animFollowers.set(j?.total_followers); animFollowers.bump(p);
-        p = animSubscribers.target; animSubscribers.set(getTwitchSubscribers(j));  animSubscribers.bump(p);
+        p = animSupporters.target; animSupporters.set(getSupporters(j));  animSupporters.bump(p);
       }catch{}
       await sleep(POLL_MS);
     }

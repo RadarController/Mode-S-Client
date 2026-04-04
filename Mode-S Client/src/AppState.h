@@ -67,6 +67,7 @@ struct Metrics {
     int youtube_viewers{};
     int tiktok_viewers{};
     int twitch_followers{};
+    int twitch_subscribers{};
     int youtube_followers{};
     int tiktok_followers{};
     bool twitch_live{};
@@ -88,6 +89,7 @@ public:
     void set_tiktok_followers(int f);
     void set_twitch_viewers(int v);
     void set_twitch_followers(int f);
+    void set_twitch_subscribers(int c);
     void set_twitch_live(bool live);
     void set_youtube_viewers(int v);
     void set_youtube_followers(int f);
@@ -109,6 +111,8 @@ public:
     nlohmann::json twitch_eventsub_status_json() const;
 
     void add_twitch_eventsub_event(const nlohmann::json& ev);
+    void request_twitch_subscriber_refresh();
+    bool consume_twitch_subscriber_refresh_requested();
     nlohmann::json twitch_eventsub_events_json(int limit = 200) const;
     void clear_twitch_eventsub_events();
 
@@ -257,6 +261,7 @@ private:
     // Metrics cache (loaded lazily from config.json under key: metrics_cache)
     bool metrics_cache_loaded_ = false;
     std::int64_t last_metrics_cache_save_ms_ = 0;
+    bool twitch_subscriber_refresh_requested_ = false;
 
     Metrics metrics_{};
     nlohmann::json platform_runtime_state_ = nlohmann::json{
