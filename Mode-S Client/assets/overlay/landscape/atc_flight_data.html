@@ -4,353 +4,117 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>ATC Flight Data</title>
-
   <style>
     :root{
       --blue:#1e6dff;
-      --panel: rgba(18,22,28,.72);
+      --panel: rgba(18,22,28,.78);
       --stroke: rgba(255,255,255,.12);
       --stroke-soft: rgba(255,255,255,.08);
       --text: rgba(233,238,247,.92);
-      --muted: rgba(233,238,247,.70);
-      --muted-soft: rgba(233,238,247,.54);
-      --ok: rgba(131,174,252,.95);
-      --ok-bg: rgba(131,174,252,.08);
-      --ok-br: rgba(131,174,252,.28);
-      --warn: rgba(255,199,107,.95);
-      --warn-bg: rgba(255,199,107,.08);
-      --warn-br: rgba(255,199,107,.22);
-      --radius: 18px;
-
-      --pad: 16px;
-      --top-offset: 132px;
-      --card-w: 468px;
-      --card-h: 246px;
+      --muted: rgba(233,238,247,.62);
+      --muted-soft: rgba(233,238,247,.52);
+      --radius: 16px;
+      --edge: 0px;
+      --card-w: 388px;
+      --header-h: 44px;
+      --title-size: 12px;
     }
 
     html,body{
-      width:100%;
-      height:100%;
-      margin:0;
-      background:transparent;
-      font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif;
-      overflow:hidden;
+      width:100%;height:100%;margin:0;background:transparent;
+      font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif;overflow:hidden;
     }
 
-    .stage{
-      position:relative;
-      width:100%;
-      height:100%;
-      overflow:hidden;
-      background:transparent;
-    }
+    .stage{position:relative;width:100%;height:100%;overflow:hidden;background:transparent;}
 
     .card{
-      position:absolute;
-      top:var(--top-offset);
-      right:var(--pad);
-      width:var(--card-w);
-      height:var(--card-h);
-      box-sizing:border-box;
+      position:absolute;top:var(--edge);left:var(--edge);width:var(--card-w);
+      box-sizing:border-box;overflow:hidden;pointer-events:none;
       border-radius:var(--radius);
-      background:linear-gradient(180deg, rgba(18,22,28,.82), rgba(18,22,28,.68));
+      backdrop-filter: blur(8px);-webkit-backdrop-filter: blur(8px);
+      min-height:0;
+    }
+
+    .card::before{
+      content:"";
+      position:absolute;
+      inset:0;
+      border-radius:var(--radius);
       border:1px solid var(--stroke);
-      box-shadow:0 18px 48px rgba(0,0,0,.35);
-      backdrop-filter: blur(10px);
-      -webkit-backdrop-filter: blur(10px);
-      color:var(--text);
-      overflow:hidden;
+      background:var(--panel);
       pointer-events:none;
     }
 
-    .top{
-      position:relative;
-      display:flex;
-      align-items:flex-start;
-      justify-content:space-between;
-      gap:14px;
-      padding:14px 14px 12px 14px;
-      border-bottom:1px solid var(--stroke-soft);
-    }
-
-    .eyebrow{
-      display:flex;
-      align-items:center;
-      gap:8px;
-      font-size:11px;
-      font-weight:750;
-      letter-spacing:.12em;
-      text-transform:uppercase;
-      color:var(--muted);
-      margin-bottom:6px;
-      white-space:nowrap;
-    }
-
-    .badge{
-      width:7px;
-      height:7px;
-      border-radius:50%;
-      background:rgba(30,109,255,.95);
-      box-shadow:0 0 0 3px rgba(30,109,255,.18);
-      flex:0 0 auto;
+    .header{
+      position:absolute;
+      top:0;left:0;right:0;
+      height:var(--header-h);
+      display:flex;align-items:center;justify-content:space-between;
+      padding:0 14px;border-bottom:1px solid rgba(255,255,255,.08);
+      box-sizing:border-box;
+      z-index:1;
     }
 
     .title{
-      font-size:24px;
-      line-height:1;
-      font-weight:900;
-      letter-spacing:.02em;
-      margin:0 0 6px 0;
+      font-weight:650;letter-spacing:.08em;text-transform:uppercase;font-size:var(--title-size);
+      color:var(--text);display:flex;align-items:center;gap:10px;
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;
     }
 
-    .sub{
-      display:flex;
-      flex-wrap:wrap;
-      align-items:center;
-      gap:8px;
-      font-size:12px;
-      color:var(--muted);
-      min-height:16px;
+    .badge{width:8px;height:8px;border-radius:50%;background:rgba(30,109,255,.95);box-shadow:0 0 0 3px rgba(30,109,255,.18);flex:0 0 auto;}
+    .right{display:flex;align-items:center;gap:10px;flex:0 0 auto;}
+    .dots{display:flex;gap:6px;opacity:.7}
+    .dots span{width:4px;height:4px;border-radius:50%;background:rgba(233,238,247,.75)}
+
+    .body{position:relative;z-index:1;padding:calc(var(--header-h) + 10px) 12px 12px;display:grid;gap:10px;}
+
+    .context{display:grid;gap:3px;min-width:0;}
+    .position{
+      font-size:16px;line-height:1.05;font-weight:850;letter-spacing:.01em;
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text);
+    }
+    .summary{
+      font-size:11px;line-height:1.2;color:var(--muted);font-weight:650;
+      letter-spacing:.04em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
     }
 
-    .pill{
-      display:inline-flex;
-      align-items:center;
-      gap:7px;
-      padding:6px 10px;
-      border-radius:999px;
-      background:var(--ok-bg);
-      border:1px solid var(--ok-br);
-      color:var(--ok);
-      font-size:10px;
-      font-weight:850;
-      letter-spacing:.10em;
-      text-transform:uppercase;
-      white-space:nowrap;
-    }
+    .statBar{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;}
+    .stat{min-width:0;padding:8px 9px;border-radius:12px;background:rgba(10,14,18,.28);border:1px solid var(--stroke-soft);}
+    .statLabel{font-size:8px;font-weight:800;letter-spacing:.10em;text-transform:uppercase;color:var(--muted);margin-bottom:5px;white-space:nowrap;}
+    .statValue{font-size:16px;line-height:1;font-weight:850;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 
-    .pill.warn{
-      background:var(--warn-bg);
-      border-color:var(--warn-br);
-      color:var(--warn);
-    }
+    .trafficGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;}
+    .panel{min-width:0;border-radius:14px;background:rgba(10,14,18,.24);border:1px solid var(--stroke-soft);padding:9px 10px;display:flex;flex-direction:column;gap:7px;}
+    .panelTitle{display:flex;align-items:center;gap:7px;min-width:0;font-size:10px;font-weight:800;letter-spacing:.10em;text-transform:uppercase;color:var(--text);white-space:nowrap;}
+    .miniDot{width:6px;height:6px;border-radius:50%;background:rgba(30,109,255,.95);box-shadow:0 0 0 2px rgba(30,109,255,.18);flex:0 0 auto;}
+    .nextCallsign{font-size:18px;line-height:1.02;font-weight:850;letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
+    .empty .nextCallsign{color:var(--muted);}
 
-    .pill .liveDot{
-      width:7px;
-      height:7px;
-      border-radius:50%;
-      background:rgba(30,109,255,.95);
-      box-shadow:0 0 0 0 rgba(30,109,255,.40);
-      animation:pulse 1.4s ease-out infinite;
-      flex:0 0 auto;
-    }
-
-    .pill.warn .liveDot{
-      background:rgba(255,199,107,.95);
-      box-shadow:0 0 0 0 rgba(255,199,107,.40);
-    }
-
-    @keyframes pulse{
-      0%   { box-shadow: 0 0 0 0 rgba(30,109,255,.40); transform: scale(1); }
-      60%  { box-shadow: 0 0 0 8px rgba(30,109,255,0); transform: scale(1.04); }
-      100% { box-shadow: 0 0 0 0 rgba(30,109,255,0); transform: scale(1); }
-    }
-
-    .body{
-      position:relative;
-      padding:12px 14px 14px 14px;
-      display:grid;
-      grid-template-columns: 1fr 1fr;
-      grid-template-rows: auto 1fr;
-      gap:10px;
-      height:calc(100% - 76px);
-      box-sizing:border-box;
-    }
-
-    .statBar{
-      grid-column:1 / -1;
-      display:grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap:10px;
-    }
-
-    .stat{
-      min-width:0;
-      padding:10px 12px;
-      border-radius:14px;
-      background:rgba(10,14,18,.30);
-      border:1px solid var(--stroke-soft);
-    }
-
-    .statLabel{
-      font-size:10px;
-      font-weight:750;
-      letter-spacing:.10em;
-      text-transform:uppercase;
-      color:var(--muted);
-      margin-bottom:5px;
-      white-space:nowrap;
-    }
-
-    .statValue{
-      font-size:26px;
-      line-height:1;
-      font-weight:900;
-      letter-spacing:.02em;
-      color:var(--text);
-      white-space:nowrap;
-    }
-
-    .panel{
-      min-width:0;
-      border-radius:16px;
-      background:rgba(10,14,18,.26);
-      border:1px solid var(--stroke-soft);
-      padding:12px;
-      box-sizing:border-box;
-      display:flex;
-      flex-direction:column;
-      justify-content:flex-start;
-      gap:10px;
-    }
-
-    .panelHead{
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:10px;
-    }
-
-    .panelTitle{
-      display:flex;
-      align-items:center;
-      gap:8px;
-      min-width:0;
-      font-size:12px;
-      font-weight:850;
-      letter-spacing:.12em;
-      text-transform:uppercase;
-      color:var(--text);
-      white-space:nowrap;
-    }
-
-    .panelTitle .miniDot{
-      width:6px;
-      height:6px;
-      border-radius:50%;
-      background:rgba(30,109,255,.95);
-      box-shadow:0 0 0 2px rgba(30,109,255,.18);
-      flex:0 0 auto;
-    }
-
-    .nextCallsign{
-      font-size:28px;
-      line-height:1;
-      font-weight:900;
-      letter-spacing:.02em;
-      white-space:nowrap;
-      overflow:hidden;
-      text-overflow:ellipsis;
-    }
-
-    .empty .nextCallsign{
-      color:var(--muted);
-    }
-
-    .metaGrid{
-      display:grid;
-      grid-template-columns: repeat(2, minmax(0,1fr));
-      gap:8px 12px;
-    }
-
-    .kv{
-      display:flex;
-      flex-direction:column;
-      gap:4px;
-      min-width:0;
-    }
-
-    .k{
-      font-size:10px;
-      line-height:1;
-      font-weight:750;
-      letter-spacing:.10em;
-      text-transform:uppercase;
-      color:var(--muted-soft);
-      white-space:nowrap;
-    }
-
-    .v{
-      font-size:17px;
-      line-height:1.1;
-      font-weight:800;
-      color:var(--text);
-      white-space:nowrap;
-      overflow:hidden;
-      text-overflow:ellipsis;
-    }
-
-    .hint{
-      position:absolute;
-      left:14px;
-      right:14px;
-      bottom:10px;
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:10px;
-      font-size:11px;
-      color:var(--muted-soft);
-      letter-spacing:.04em;
-    }
-
-    .hint strong{
-      color:var(--muted);
-      font-weight:700;
-    }
-
-    @media (max-width: 1280px){
-      :root{
-        --card-w: 420px;
-        --card-h: 236px;
-      }
-      .title{ font-size:22px; }
-      .nextCallsign{ font-size:24px; }
-    }
-
-    @media (max-width: 900px){
-      :root{
-        --top-offset: 16px;
-        --card-w: calc(100vw - 32px);
-        --card-h: 252px;
-      }
-      .card{ left:16px; right:16px; width:auto; }
-    }
+    .metaGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px 9px;}
+    .kv{display:flex;flex-direction:column;gap:3px;min-width:0;}
+    .k{font-size:8px;line-height:1;font-weight:750;letter-spacing:.10em;text-transform:uppercase;color:var(--muted-soft);white-space:nowrap;}
+    .v{font-size:13px;line-height:1.15;font-weight:800;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   </style>
 </head>
 <body>
   <div class="stage">
     <section class="card" aria-label="ATC flight data overlay">
-      <div class="top">
-        <div>
-          <div class="eyebrow"><span class="badge"></span> EuroScope traffic</div>
-          <h1 class="title" id="position-name">—</h1>
-          <div class="sub" id="sub-line">
-            <span id="icao">—</span>
-            <span>•</span>
-            <span>Active runway <span id="active-runway">—</span></span>
-            <span>•</span>
-            <span>EuroScope</span>
-          </div>
+      <div class="header">
+        <div class="title"><span class="badge"></span> LIVE TRAFFIC</div>
+        <div class="right">
+          <div class="dots" aria-hidden="true"><span></span><span></span><span></span></div>
         </div>
-
-        <div class="pill" id="status-pill"><span class="liveDot"></span><span id="status-text">live</span></div>
       </div>
 
       <div class="body">
+        <div class="context">
+          <div class="position" id="position-name">—</div>
+          <div class="summary" id="runway-summary">ARR — / DEP —</div>
+        </div>
+
         <div class="statBar">
           <div class="stat">
-            <div class="statLabel">On frequency</div>
+            <div class="statLabel">On Frequency</div>
             <div class="statValue" id="on-frequency">—</div>
           </div>
           <div class="stat">
@@ -363,144 +127,140 @@
           </div>
         </div>
 
-        <div class="panel" id="arrival-panel">
-          <div class="panelHead">
-            <div class="panelTitle"><span class="miniDot"></span> Next arrival</div>
-          </div>
-          <div class="nextCallsign" id="arrival-callsign">—</div>
-          <div class="metaGrid">
-            <div class="kv">
-              <div class="k">Distance</div>
-              <div class="v" id="arrival-distance">—</div>
-            </div>
-            <div class="kv">
-              <div class="k">Altitude</div>
-              <div class="v" id="arrival-altitude">—</div>
-            </div>
-            <div class="kv">
-              <div class="k">Runway</div>
-              <div class="v" id="arrival-runway">—</div>
-            </div>
-            <div class="kv">
-              <div class="k">Status</div>
-              <div class="v" id="arrival-status">Inbound</div>
+        <div class="trafficGrid">
+          <div class="panel" id="arrival-panel">
+            <div class="panelTitle"><span class="miniDot"></span> Next Arrival</div>
+            <div class="nextCallsign" id="arrival-callsign">—</div>
+            <div class="metaGrid">
+              <div class="kv">
+                <div class="k">Distance</div>
+                <div class="v" id="arrival-distance">—</div>
+              </div>
+              <div class="kv">
+                <div class="k">Altitude</div>
+                <div class="v" id="arrival-altitude">—</div>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div class="panel" id="departure-panel">
-          <div class="panelHead">
-            <div class="panelTitle"><span class="miniDot"></span> Next departure</div>
-          </div>
-          <div class="nextCallsign" id="departure-callsign">—</div>
-          <div class="metaGrid">
-            <div class="kv">
-              <div class="k">Distance</div>
-              <div class="v" id="departure-distance">—</div>
-            </div>
-            <div class="kv">
-              <div class="k">Altitude</div>
-              <div class="v" id="departure-altitude">—</div>
-            </div>
-            <div class="kv">
-              <div class="k">Runway</div>
-              <div class="v" id="departure-runway">—</div>
-            </div>
-            <div class="kv">
-              <div class="k">Status</div>
-              <div class="v" id="departure-status">Departure</div>
+          <div class="panel" id="departure-panel">
+            <div class="panelTitle"><span class="miniDot"></span> Next Departure</div>
+            <div class="nextCallsign" id="departure-callsign">—</div>
+            <div class="metaGrid">
+              <div class="kv">
+                <div class="k">SID</div>
+                <div class="v" id="departure-sid">—</div>
+              </div>
+              <div class="kv">
+                <div class="k">Status</div>
+                <div class="v" id="departure-status">Waiting</div>
+              </div>
             </div>
           </div>
-        </div>
-
-        <div class="hint">
-          <span><strong>Source:</strong> /api/euroscope/traffic</span>
-          <span id="updated-text">Waiting for data</span>
         </div>
       </div>
     </section>
   </div>
 
   <script>
-    const POLL_MS = 2000;
+    const POLL_MS = 1000;
+    const FRESH_MS = 5000;
 
     function setText(id, value){
       const el = document.getElementById(id);
-      if (!el) return;
-      el.textContent = value ?? '—';
+      if (el) el.textContent = value ?? '—';
     }
 
     function formatNm(value){
       const num = Number(value);
-      return Number.isFinite(num) ? `${num.toFixed(1)}nm` : '—';
+      if (!Number.isFinite(num)) return '—';
+      const rounded = Math.round(num * 2) / 2;
+      return `${rounded.toFixed(rounded % 1 === 0 ? 0 : 1)}nm`;
     }
 
     function formatFt(value){
       const num = Number(value);
-      return Number.isFinite(num) ? `${Math.round(num).toLocaleString('en-GB')}ft` : '—';
+      if (!Number.isFinite(num)) return '—';
+      const rounded = Math.round(num / 100) * 100;
+      return `${rounded.toLocaleString('en-GB')}ft`;
     }
 
-    function formatTime(ts){
-      const num = Number(ts);
-      if (!Number.isFinite(num) || num <= 0) return 'Waiting for data';
-      return `Updated ${new Date(num).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+    function pickArrivalRunway(overlay){
+      return overlay?.active_landing_runway || overlay?.landing_runway || '—';
     }
 
-    function pickActiveRunway(overlay){
-      if (overlay && overlay.active_runway_text) return overlay.active_runway_text;
-      return '—';
+    function pickDepartureRunway(overlay){
+      return overlay?.active_departure_runway || overlay?.departure_runway || '—';
     }
 
     function setPanelEmpty(panelId, empty){
       const panel = document.getElementById(panelId);
-      if (!panel) return;
-      panel.classList.toggle('empty', !!empty);
+      if (panel) panel.classList.toggle('empty', !!empty);
     }
 
-    function renderFlight(prefix, flight, fallbackStatus){
+    function mapDepartureStatus(flight){
+      const raw = String(flight?.ground_state || flight?.ground || flight?.status || '').trim().toUpperCase();
+      if (!raw) return 'Waiting';
+      if (raw === 'PUSH') return 'Pushing';
+      if (raw === 'TAXI') return 'Taxying';
+      if (raw === 'DEPA' || raw.startsWith('DEP')) return 'Departing';
+      return raw;
+    }
+
+    function renderArrival(flight){
       const empty = !flight;
-      setPanelEmpty(`${prefix}-panel`, empty);
-      setText(`${prefix}-callsign`, empty ? 'No traffic' : (flight.callsign || '—'));
-      setText(`${prefix}-distance`, empty ? '—' : formatNm(flight.distance_nm));
-      setText(`${prefix}-altitude`, empty ? '—' : formatFt(flight.altitude_ft));
-      setText(`${prefix}-runway`, empty ? '—' : (flight.runway || '—'));
-      setText(`${prefix}-status`, empty ? 'Waiting' : fallbackStatus);
+      setPanelEmpty('arrival-panel', empty);
+      setText('arrival-callsign', empty ? 'No traffic' : (flight.callsign || '—'));
+      const distanceNm = flight && Object.prototype.hasOwnProperty.call(flight, 'distance_nm') ? flight.distance_nm : flight?.dist_nm;
+      const altitudeFt = flight && Object.prototype.hasOwnProperty.call(flight, 'altitude_ft') ? flight.altitude_ft : flight?.alt_ft;
+      setText('arrival-distance', empty ? '—' : formatNm(distanceNm));
+      setText('arrival-altitude', empty ? '—' : formatFt(altitudeFt));
+    }
+
+    function renderDeparture(flight){
+      const empty = !flight;
+      setPanelEmpty('departure-panel', empty);
+      setText('departure-callsign', empty ? 'No traffic' : (flight.callsign || '—'));
+      setText('departure-sid', empty ? '—' : (flight.sid || '—'));
+      setText('departure-status', empty ? 'Waiting' : mapDepartureStatus(flight));
+    }
+
+    function normaliseData(data){
+      const payload = data && typeof data === 'object' ? data : {};
+      const overlay = payload.overlay && typeof payload.overlay === 'object' ? payload.overlay : payload;
+      const tsMs = Number(payload.ts_ms ?? overlay.ts_ms ?? 0);
+      const connected = typeof payload.connected === 'boolean'
+        ? payload.connected
+        : (Number.isFinite(tsMs) && tsMs > 0 ? (Date.now() - tsMs) <= FRESH_MS : false);
+      return { overlay, tsMs, connected };
     }
 
     function render(data){
-      const overlay = data && data.overlay ? data.overlay : {};
-      const connected = !!(data && data.connected);
+      const { overlay } = normaliseData(data);
+      const positionName = overlay.position_name || overlay.position_callsign || overlay.position || '—';
+      const onFrequency = Number.isFinite(Number(overlay.on_frequency))
+        ? Number(overlay.on_frequency)
+        : (Number.isFinite(Number(overlay.assumed_now))
+            ? Number(overlay.assumed_now)
+            : (Array.isArray(overlay.assumed_list) ? overlay.assumed_list.length : null));
+      const arrivals = Number.isFinite(Number(overlay.arrivals))
+        ? Number(overlay.arrivals)
+        : (Array.isArray(overlay.inbound) ? overlay.inbound.length : null);
+      const departures = Number.isFinite(Number(overlay.departures))
+        ? Number(overlay.departures)
+        : (Array.isArray(overlay.depa) ? overlay.depa.length : null);
 
-      setText('position-name', overlay.position_name || overlay.position_callsign || '—');
-      setText('icao', overlay.icao || '—');
-      setText('active-runway', pickActiveRunway(overlay));
-      setText('on-frequency', Number.isFinite(Number(overlay.on_frequency)) ? String(overlay.on_frequency) : '—');
-      setText('arrivals', Number.isFinite(Number(overlay.arrivals)) ? String(overlay.arrivals) : '—');
-      setText('departures', Number.isFinite(Number(overlay.departures)) ? String(overlay.departures) : '—');
+      setText('position-name', positionName);
+      setText('runway-summary', `ARR ${pickArrivalRunway(overlay)} / DEP ${pickDepartureRunway(overlay)}`);
+      setText('on-frequency', onFrequency == null ? '—' : String(onFrequency));
+      setText('arrivals', arrivals == null ? '—' : String(arrivals));
+      setText('departures', departures == null ? '—' : String(departures));
 
-      renderFlight('arrival', overlay.next_arrival, 'Inbound');
-      renderFlight('departure', overlay.next_departure, 'Departure');
-
-      const pill = document.getElementById('status-pill');
-      const statusText = document.getElementById('status-text');
-      if (pill && statusText){
-        pill.classList.toggle('warn', !connected);
-        statusText.textContent = connected ? 'live' : 'stale';
-      }
-
-      setText('updated-text', formatTime(data ? data.ts_ms : null));
+      renderArrival(overlay.next_arrival);
+      renderDeparture(overlay.next_departure);
     }
 
-    function renderError(){
-      const pill = document.getElementById('status-pill');
-      const statusText = document.getElementById('status-text');
-      if (pill && statusText){
-        pill.classList.add('warn');
-        statusText.textContent = 'offline';
-      }
-      setText('updated-text', 'Waiting for data');
-      render({ connected: false, overlay: {} });
-    }
+    function renderError(){ render({}); }
 
     async function refresh(){
       try {

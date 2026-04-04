@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=1080,height=1920,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>RadarController – Stream Ended</title>
   <style>
   :root{
@@ -16,33 +16,44 @@
   }
 
   html,body{
-    width:1080px !important;
-    min-width:1080px !important;
-    max-width:1080px !important;
-    height:1920px !important;
-    min-height:1920px !important;
-    max-height:1920px !important;
+    width:100%;
+    height:100%;
+    min-height:100%;
     margin:0;
     padding:0;
     background:transparent;
     font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif;
-    overflow:hidden !important;
+    overflow:hidden;
   }
 
   *, *::before, *::after{ box-sizing:border-box; }
 
+  html{ background:transparent; }
   body{ display:block; position:relative; }
 
+  .stageHost{
+    position:fixed;
+    inset:0;
+    overflow:hidden;
+    display:grid;
+    place-items:start center;
+  }
+
+  .stageFrame{
+    position:relative;
+    width: calc(1080px * var(--stage-scale, 1));
+    height: calc(1920px * var(--stage-scale, 1));
+    overflow:hidden;
+  }
+
   .stage{
-    position:absolute;
+    position:relative;
     top:0;
     left:0;
-    width:1080px !important;
-    min-width:1080px !important;
-    max-width:1080px !important;
-    height:1920px !important;
-    min-height:1920px !important;
-    max-height:1920px !important;
+    width:1080px;
+    height:1920px;
+    transform-origin: top center;
+    transform: scale(var(--stage-scale, 1));
     overflow:hidden;
     background:
       radial-gradient(1100px 760px at 18% 18%, rgba(255,255,255,.08), transparent 58%),
@@ -473,7 +484,9 @@
   </style>
 </head>
 <body>
-  <div class="stage">
+  <div class="stageHost">
+    <div class="stageFrame">
+      <div class="stage">
     <div class="field"></div>
 
     <div class="header">
@@ -576,32 +589,20 @@
           <div class="offline">Currently offline</div>
         </div>
       </footer>
+      </div>
     </div>
   </div>
 
   <script>
-    (function lockCanvas(){
+    function fitStageToViewport() {
       const root = document.documentElement;
-      const body = document.body;
-      [root, body].forEach((el) => {
-        el.style.width = '1080px';
-        el.style.minWidth = '1080px';
-        el.style.maxWidth = '1080px';
-        el.style.height = '1920px';
-        el.style.minHeight = '1920px';
-        el.style.maxHeight = '1920px';
-        el.style.overflow = 'hidden';
-      });
-      const stage = document.querySelector('.stage');
-      if (stage) {
-        stage.style.width = '1080px';
-        stage.style.minWidth = '1080px';
-        stage.style.maxWidth = '1080px';
-        stage.style.height = '1920px';
-        stage.style.minHeight = '1920px';
-        stage.style.maxHeight = '1920px';
-      }
-    })();
+      const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 1920;
+      const scale = viewportHeight / 1920;
+      root.style.setProperty('--stage-scale', String(scale));
+    }
+
+    fitStageToViewport();
+    window.addEventListener('resize', fitStageToViewport);
 
     const ENDPOINT = '/api/supporters/recent?limit=100';
     const track = document.getElementById('subTrack');

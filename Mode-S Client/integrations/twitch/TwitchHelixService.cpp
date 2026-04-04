@@ -250,6 +250,45 @@ std::thread StartTwitchHelixPoller(
             if (hwnd && refresh_msg) PostMessageW(hwnd, refresh_msg, 0, 0);
             };
 
+        std::int64_t last_subscriber_refresh_ms = 0;
+
+        auto refresh_subscriber_total = [&](const std::string& cid_now,
+                                            const std::string& token_now,
+                                            const std::string& broadcaster_id_now,
+                                            const wchar_t* reason) {
+            if (cid_now.empty() || token_now.empty() || broadcaster_id_now.empty()) {
+                return;
+            }
+
+            std::wstring hdr = L"Client-Id: " + ToW(cid_now) + L"\r\nAuthorization: Bearer " + ToW(token_now) + L"\r\n";
+            std::string path = "/helix/subscriptions?broadcaster_id=" + UrlEncode(broadcaster_id_now) + "&first=1";
+            HttpResult r = WinHttpRequest(L"GET", L"api.twitch.tv", 443, ToW(path), hdr, "", true);
+            if (r.status != 200) {
+                std::string msg = std::string("TWITCH HELIX subscribers: HTTP ") + std::to_string(r.status);
+                if (r.winerr) msg += " winerr=" + std::to_string((unsigned)r.winerr);
+                if (!r.body.empty()) {
+                    std::string b = r.body;
+                    if (b.size() > 800) b.resize(800);
+                    msg += " body=" + b;
+                }
+                SafeCall(cb.log, ToW(msg));
+                return;
+            }
+
+            try {
+                auto j = json::parse(r.body);
+                const int total = j.value("total", 0);
+                state.set_twitch_subscribers(total);
+                last_subscriber_refresh_ms = (std::int64_t)GetTickCount64();
+
+                std::wstring why = (reason && *reason) ? std::wstring(reason) : L"scheduled";
+                SafeCall(cb.log, L"TWITCH: subscriber total refreshed (" + why + L") -> " + std::to_wstring(total));
+            }
+            catch (...) {
+                SafeCall(cb.log, L"TWITCH: subscriber total parse exception");
+            }
+        };
+
         while (running) {
             if (firstLoop) {
                 SafeCall(cb.log, L"TWITCH: poll loop entered");
@@ -439,8 +478,28 @@ std::thread StartTwitchHelixPoller(
                 }
             }
 
+            const std::int64_t tick_now = (std::int64_t)GetTickCount64();
+            const bool subscriber_refresh_requested = state.consume_twitch_subscriber_refresh_requested();
+            const bool subscriber_refresh_due =
+                (last_subscriber_refresh_ms == 0) ||
+                subscriber_refresh_requested ||
+                (tick_now - last_subscriber_refresh_ms >= 300000);
+            if (subscriber_refresh_due) {
+                refresh_subscriber_total(
+                    cid,
+                    token,
+                    broadcaster_id,
+                    subscriber_refresh_requested ? L"eventsub" : (last_subscriber_refresh_ms == 0 ? L"startup" : L"reconcile"));
+            }
+
             if (hwnd && refresh_msg) PostMessageW(hwnd, refresh_msg, 0, 0);
-            Sleep(15000);
+            for (int i = 0; i < 15 && running; ++i) {
+                if (state.consume_twitch_subscriber_refresh_requested()) {
+                    state.request_twitch_subscriber_refresh();
+                    break;
+                }
+                Sleep(1000);
+            }
         }
 
         OutputDebugStringW(L"TWITCH: helix poller thread exiting\n");

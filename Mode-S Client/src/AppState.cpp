@@ -186,8 +186,9 @@ void AppState::load_metrics_cache_from_config_unlocked()
         if (!j.contains("metrics_cache") || !j["metrics_cache"].is_object()) return;
         const auto& mc = j["metrics_cache"];
 
-        // Only hydrate follower counts (viewers/live are ephemeral)
+        // Only hydrate persisted counts (viewers/live are ephemeral)
         metrics_.twitch_followers = mc.value("twitch_followers", metrics_.twitch_followers);
+        metrics_.twitch_subscribers = mc.value("twitch_subscribers", metrics_.twitch_subscribers);
         metrics_.tiktok_followers = mc.value("tiktok_followers", metrics_.tiktok_followers);
         metrics_.youtube_followers = mc.value("youtube_followers", metrics_.youtube_followers);
 
@@ -226,6 +227,7 @@ void AppState::save_metrics_cache_to_config_unlocked()
         j["metrics_cache"] = nlohmann::json{
             {"ts_ms", now},
             {"twitch_followers",  metrics_.twitch_followers},
+            {"twitch_subscribers", metrics_.twitch_subscribers},
             {"tiktok_followers",  metrics_.tiktok_followers},
             {"youtube_followers", metrics_.youtube_followers}
         };
@@ -275,6 +277,14 @@ void AppState::set_twitch_followers(int f) {
     metrics_.twitch_followers = f;
     save_metrics_cache_to_config_unlocked();
 }
+void AppState::set_twitch_subscribers(int c) {
+    std::lock_guard<std::mutex> lk(mtx_);
+    load_metrics_cache_from_config_unlocked();
+    if (metrics_.twitch_subscribers == c) return;
+    metrics_.ts_ms = now_ms();
+    metrics_.twitch_subscribers = c;
+    save_metrics_cache_to_config_unlocked();
+}
 void AppState::set_twitch_live(bool live) {
     std::lock_guard<std::mutex> lk(mtx_);
     metrics_.ts_ms = now_ms();
@@ -314,6 +324,7 @@ nlohmann::json AppState::metrics_json() const {
         {"youtube_viewers", m.youtube_viewers},
         {"tiktok_viewers", m.tiktok_viewers},
         {"twitch_followers", m.twitch_followers},
+        {"twitch_subscribers", m.twitch_subscribers},
         {"youtube_followers", m.youtube_followers},
         {"tiktok_followers", m.tiktok_followers},
         {"twitch_live", m.twitch_live},
@@ -418,10 +429,38 @@ nlohmann::json AppState::twitch_eventsub_status_json() const {
 
 void AppState::add_twitch_eventsub_event(const nlohmann::json& ev) {
     record_alert_history_(ev);
+
+    bool request_subscriber_refresh = false;
+    try {
+        const std::string type = ev.value("type", std::string{});
+        request_subscriber_refresh =
+            (type == "channel.subscribe") ||
+            (type == "channel.subscription.message") ||
+            (type == "channel.subscription.gift") ||
+            (type == "channel.subscription.end");
+    }
+    catch (...) {
+    }
+
     std::lock_guard<std::mutex> lk(mtx_);
     twitch_eventsub_events_.push_back(ev);
+    if (request_subscriber_refresh) {
+        twitch_subscriber_refresh_requested_ = true;
+    }
     // Keep small
     while (twitch_eventsub_events_.size() > 200) twitch_eventsub_events_.pop_front();
+}
+
+void AppState::request_twitch_subscriber_refresh() {
+    std::lock_guard<std::mutex> lk(mtx_);
+    twitch_subscriber_refresh_requested_ = true;
+}
+
+bool AppState::consume_twitch_subscriber_refresh_requested() {
+    std::lock_guard<std::mutex> lk(mtx_);
+    const bool requested = twitch_subscriber_refresh_requested_;
+    twitch_subscriber_refresh_requested_ = false;
+    return requested;
 }
 
 nlohmann::json AppState::twitch_eventsub_events_json(int limit) const {
