@@ -46,6 +46,21 @@
         return hasNearTimestamp(arr, ts, windowMs);
     }
 
+    function shouldIncludeEventInMergedChat(e) {
+        if (!e) return false;
+        const platform = String(e.platform || "").toLowerCase();
+        const type = String(e.type || "").toLowerCase();
+
+        if (platform !== "twitch") return true;
+
+        if (type === "channel.channel_points_custom_reward.add") return false;
+        if (type === "channel.channel_points_custom_reward.update") return false;
+        if (type === "channel.channel_points_custom_reward.remove") return false;
+        if (type === "channel.channel_points_custom_reward_redemption.update") return false;
+
+        return true;
+    }
+
     async function safeCall(fn, fallback) {
         try { return await fn(); } catch (_) { return fallback; }
     }
@@ -84,6 +99,7 @@
             const eventNorms = [];
             if (includeEvents) {
                 for (const e of (eventsRaw || [])) {
+                    if (!shouldIncludeEventInMergedChat(e)) continue;
                     const n = normalizeEventItem(e);
                     if (!n || !n.text) continue;
                     n.is_event = true;

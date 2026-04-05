@@ -1171,6 +1171,603 @@ function wireNativeHostMessages() {
   }
 }
 
+function wireTwitchRewardsPage() {
+    const root = document.getElementById("twitchRewardsPage");
+    if (!root) return;
+
+    const state = {
+        rewards: [],
+        manageableIds: new Set(),
+        selectedRewardId: "",
+        selectedReward: null,
+        isCreateMode: false,
+        pendingRedemptions: []
+    };
+
+    const els = {
+        list: document.getElementById("rewardsList"),
+        countBadge: document.getElementById("rewardsCountBadge"),
+        status: document.getElementById("rewardsStatus"),
+        queueBody: document.getElementById("rewardQueueBody"),
+        queueBadge: document.getElementById("rewardQueueBadge"),
+        linkId: document.getElementById("rewardLinkId"),
+        linkTwitch: document.getElementById("rewardLinkTwitch"),
+        linkClient: document.getElementById("rewardLinkClient"),
+        btnRefresh: document.getElementById("btnRewardsRefresh"),
+        btnCreate: document.getElementById("btnRewardsCreate"),
+        btnSaveBoth: document.getElementById("btnRewardsSaveBoth"),
+        btnSaveClient: document.getElementById("btnRewardsSaveClient"),
+        btnDelete: document.getElementById("btnRewardsDelete"),
+
+        title: document.getElementById("rewardTitle"),
+        cost: document.getElementById("rewardCost"),
+        prompt: document.getElementById("rewardPrompt"),
+        backgroundColor: document.getElementById("rewardBackgroundColor"),
+        requiresInput: document.getElementById("rewardRequiresInput"),
+        enabled: document.getElementById("rewardEnabled"),
+        paused: document.getElementById("rewardPaused"),
+        skipQueue: document.getElementById("rewardSkipQueue"),
+        maxPerStreamEnabled: document.getElementById("rewardMaxPerStreamEnabled"),
+        maxPerStream: document.getElementById("rewardMaxPerStream"),
+        maxPerUserEnabled: document.getElementById("rewardMaxPerUserEnabled"),
+        maxPerUser: document.getElementById("rewardMaxPerUser"),
+        cooldownEnabled: document.getElementById("rewardCooldownEnabled"),
+        cooldownSeconds: document.getElementById("rewardCooldownSeconds"),
+
+        actionOverlayEnabled: document.getElementById("actionOverlayEnabled"),
+        actionOverlayTemplate: document.getElementById("actionOverlayTemplate"),
+        actionSoundEnabled: document.getElementById("actionSoundEnabled"),
+        actionSoundFile: document.getElementById("actionSoundFile"),
+        actionImageEnabled: document.getElementById("actionImageEnabled"),
+        actionImageFile: document.getElementById("actionImageFile"),
+        actionVideoEnabled: document.getElementById("actionVideoEnabled"),
+        actionVideoFile: document.getElementById("actionVideoFile"),
+        actionChatEcho: document.getElementById("actionChatEcho"),
+        actionAlertText: document.getElementById("actionAlertText"),
+        actionPriority: document.getElementById("actionPriority"),
+        actionCooldownMs: document.getElementById("actionCooldownMs"),
+        actionType: document.getElementById("actionType"),
+        actionNotes: document.getElementById("actionNotes"),
+
+        actionDeliveryMode: document.getElementById("actionDeliveryMode"),
+        actionClientHold: document.getElementById("actionClientHold"),
+        actionOverlaySurface: document.getElementById("actionOverlaySurface")
+    };
+
+    function setStatus(text) {
+        if (els.status) els.status.textContent = text || "";
+    }
+
+    function safeNumber(value, fallback = 0) {
+        const n = Number(value);
+        return Number.isFinite(n) ? n : fallback;
+    }
+
+    function formatRewardCost(value) {
+        const n = Number(value);
+        return Number.isFinite(n) ? `${n.toLocaleString()} points` : "—";
+    }
+
+    function actionSummary(action) {
+        if (!action || typeof action !== "object" || Array.isArray(action)) return "Not configured";
+
+        const parts = [];
+        if (action.overlay_enabled) parts.push("Overlay");
+        if (action.sound_enabled) parts.push("Sound");
+        if (action.image_enabled && String(action.image_file || "").trim()) parts.push("Image");
+        if (action.video_enabled && String(action.video_file || "").trim()) parts.push("Video");
+        if (action.chat_echo) parts.push("Chat");
+
+        const routing = [];
+        const deliveryMode = String(action.delivery_mode || "immediate").toLowerCase();
+        const overlaySurface = String(action.overlay_surface || "both").toLowerCase();
+
+        routing.push(deliveryMode === "manual" ? "Manual" : "Immediate");
+        if (action.client_hold) routing.push("Held");
+
+        if (overlaySurface === "landscape") routing.push("Landscape");
+        else if (overlaySurface === "portrait") routing.push("Portrait");
+        else routing.push("Both");
+
+        const left = parts.length ? parts.join(" + ") : "Not configured";
+        return `${left} • ${routing.join(" • ")}`;
+    }
+
+    function rewardOwnership(reward) {
+        return state.manageableIds.has(String(reward?.id || "")) ? "Managed" : "External";
+    }
+
+    function currentRewardId() {
+        if (state.isCreateMode) return "";
+        return String(state.selectedRewardId || "");
+    }
+
+    function renderList() {
+        if (!els.list) return;
+        if (els.countBadge) els.countBadge.textContent = `${state.rewards.length} reward${state.rewards.length === 1 ? "" : "s"}`;
+
+        if (!state.rewards.length) {
+            els.list.innerHTML = '<div class="rewards-empty">No Twitch rewards were returned. Create one to begin.</div>';
+            return;
+        }
+
+        els.list.innerHTML = state.rewards.map((reward) => {
+            const id = String(reward?.id || "");
+            const selected = !state.isCreateMode && id === state.selectedRewardId;
+            const ownership = rewardOwnership(reward);
+            const prompt = trim(reward?.prompt || "") || "No prompt";
+            const enabled = reward?.is_enabled !== false;
+            const paused = !!reward?.is_paused;
+            const action = reward?.app_action || {};
+
+            const chips = [
+                `<span class="rewards-chip ${ownership === "Managed" ? "rewards-chip--ok" : "rewards-chip--warn"}">${ownership}</span>`,
+                `<span class="rewards-chip ${enabled && !paused ? "rewards-chip--live" : ""}">${paused ? "Paused" : (enabled ? "Enabled" : "Disabled")}</span>`,
+                `<span class="rewards-chip">${reward?.should_redemptions_skip_request_queue ? "Auto queue" : "Manual queue"}</span>`,
+                `<span class="rewards-chip">${escapeHtml(actionSummary(action))}</span>`
+            ].join("");
+
+            return `
+        <button type="button" class="rewards-item ${selected ? "is-selected" : ""}" data-reward-select="${escapeHtml(id)}">
+          <div class="rewards-item__top">
+            <div>
+              <div class="rewards-item__title">${escapeHtml(reward?.title || "Untitled reward")}</div>
+              <div class="rewards-item__cost">${escapeHtml(formatRewardCost(reward?.cost))}</div>
+            </div>
+          </div>
+          <div class="rewards-item__meta">${chips}</div>
+          <div class="rewards-item__prompt">${escapeHtml(prompt)}</div>
+        </button>`;
+        }).join("");
+    }
+
+    function blankAction() {
+        return {
+            overlay_enabled: true,
+            overlay_template: "channel_points_standard",
+            sound_enabled: false,
+            sound_file: "",
+            image_enabled: false,
+            image_file: "",
+            video_enabled: false,
+            video_file: "",
+            chat_echo: true,
+            alert_text: "{user} redeemed {reward}",
+            priority: 50,
+            cooldown_ms: 15000,
+            action_type: "none",
+            notes: "",
+            delivery_mode: "immediate",
+            client_hold: false,
+            overlay_surface: "both"
+        };
+    }
+
+    function blankReward() {
+        return {
+            id: "",
+            title: "",
+            cost: 500,
+            prompt: "",
+            background_color: "",
+            is_enabled: true,
+            is_paused: false,
+            is_user_input_required: false,
+            should_redemptions_skip_request_queue: false,
+            is_max_per_stream_enabled: false,
+            max_per_stream: 0,
+            is_max_per_user_per_stream_enabled: false,
+            max_per_user_per_stream: 0,
+            is_global_cooldown_enabled: false,
+            global_cooldown_seconds: 0,
+            app_action: blankAction()
+        };
+    }
+
+    function applyRewardToForm(reward) {
+        const source = reward || blankReward();
+        const action = source.app_action && typeof source.app_action === "object" ? source.app_action : blankAction();
+
+        els.title.value = source.title || "";
+        els.cost.value = safeNumber(source.cost, 0) || "";
+        els.prompt.value = source.prompt || "";
+        els.backgroundColor.value = source.background_color || "";
+        els.requiresInput.checked = !!source.is_user_input_required;
+        els.enabled.checked = source.is_enabled !== false;
+        els.paused.checked = !!source.is_paused;
+        els.skipQueue.checked = !!source.should_redemptions_skip_request_queue;
+        els.maxPerStreamEnabled.checked = !!source.is_max_per_stream_enabled;
+        els.maxPerStream.value = safeNumber(source.max_per_stream, 0) || "";
+        els.maxPerUserEnabled.checked = !!source.is_max_per_user_per_stream_enabled;
+        els.maxPerUser.value = safeNumber(source.max_per_user_per_stream, 0) || "";
+        els.cooldownEnabled.checked = !!source.is_global_cooldown_enabled;
+        els.cooldownSeconds.value = safeNumber(source.global_cooldown_seconds, 0) || "";
+
+        els.actionOverlayEnabled.checked = !!action.overlay_enabled;
+        els.actionOverlayTemplate.value = action.overlay_template || "";
+        els.actionSoundEnabled.checked = !!action.sound_enabled;
+        els.actionSoundFile.value = action.sound_file || "";
+        if (els.actionImageEnabled) els.actionImageEnabled.checked = !!action.image_enabled;
+        if (els.actionImageFile) els.actionImageFile.value = action.image_file || "";
+        if (els.actionVideoEnabled) els.actionVideoEnabled.checked = !!action.video_enabled;
+        if (els.actionVideoFile) els.actionVideoFile.value = action.video_file || "";
+        els.actionChatEcho.checked = !!action.chat_echo;
+        els.actionAlertText.value = action.alert_text || "";
+        els.actionPriority.value = Number.isFinite(Number(action.priority)) ? Number(action.priority) : 50;
+        els.actionCooldownMs.value = Number.isFinite(Number(action.cooldown_ms)) ? Number(action.cooldown_ms) : 15000;
+        els.actionType.value = action.action_type || "none";
+        els.actionNotes.value = action.notes || "";
+
+        if (els.actionDeliveryMode) els.actionDeliveryMode.value = action.delivery_mode || "immediate";
+        if (els.actionClientHold) els.actionClientHold.checked = !!action.client_hold;
+        if (els.actionOverlaySurface) els.actionOverlaySurface.value = action.overlay_surface || "both";
+    }
+
+    function updateLinkLayer(reward) {
+        const linkedId = state.isCreateMode ? "New reward (ID created after save)" : (reward?.id || "No reward selected");
+        if (els.linkId) els.linkId.textContent = linkedId;
+
+        if (els.linkTwitch) {
+            if (!reward) {
+                els.linkTwitch.textContent = "Select a reward to view Twitch-owned fields.";
+            } else {
+                els.linkTwitch.textContent = `${reward?.title || "Untitled"} · ${formatRewardCost(reward?.cost)} · ${reward?.should_redemptions_skip_request_queue ? "Auto queue" : "Manual queue"}`;
+            }
+        }
+
+        if (els.linkClient) {
+            const action = reward?.app_action || {};
+            els.linkClient.textContent = reward ? actionSummary(action) : "Select a reward to view client-side behaviour.";
+        }
+    }
+
+    function updateActionButtons() {
+        const reward = state.selectedReward;
+        const manageable = !!reward && rewardOwnership(reward) === "Managed";
+        const hasSelection = state.isCreateMode || !!reward;
+        if (els.btnSaveBoth) els.btnSaveBoth.disabled = !hasSelection;
+        if (els.btnSaveClient) els.btnSaveClient.disabled = !hasSelection;
+        if (els.btnDelete) els.btnDelete.disabled = state.isCreateMode || !reward || !manageable;
+    }
+
+    function renderQueue() {
+        if (!els.queueBody) return;
+
+        if (state.isCreateMode) {
+            els.queueBody.innerHTML = '<tr><td colspan="6" class="rewards-muted">Save the new reward before loading its queue.</td></tr>';
+            if (els.queueBadge) els.queueBadge.textContent = "0 pending";
+            return;
+        }
+
+        if (!state.selectedReward) {
+            els.queueBody.innerHTML = '<tr><td colspan="6" class="rewards-muted">Select a reward to load its queue.</td></tr>';
+            if (els.queueBadge) els.queueBadge.textContent = "0 pending";
+            return;
+        }
+
+        if (!state.pendingRedemptions.length) {
+            els.queueBody.innerHTML = '<tr><td colspan="6" class="rewards-muted">No pending local Channel Points events for this reward.</td></tr>';
+            if (els.queueBadge) els.queueBadge.textContent = "0 pending";
+            return;
+        }
+
+        if (els.queueBadge) els.queueBadge.textContent = `${state.pendingRedemptions.length} pending`;
+
+        const reward = state.selectedReward;
+        const clientSide = actionSummary(reward.app_action || {});
+
+        els.queueBody.innerHTML = state.pendingRedemptions.map((item) => {
+            const input = trim(item?.user_input || "");
+            const redeemedAt = trim(item?.redeemed_at || "");
+            const tsLabel = redeemedAt ? redeemedAt.replace("T", " ").replace("Z", " UTC") : "—";
+            const redemptionId = String(item?.redemption_id || item?.id || "");
+            const manageable = rewardOwnership(reward) === "Managed";
+
+            return `
+        <tr>
+          <td>${escapeHtml(tsLabel)}</td>
+          <td>${escapeHtml(item?.user || item?.user_name || item?.user_login || "—")}</td>
+          <td>
+            <div>${escapeHtml(item?.reward_title || reward.title || "—")}</div>
+            ${input ? `<div class="rewards-queue__input">Input: ${escapeHtml(input)}</div>` : ""}
+          </td>
+          <td>${escapeHtml(formatRewardCost(item?.cost || reward.cost))} · ${escapeHtml(String(item?.delivery_mode || reward?.app_action?.delivery_mode || "immediate"))}</td>
+          <td>${escapeHtml(clientSide)}</td>
+          <td>
+            <div class="rewards-inline-actions">
+              <button class="btn btn--primary btn--small" data-redeem-release="${escapeHtml(redemptionId)}">Release</button>
+              <button class="btn btn--ghost btn--small" data-redeem-action="FULFILLED" data-redemption-id="${escapeHtml(redemptionId)}" ${manageable ? "" : "disabled"}>Fulfil</button>
+              <button class="btn btn--ghost btn--small" data-redeem-action="CANCELED" data-redemption-id="${escapeHtml(redemptionId)}" ${manageable ? "" : "disabled"}>Cancel</button>
+            </div>
+          </td>
+        </tr>`;
+        }).join("");
+    }
+
+    function selectReward(id) {
+        state.isCreateMode = false;
+        state.selectedRewardId = String(id || "");
+        state.selectedReward = state.rewards.find((reward) => String(reward?.id || "") === state.selectedRewardId) || null;
+        applyRewardToForm(state.selectedReward);
+        updateLinkLayer(state.selectedReward);
+        updateActionButtons();
+        renderList();
+        loadQueue();
+    }
+
+    function enterCreateMode() {
+        state.isCreateMode = true;
+        state.selectedRewardId = "";
+        state.selectedReward = blankReward();
+        state.pendingRedemptions = [];
+        applyRewardToForm(state.selectedReward);
+        updateLinkLayer(state.selectedReward);
+        updateActionButtons();
+        renderList();
+        renderQueue();
+        setStatus("Creating a new Twitch reward.");
+    }
+
+    function buildRewardPayload() {
+        return {
+            title: trim(els.title.value),
+            cost: safeNumber(els.cost.value, 0),
+            prompt: els.prompt.value || "",
+            background_color: trim(els.backgroundColor.value),
+            is_enabled: !!els.enabled.checked,
+            is_paused: !!els.paused.checked,
+            is_user_input_required: !!els.requiresInput.checked,
+            should_redemptions_skip_request_queue: !!els.skipQueue.checked,
+            is_max_per_stream_enabled: !!els.maxPerStreamEnabled.checked,
+            max_per_stream: safeNumber(els.maxPerStream.value, 0),
+            is_max_per_user_per_stream_enabled: !!els.maxPerUserEnabled.checked,
+            max_per_user_per_stream: safeNumber(els.maxPerUser.value, 0),
+            is_global_cooldown_enabled: !!els.cooldownEnabled.checked,
+            global_cooldown_seconds: safeNumber(els.cooldownSeconds.value, 0)
+        };
+    }
+
+    function buildActionPayload() {
+        return {
+            overlay_enabled: !!els.actionOverlayEnabled.checked,
+            overlay_template: trim(els.actionOverlayTemplate.value),
+            sound_enabled: !!els.actionSoundEnabled.checked,
+            sound_file: trim(els.actionSoundFile.value),
+            image_enabled: !!els.actionImageEnabled?.checked,
+            image_file: trim(els.actionImageFile?.value || ""),
+            video_enabled: !!els.actionVideoEnabled?.checked,
+            video_file: trim(els.actionVideoFile?.value || ""),
+            chat_echo: !!els.actionChatEcho.checked,
+            alert_text: els.actionAlertText.value || "",
+            priority: safeNumber(els.actionPriority.value, 0),
+            cooldown_ms: safeNumber(els.actionCooldownMs.value, 0),
+            action_type: trim(els.actionType.value),
+            notes: els.actionNotes.value || "",
+            delivery_mode: trim(els.actionDeliveryMode?.value || "immediate") || "immediate",
+            client_hold: !!els.actionClientHold?.checked,
+            overlay_surface: trim(els.actionOverlaySurface?.value || "both") || "both"
+        };
+    }
+
+    function parsePrimaryReward(payload) {
+        if (!payload || typeof payload !== "object") return null;
+        if (Array.isArray(payload.data) && payload.data.length) return payload.data[0];
+        if (payload.reward && typeof payload.reward === "object") return payload.reward;
+        return null;
+    }
+
+    async function loadRewards() {
+        setStatus("Loading rewards…");
+        setActionBusy(els.btnRefresh, true, "Refreshing...");
+        try {
+            const [allRewards, manageableRewards] = await Promise.all([
+                apiGet("/api/twitch/rewards"),
+                apiGet("/api/twitch/rewards?only_manageable=1")
+            ]);
+
+            const allItems = Array.isArray(allRewards?.data) ? allRewards.data : [];
+            const manageableItems = Array.isArray(manageableRewards?.data) ? manageableRewards.data : [];
+            state.rewards = allItems;
+            state.manageableIds = new Set(manageableItems.map((item) => String(item?.id || "")).filter(Boolean));
+
+            if (!state.isCreateMode) {
+                const stillExists = state.rewards.find((reward) => String(reward?.id || "") === state.selectedRewardId);
+                if (stillExists) {
+                    state.selectedReward = stillExists;
+                    applyRewardToForm(stillExists);
+                    updateLinkLayer(stillExists);
+                } else if (state.rewards.length) {
+                    selectReward(state.rewards[0].id);
+                } else {
+                    state.selectedRewardId = "";
+                    state.selectedReward = null;
+                    applyRewardToForm(blankReward());
+                    updateLinkLayer(null);
+                    state.pendingRedemptions = [];
+                    renderQueue();
+                }
+            }
+
+            renderList();
+            updateActionButtons();
+            setStatus("Rewards loaded.");
+            if (state.selectedReward && !state.isCreateMode) {
+                await loadQueue();
+            }
+        } catch (e) {
+            console.error(e);
+            renderList();
+            setStatus(`Load failed (${e.message})`);
+        } finally {
+            setActionBusy(els.btnRefresh, false);
+        }
+    }
+
+    async function loadQueue() {
+        if (state.isCreateMode || !state.selectedReward || !state.selectedReward.id) {
+            state.pendingRedemptions = [];
+            renderQueue();
+            return;
+        }
+
+        try {
+            const payload = await apiGet("/api/twitch/channelpoints/pending?limit=200");
+            const items = Array.isArray(payload?.events) ? payload.events : [];
+            const rewardId = String(state.selectedReward.id);
+            state.pendingRedemptions = items.filter((item) => String(item?.reward_id || "") === rewardId);
+        } catch (e) {
+            console.error(e);
+            state.pendingRedemptions = [];
+        }
+        renderQueue();
+    }
+
+    async function saveRewardAndMaybeMapping(saveClientOnly) {
+        const rewardPayload = buildRewardPayload();
+        const actionPayload = buildActionPayload();
+
+        if (!saveClientOnly && !trim(rewardPayload.title)) {
+            setStatus("Reward title is required.");
+            return;
+        }
+        if (!saveClientOnly && safeNumber(rewardPayload.cost, 0) < 1) {
+            setStatus("Reward cost must be at least 1.");
+            return;
+        }
+
+        setActionBusy(els.btnSaveBoth, true, "Saving...");
+        setActionBusy(els.btnSaveClient, true, "Saving...");
+        try {
+            let rewardId = currentRewardId();
+
+            if (!saveClientOnly) {
+                if (state.isCreateMode) {
+                    const created = await apiPost("/api/twitch/rewards", rewardPayload);
+                    const createdReward = parsePrimaryReward(created);
+                    rewardId = String(createdReward?.id || "");
+                    if (!rewardId) throw new Error("Reward was created but no ID was returned");
+                } else {
+                    const updated = await apiPost("/api/twitch/rewards/update", {
+                        id: rewardId,
+                        ...rewardPayload
+                    });
+                    const updatedReward = parsePrimaryReward(updated);
+                    rewardId = String(updatedReward?.id || rewardId || "");
+                }
+            }
+
+            await apiPost("/api/twitch/reward-actions", {
+                reward_id: rewardId,
+                action: actionPayload
+            });
+
+            state.isCreateMode = false;
+            state.selectedRewardId = rewardId;
+            setStatus(saveClientOnly ? "Client mapping saved." : "Twitch reward and client mapping saved.");
+            await loadRewards();
+            if (rewardId) selectReward(rewardId);
+        } catch (e) {
+            console.error(e);
+            setStatus(`Save failed (${e.message})`);
+        } finally {
+            setActionBusy(els.btnSaveBoth, false);
+            setActionBusy(els.btnSaveClient, false);
+        }
+    }
+
+    async function deleteSelectedReward() {
+        if (!state.selectedReward || state.isCreateMode) return;
+        if (!confirm(`Delete the Twitch reward "${state.selectedReward.title || "Untitled reward"}"?`)) return;
+
+        setActionBusy(els.btnDelete, true, "Deleting...");
+        try {
+            await apiPost("/api/twitch/rewards/delete", { id: state.selectedReward.id });
+            setStatus("Reward deleted.");
+            state.selectedRewardId = "";
+            state.selectedReward = null;
+            state.pendingRedemptions = [];
+            await loadRewards();
+        } catch (e) {
+            console.error(e);
+            setStatus(`Delete failed (${e.message})`);
+        } finally {
+            setActionBusy(els.btnDelete, false);
+        }
+    }
+
+    async function updateRedemptionStatus(redemptionId, status) {
+        if (!state.selectedReward || !redemptionId || !status) return;
+        try {
+            await apiPost("/api/twitch/redemptions/update", {
+                reward_id: state.selectedReward.id,
+                id: redemptionId,
+                status
+            });
+            setStatus(`Redemption marked ${status.toLowerCase()}.`);
+            await loadQueue();
+        } catch (e) {
+            console.error(e);
+            setStatus(`Redemption update failed (${e.message})`);
+        }
+    }
+
+    async function releasePendingRedemption(redemptionId) {
+        if (!redemptionId) return;
+        try {
+            await apiPost("/api/twitch/channelpoints/release", {
+                redemption_id: redemptionId
+            });
+            setStatus("Pending redemption released to live overlay.");
+            await loadQueue();
+        } catch (e) {
+            console.error(e);
+            setStatus(`Release failed (${e.message})`);
+        }
+    }
+
+    els.list?.addEventListener("click", (ev) => {
+        const btn = ev.target.closest("[data-reward-select]");
+        if (!btn) return;
+        selectReward(btn.getAttribute("data-reward-select") || "");
+    });
+
+    els.queueBody?.addEventListener("click", async (ev) => {
+        const releaseBtn = ev.target.closest("[data-redeem-release]");
+        if (releaseBtn) {
+            const redemptionId = releaseBtn.getAttribute("data-redeem-release") || "";
+            setActionBusy(releaseBtn, true, "Releasing...");
+            try {
+                await releasePendingRedemption(redemptionId);
+            } finally {
+                setActionBusy(releaseBtn, false);
+            }
+            return;
+        }
+
+        const btn = ev.target.closest("[data-redeem-action]");
+        if (!btn) return;
+        const redemptionId = btn.getAttribute("data-redemption-id") || "";
+        const status = btn.getAttribute("data-redeem-action") || "";
+        setActionBusy(btn, true, status === "FULFILLED" ? "Fulfilling..." : "Canceling...");
+        try {
+            await updateRedemptionStatus(redemptionId, status);
+        } finally {
+            setActionBusy(btn, false);
+        }
+    });
+
+    els.btnRefresh?.addEventListener("click", () => loadRewards());
+    els.btnCreate?.addEventListener("click", () => enterCreateMode());
+    els.btnSaveBoth?.addEventListener("click", () => saveRewardAndMaybeMapping(false));
+    els.btnSaveClient?.addEventListener("click", () => saveRewardAndMaybeMapping(true));
+    els.btnDelete?.addEventListener("click", () => deleteSelectedReward());
+
+    applyRewardToForm(blankReward());
+    updateLinkLayer(null);
+    updateActionButtons();
+    renderQueue();
+    loadRewards();
+}
 
 document.addEventListener("DOMContentLoaded", async () => {
     wireSmartBackButtons();
@@ -1178,6 +1775,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     wireTwitchStreamInfoPage();
     wireYouTubeAuthStatus();
     wireConnectedAccountsPage();
+    wireTwitchRewardsPage();
     wireNativeHostMessages();
     loadYouTubeVodDraft();
     wireTikTokCookiesPage();

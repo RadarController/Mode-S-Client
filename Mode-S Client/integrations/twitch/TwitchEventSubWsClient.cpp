@@ -909,6 +909,38 @@ okAny |= CreateSubscription(
         json({ {"broadcaster_user_id", broadcasterUid} }).dump(),
         sessionId);
 
+    // Channel Points custom reward lifecycle and redemption events.
+    // These are the foundation for later reward registry + UI work.
+    okAny |= CreateSubscription(
+        "channel.channel_points_custom_reward.add",
+        "1",
+        json({ {"broadcaster_user_id", broadcasterUid} }).dump(),
+        sessionId);
+
+    okAny |= CreateSubscription(
+        "channel.channel_points_custom_reward.update",
+        "1",
+        json({ {"broadcaster_user_id", broadcasterUid} }).dump(),
+        sessionId);
+
+    okAny |= CreateSubscription(
+        "channel.channel_points_custom_reward.remove",
+        "1",
+        json({ {"broadcaster_user_id", broadcasterUid} }).dump(),
+        sessionId);
+
+    okAny |= CreateSubscription(
+        "channel.channel_points_custom_reward_redemption.add",
+        "1",
+        json({ {"broadcaster_user_id", broadcasterUid} }).dump(),
+        sessionId);
+
+    okAny |= CreateSubscription(
+        "channel.channel_points_custom_reward_redemption.update",
+        "1",
+        json({ {"broadcaster_user_id", broadcasterUid} }).dump(),
+        sessionId);
+
 
     // Summary line: attempted/ok/fail + per-type HTTP result.
     // (We base this on the subscription-attempt ring we maintain in subscriptions_.
@@ -975,6 +1007,15 @@ void TwitchEventSubWsClient::HandleNotification(const void* payloadPtr)
             return {};
         };
 
+        auto getNestedStr = [](const json& j, const char* parentKey, const char* childKey) -> std::string {
+            auto pit = j.find(parentKey);
+            if (pit == j.end() || !pit->is_object()) return {};
+            auto cit = pit->find(childKey);
+            if (cit == pit->end()) return {};
+            if (cit->is_string()) return cit->get<std::string>();
+            return {};
+        };
+
         auto getInt = [](const json& j, const char* key, int fallback = 0) -> int {
             auto it = j.find(key);
             if (it == j.end() || it->is_null()) return fallback;
@@ -982,6 +1023,19 @@ void TwitchEventSubWsClient::HandleNotification(const void* payloadPtr)
             if (it->is_number()) return static_cast<int>(it->get<double>());
             if (it->is_string()) {
                 try { return std::stoi(it->get<std::string>()); } catch (...) { return fallback; }
+            }
+            return fallback;
+        };
+
+        auto getNestedInt = [](const json& j, const char* parentKey, const char* childKey, int fallback = 0) -> int {
+            auto pit = j.find(parentKey);
+            if (pit == j.end() || !pit->is_object()) return fallback;
+            auto cit = pit->find(childKey);
+            if (cit == pit->end() || cit->is_null()) return fallback;
+            if (cit->is_number_integer()) return cit->get<int>();
+            if (cit->is_number()) return static_cast<int>(cit->get<double>());
+            if (cit->is_string()) {
+                try { return std::stoi(cit->get<std::string>()); } catch (...) { return fallback; }
             }
             return fallback;
         };
@@ -1064,6 +1118,40 @@ void TwitchEventSubWsClient::HandleNotification(const void* payloadPtr)
             int viewers = getInt(ev, "viewers", 0);
             message = "raided with " + std::to_string(viewers) + " viewers";
         }
+        else if (subType == "channel.channel_points_custom_reward.add")
+        {
+            message = "custom reward added";
+        }
+        else if (subType == "channel.channel_points_custom_reward.update")
+        {
+            message = "custom reward updated";
+        }
+        else if (subType == "channel.channel_points_custom_reward.remove")
+        {
+            message = "custom reward removed";
+        }
+        else if (subType == "channel.channel_points_custom_reward_redemption.add")
+        {
+            user = getStr(ev, "user_name");
+            if (user.empty()) user = getStr(ev, "user_login");
+            const std::string rewardTitle = getNestedStr(ev, "reward", "title");
+            const int rewardCost = getNestedInt(ev, "reward", "cost", 0);
+            message = rewardTitle.empty() ? "redeemed a channel points reward" : ("redeemed " + rewardTitle);
+            if (rewardCost > 0) {
+                message += " (" + std::to_string(rewardCost) + ")";
+            }
+        }
+        else if (subType == "channel.channel_points_custom_reward_redemption.update")
+        {
+            user = getStr(ev, "user_name");
+            if (user.empty()) user = getStr(ev, "user_login");
+            const std::string rewardTitle = getNestedStr(ev, "reward", "title");
+            const std::string status = getStr(ev, "status");
+            message = rewardTitle.empty() ? "channel points redemption updated" : ("redemption updated for " + rewardTitle);
+            if (!status.empty()) {
+                message += " [" + status + "]";
+            }
+        }
         else
         {
             return;
@@ -1083,7 +1171,6 @@ void TwitchEventSubWsClient::HandleNotification(const void* payloadPtr)
                 evOut["bits"] = getInt(ev, "bits", 0);
             }
             else if (subType == "channel.raid") {
-                // Useful for overlays that want to render the raid size as a number.
                 evOut["viewers"] = getInt(ev, "viewers", 0);
             }
             else if (subType == "channel.subscription.message") {
@@ -1099,7 +1186,31 @@ void TwitchEventSubWsClient::HandleNotification(const void* payloadPtr)
                 }
                 evOut["resub_message"] = resubText;
             }
+            else if (subType == "channel.channel_points_custom_reward.add" ||
+                subType == "channel.channel_points_custom_reward.update" ||
+                subType == "channel.channel_points_custom_reward.remove") {
+                evOut["reward_id"] = getStr(ev, "id");
+                evOut["reward_title"] = getStr(ev, "title");
+                evOut["cost"] = getInt(ev, "cost", 0);
+                evOut["prompt"] = getStr(ev, "prompt");
+                evOut["is_enabled"] = ev.value("is_enabled", false);
+                evOut["is_paused"] = ev.value("is_paused", false);
+                evOut["is_in_stock"] = ev.value("is_in_stock", false);
+            }
+            else if (subType == "channel.channel_points_custom_reward_redemption.add" ||
+                subType == "channel.channel_points_custom_reward_redemption.update") {
+                evOut["id"] = getStr(ev, "id");
+                evOut["redemption_id"] = getStr(ev, "id");
+                evOut["status"] = getStr(ev, "status");
+                evOut["redeemed_at"] = getStr(ev, "redeemed_at");
+                evOut["user_input"] = getStr(ev, "user_input");
+                evOut["reward_id"] = getNestedStr(ev, "reward", "id");
+                evOut["reward_title"] = getNestedStr(ev, "reward", "title");
+                evOut["cost"] = getNestedInt(ev, "reward", "cost", 0);
+                evOut["prompt"] = getNestedStr(ev, "reward", "prompt");
+            }
 
+            evOut["raw_event"] = ev;
             on_event_(evOut);
         }
     }

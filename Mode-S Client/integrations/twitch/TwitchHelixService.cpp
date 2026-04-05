@@ -215,6 +215,125 @@ static void DebugLog(const std::wstring& msg)
         return !(cid.empty() || access_token.empty());
     }
 
+
+
+    static bool ResolveTwitchRewardContext(
+        AppConfig& config,
+        std::string& out_login,
+        std::string& out_client_id,
+        std::string& out_token,
+        std::string& out_broadcaster_id,
+        std::string* out_error)
+    {
+        out_login = config.twitch_login;
+        out_client_id = ResolveTwitchClientId(config.twitch_client_id);
+        out_token.clear();
+        out_broadcaster_id.clear();
+
+        std::string login_from_cfg = out_login;
+        (void)TryReadTwitchLoginAndAccessTokenFromConfigJson(login_from_cfg, out_token);
+        if (out_login.empty()) out_login = login_from_cfg;
+
+        if (out_client_id.empty() || out_token.empty()) {
+            if (out_error) *out_error = "Missing embedded Twitch client id or OAuth access token";
+            return false;
+        }
+        if (out_login.empty()) {
+            if (out_error) *out_error = "Missing Twitch login";
+            return false;
+        }
+
+        const std::wstring headers =
+            L"Client-Id: " + ToW(out_client_id) + L"\r\n" +
+            L"Authorization: Bearer " + ToW(out_token) + L"\r\n";
+
+        const std::string usersPath = "/helix/users?login=" + UrlEncode(out_login);
+        HttpResult u = WinHttpRequest(L"GET", L"api.twitch.tv", 443, ToW(usersPath), headers, "", true);
+        if (u.status != 200) {
+            if (out_error) {
+                std::string snippet = Trim(u.body);
+                if (snippet.size() > 300) snippet.resize(300);
+                *out_error = "Helix users lookup failed (HTTP " + std::to_string((int)u.status) + ")";
+                if (!snippet.empty()) *out_error += ": " + snippet;
+            }
+            return false;
+        }
+
+        try {
+            auto uj = json::parse(u.body);
+            if (!uj.contains("data") || !uj["data"].is_array() || uj["data"].empty()) {
+                if (out_error) *out_error = "Helix users lookup returned no data";
+                return false;
+            }
+            out_broadcaster_id = uj["data"][0].value("id", "");
+        } catch (...) {
+            if (out_error) *out_error = "Helix users lookup parse error";
+            return false;
+        }
+
+        if (out_broadcaster_id.empty()) {
+            if (out_error) *out_error = "Helix users lookup missing broadcaster id";
+            return false;
+        }
+        return true;
+    }
+
+    static std::wstring BuildTwitchAuthHeaders(const std::string& client_id, const std::string& token, bool json_content_type = false)
+    {
+        std::wstring headers =
+            L"Client-Id: " + ToW(client_id) + L"\r\n" +
+            L"Authorization: Bearer " + ToW(token) + L"\r\n";
+        if (json_content_type) headers += L"Content-Type: application/json\r\n";
+        return headers;
+    }
+
+    static json BuildCustomRewardRequestBody(const json& in)
+    {
+        json body = json::object();
+        auto copy_string = [&](const char* key) {
+            if (in.contains(key) && in[key].is_string()) body[key] = in[key].get<std::string>();
+        };
+        auto copy_bool = [&](const char* key) {
+            if (in.contains(key) && in[key].is_boolean()) body[key] = in[key].get<bool>();
+        };
+        auto copy_int = [&](const char* key) {
+            if (in.contains(key) && in[key].is_number_integer()) body[key] = in[key].get<long long>();
+        };
+
+        copy_string("title");
+        copy_int("cost");
+        copy_string("prompt");
+        copy_bool("is_enabled");
+        copy_string("background_color");
+        copy_bool("is_user_input_required");
+        copy_bool("is_max_per_stream_enabled");
+        copy_int("max_per_stream");
+        copy_bool("is_max_per_user_per_stream_enabled");
+        copy_int("max_per_user_per_stream");
+        copy_bool("is_global_cooldown_enabled");
+        copy_int("global_cooldown_seconds");
+        copy_bool("should_redemptions_skip_request_queue");
+        copy_bool("is_paused");
+        return body;
+    }
+
+    static bool ParseJsonBodyOrError(const HttpResult& r, json* out, std::string* out_error, const char* context)
+    {
+        if (!out) return false;
+        try {
+            *out = json::parse(r.body);
+            return true;
+        } catch (...) {
+            if (out_error) {
+                std::string snippet = Trim(r.body);
+                if (snippet.size() > 300) snippet.resize(300);
+                *out_error = std::string(context) + " returned invalid JSON";
+                if (!snippet.empty()) *out_error += ": " + snippet;
+            }
+            return false;
+        }
+    }
+
 } // namespace
 
 std::thread StartTwitchHelixPoller(
@@ -663,6 +782,266 @@ bool TwitchHelixUpdateChannelInfo(
     }
     catch (...) {
         if (out_error) *out_error = "Exception updating Twitch channel";
+        return false;
+    }
+}
+
+
+bool TwitchHelixGetCustomRewards(
+    AppConfig& config,
+    bool only_manageable_rewards,
+    nlohmann::json* out,
+    std::string* out_error)
+{
+    if (out) *out = nlohmann::json::object();
+    try {
+        std::string login, cid, tok, broadcaster_id;
+        if (!ResolveTwitchRewardContext(config, login, cid, tok, broadcaster_id, out_error)) return false;
+
+        std::string path = "/helix/channel_points/custom_rewards?broadcaster_id=" + UrlEncode(broadcaster_id);
+        if (only_manageable_rewards) path += "&only_manageable_rewards=true";
+
+        HttpResult r = WinHttpRequest(
+            L"GET",
+            L"api.twitch.tv",
+            443,
+            ToW(path),
+            BuildTwitchAuthHeaders(cid, tok, false),
+            "",
+            true);
+
+        if (r.status != 200) {
+            if (out_error) {
+                std::string snippet = Trim(r.body);
+                if (snippet.size() > 300) snippet.resize(300);
+                *out_error = "Get custom rewards failed (HTTP " + std::to_string((int)r.status) + ")";
+                if (!snippet.empty()) *out_error += ": " + snippet;
+            }
+            return false;
+        }
+        return ParseJsonBodyOrError(r, out, out_error, "Get custom rewards");
+    } catch (...) {
+        if (out_error) *out_error = "Exception getting custom rewards";
+        return false;
+    }
+}
+
+bool TwitchHelixCreateCustomReward(
+    AppConfig& config,
+    const nlohmann::json& reward_body,
+    nlohmann::json* out,
+    std::string* out_error)
+{
+    if (out) *out = nlohmann::json::object();
+    try {
+        json body = BuildCustomRewardRequestBody(reward_body);
+        const std::string title = body.value("title", std::string{});
+        const long long cost = body.value("cost", 0LL);
+        if (title.empty()) { if (out_error) *out_error = "Missing reward title"; return false; }
+        if (cost < 1) { if (out_error) *out_error = "Reward cost must be at least 1"; return false; }
+
+        std::string login, cid, tok, broadcaster_id;
+        if (!ResolveTwitchRewardContext(config, login, cid, tok, broadcaster_id, out_error)) return false;
+
+        std::string path = "/helix/channel_points/custom_rewards?broadcaster_id=" + UrlEncode(broadcaster_id);
+        HttpResult r = WinHttpRequest(
+            L"POST",
+            L"api.twitch.tv",
+            443,
+            ToW(path),
+            BuildTwitchAuthHeaders(cid, tok, true),
+            body.dump(),
+            true);
+
+        if (r.status != 200 && r.status != 201 && r.status != 202) {
+            if (out_error) {
+                std::string snippet = Trim(r.body);
+                if (snippet.size() > 300) snippet.resize(300);
+                *out_error = "Create custom reward failed (HTTP " + std::to_string((int)r.status) + ")";
+                if (!snippet.empty()) *out_error += ": " + snippet;
+            }
+            return false;
+        }
+        return ParseJsonBodyOrError(r, out, out_error, "Create custom reward");
+    } catch (...) {
+        if (out_error) *out_error = "Exception creating custom reward";
+        return false;
+    }
+}
+
+bool TwitchHelixUpdateCustomReward(
+    AppConfig& config,
+    const std::string& reward_id,
+    const nlohmann::json& reward_body,
+    nlohmann::json* out,
+    std::string* out_error)
+{
+    if (out) *out = nlohmann::json::object();
+    try {
+        if (reward_id.empty()) { if (out_error) *out_error = "Missing reward id"; return false; }
+
+        json body = BuildCustomRewardRequestBody(reward_body);
+        if (body.empty()) { if (out_error) *out_error = "No updatable reward fields supplied"; return false; }
+
+        std::string login, cid, tok, broadcaster_id;
+        if (!ResolveTwitchRewardContext(config, login, cid, tok, broadcaster_id, out_error)) return false;
+
+        std::string path = "/helix/channel_points/custom_rewards?broadcaster_id=" + UrlEncode(broadcaster_id) + "&id=" + UrlEncode(reward_id);
+        HttpResult r = WinHttpRequest(
+            L"PATCH",
+            L"api.twitch.tv",
+            443,
+            ToW(path),
+            BuildTwitchAuthHeaders(cid, tok, true),
+            body.dump(),
+            true);
+
+        if (r.status != 200) {
+            if (out_error) {
+                std::string snippet = Trim(r.body);
+                if (snippet.size() > 300) snippet.resize(300);
+                *out_error = "Update custom reward failed (HTTP " + std::to_string((int)r.status) + ")";
+                if (!snippet.empty()) *out_error += ": " + snippet;
+            }
+            return false;
+        }
+        return ParseJsonBodyOrError(r, out, out_error, "Update custom reward");
+    } catch (...) {
+        if (out_error) *out_error = "Exception updating custom reward";
+        return false;
+    }
+}
+
+bool TwitchHelixDeleteCustomReward(
+    AppConfig& config,
+    const std::string& reward_id,
+    std::string* out_error)
+{
+    try {
+        if (reward_id.empty()) { if (out_error) *out_error = "Missing reward id"; return false; }
+
+        std::string login, cid, tok, broadcaster_id;
+        if (!ResolveTwitchRewardContext(config, login, cid, tok, broadcaster_id, out_error)) return false;
+
+        std::string path = "/helix/channel_points/custom_rewards?broadcaster_id=" + UrlEncode(broadcaster_id) + "&id=" + UrlEncode(reward_id);
+        HttpResult r = WinHttpRequest(
+            L"DELETE",
+            L"api.twitch.tv",
+            443,
+            ToW(path),
+            BuildTwitchAuthHeaders(cid, tok, false),
+            "",
+            true);
+
+        if (r.status != 204 && r.status != 200) {
+            if (out_error) {
+                std::string snippet = Trim(r.body);
+                if (snippet.size() > 300) snippet.resize(300);
+                *out_error = "Delete custom reward failed (HTTP " + std::to_string((int)r.status) + ")";
+                if (!snippet.empty()) *out_error += ": " + snippet;
+            }
+            return false;
+        }
+        return true;
+    } catch (...) {
+        if (out_error) *out_error = "Exception deleting custom reward";
+        return false;
+    }
+}
+
+bool TwitchHelixGetCustomRewardRedemptions(
+    AppConfig& config,
+    const std::string& reward_id,
+    const std::string& status,
+    int first,
+    nlohmann::json* out,
+    std::string* out_error)
+{
+    if (out) *out = nlohmann::json::object();
+    try {
+        if (reward_id.empty()) { if (out_error) *out_error = "Missing reward id"; return false; }
+        std::string norm_status = status.empty() ? "UNFULFILLED" : status;
+        if (first < 1) first = 20;
+        if (first > 50) first = 50;
+
+        std::string login, cid, tok, broadcaster_id;
+        if (!ResolveTwitchRewardContext(config, login, cid, tok, broadcaster_id, out_error)) return false;
+
+        std::string path = "/helix/channel_points/custom_rewards/redemptions?broadcaster_id=" + UrlEncode(broadcaster_id) +
+            "&reward_id=" + UrlEncode(reward_id) +
+            "&status=" + UrlEncode(norm_status) +
+            "&first=" + std::to_string(first);
+
+        HttpResult r = WinHttpRequest(
+            L"GET",
+            L"api.twitch.tv",
+            443,
+            ToW(path),
+            BuildTwitchAuthHeaders(cid, tok, false),
+            "",
+            true);
+
+        if (r.status != 200) {
+            if (out_error) {
+                std::string snippet = Trim(r.body);
+                if (snippet.size() > 300) snippet.resize(300);
+                *out_error = "Get reward redemptions failed (HTTP " + std::to_string((int)r.status) + ")";
+                if (!snippet.empty()) *out_error += ": " + snippet;
+            }
+            return false;
+        }
+        return ParseJsonBodyOrError(r, out, out_error, "Get reward redemptions");
+    } catch (...) {
+        if (out_error) *out_error = "Exception getting reward redemptions";
+        return false;
+    }
+}
+
+bool TwitchHelixUpdateRedemptionStatus(
+    AppConfig& config,
+    const std::string& reward_id,
+    const std::string& redemption_id,
+    const std::string& status,
+    nlohmann::json* out,
+    std::string* out_error)
+{
+    if (out) *out = nlohmann::json::object();
+    try {
+        if (reward_id.empty()) { if (out_error) *out_error = "Missing reward id"; return false; }
+        if (redemption_id.empty()) { if (out_error) *out_error = "Missing redemption id"; return false; }
+        if (!(status == "FULFILLED" || status == "CANCELED")) { if (out_error) *out_error = "Status must be FULFILLED or CANCELED"; return false; }
+
+        std::string login, cid, tok, broadcaster_id;
+        if (!ResolveTwitchRewardContext(config, login, cid, tok, broadcaster_id, out_error)) return false;
+
+        json body = json::object();
+        body["status"] = status;
+
+        std::string path = "/helix/channel_points/custom_rewards/redemptions?broadcaster_id=" + UrlEncode(broadcaster_id) +
+            "&reward_id=" + UrlEncode(reward_id) +
+            "&id=" + UrlEncode(redemption_id);
+
+        HttpResult r = WinHttpRequest(
+            L"PATCH",
+            L"api.twitch.tv",
+            443,
+            ToW(path),
+            BuildTwitchAuthHeaders(cid, tok, true),
+            body.dump(),
+            true);
+
+        if (r.status != 200) {
+            if (out_error) {
+                std::string snippet = Trim(r.body);
+                if (snippet.size() > 300) snippet.resize(300);
+                *out_error = "Update redemption status failed (HTTP " + std::to_string((int)r.status) + ")";
+                if (!snippet.empty()) *out_error += ": " + snippet;
+            }
+            return false;
+        }
+        return ParseJsonBodyOrError(r, out, out_error, "Update redemption status");
+    } catch (...) {
+        if (out_error) *out_error = "Exception updating redemption status";
         return false;
     }
 }

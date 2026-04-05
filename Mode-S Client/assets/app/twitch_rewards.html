@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Twitch Rewards — RadarController</title>
+    <link rel="stylesheet" href="/app/app.css" />
+</head>
+<body>
+    <div class="app rewards-page" id="twitchRewardsPage">
+        <header class="topbar">
+            <div class="brand">
+                <div class="brand__mark"><img src="/assets/icons/RClogo.svg" alt="RadarController" style="width:100%;height:100%;display:block;opacity:0.8;border-radius:inherit;" /></div>
+                <div class="brand__text">
+                    <div class="brand__title">RadarController</div>
+                    <div class="brand__subtitle">Mode‑S Client</div>
+                </div>
+            </div>
+
+            <div class="topbar__actions">
+                <button class="btn btn--ghost" id="btnBackHome">Back</button>
+            </div>
+        </header>
+
+        <main class="grid grid--single">
+            <section class="card">
+                <div class="card__head">
+                    <div class="card__title">Twitch Rewards</div>
+                    <div class="card__hint">Manage Channel Points rewards from Twitch, then map each one to overlay, sound and client behaviour.</div>
+                </div>
+
+                <div class="card__body">
+                    <div class="rewards-toolbar">
+                        <div class="rewards-toolbar__text">
+                            <div class="note">Each reward is shown as one linked object with a stable reward ID in the middle, Twitch-owned fields on one side and Mode-S Client behaviour on the other.</div>
+                        </div>
+                        <div class="rewards-toolbar__actions">
+                            <button class="btn btn--ghost" id="btnRewardsRefresh">Refresh from Twitch</button>
+                            <button class="btn btn--primary" id="btnRewardsCreate">Create reward</button>
+                        </div>
+                    </div>
+
+                    <div class="rewards-layout">
+                        <aside class="rewards-list">
+                            <div class="rewards-list__head">
+                                <div>
+                                    <div class="rewards-list__title">Reward catalogue</div>
+                                    <div class="rewards-list__hint">Twitch rewards with local mapping status</div>
+                                </div>
+                                <span class="badge" id="rewardsCountBadge">0 rewards</span>
+                            </div>
+                            <div class="rewards-list__body" id="rewardsList">
+                                <div class="rewards-empty">Loading rewards…</div>
+                            </div>
+                        </aside>
+
+                        <section class="rewards-detail">
+                            <div class="rewards-sync">
+                                <div class="rewards-sync__title">Link layer</div>
+                                <div class="rewards-sync__grid">
+                                    <div class="rewards-sync__cell">
+                                        <div class="rewards-sync__label">Stable key</div>
+                                        <div class="rewards-sync__value" id="rewardLinkId">No reward selected</div>
+                                    </div>
+                                    <div class="rewards-sync__cell">
+                                        <div class="rewards-sync__label">Twitch record</div>
+                                        <div class="rewards-sync__value" id="rewardLinkTwitch">Select a reward to view Twitch-owned fields.</div>
+                                    </div>
+                                    <div class="rewards-sync__cell">
+                                        <div class="rewards-sync__label">Client record</div>
+                                        <div class="rewards-sync__value" id="rewardLinkClient">Select a reward to view client-side behaviour.</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="rewards-columns">
+                                <section class="rewards-panel">
+                                    <div class="rewards-panel__head">
+                                        <div class="rewards-panel__title">Twitch settings</div>
+                                        <div class="rewards-panel__hint">What viewers see and redeem on Twitch</div>
+                                    </div>
+                                    <div class="rewards-panel__body">
+                                        <div class="rewards-grid">
+                                            <div class="rewards-field rewards-field--span2">
+                                                <label for="rewardTitle">Title</label>
+                                                <input class="input" id="rewardTitle" type="text" maxlength="45" />
+                                            </div>
+
+                                            <div class="rewards-field">
+                                                <label for="rewardCost">Cost</label>
+                                                <input class="input" id="rewardCost" type="number" min="1" step="1" />
+                                            </div>
+
+                                            <div class="rewards-field">
+                                                <label for="rewardBackgroundColor">Background colour</label>
+                                                <input class="input" id="rewardBackgroundColor" type="text" placeholder="#3b82f6" />
+                                            </div>
+
+                                            <div class="rewards-field rewards-field--span2">
+                                                <label for="rewardPrompt">Prompt</label>
+                                                <textarea class="input textarea" id="rewardPrompt"></textarea>
+                                            </div>
+
+                                            <div class="rewards-field">
+                                                <label>User input required</label>
+                                                <label class="rewards-toggle"><input id="rewardRequiresInput" type="checkbox" /> Viewer must enter text</label>
+                                            </div>
+
+                                            <div class="rewards-field">
+                                                <label>Reward enabled</label>
+                                                <label class="rewards-toggle"><input id="rewardEnabled" type="checkbox" /> Visible and redeemable</label>
+                                            </div>
+
+                                            <div class="rewards-field">
+                                                <label>Pause reward</label>
+                                                <label class="rewards-toggle"><input id="rewardPaused" type="checkbox" /> Temporarily pause redemptions</label>
+                                            </div>
+
+                                            <div class="rewards-field">
+                                                <label>Queue mode</label>
+                                                <label class="rewards-toggle"><input id="rewardSkipQueue" type="checkbox" /> Auto-fulfil (skip request queue)</label>
+                                            </div>
+
+                                            <div class="rewards-field">
+                                                <label>Per stream limit enabled</label>
+                                                <label class="rewards-toggle"><input id="rewardMaxPerStreamEnabled" type="checkbox" /> Limit by stream</label>
+                                            </div>
+
+                                            <div class="rewards-field">
+                                                <label for="rewardMaxPerStream">Max per stream</label>
+                                                <input class="input" id="rewardMaxPerStream" type="number" min="0" step="1" />
+                                            </div>
+
+                                            <div class="rewards-field">
+                                                <label>Per user / stream enabled</label>
+                                                <label class="rewards-toggle"><input id="rewardMaxPerUserEnabled" type="checkbox" /> Limit by user</label>
+                                            </div>
+
+                                            <div class="rewards-field">
+                                                <label for="rewardMaxPerUser">Max per user / stream</label>
+                                                <input class="input" id="rewardMaxPerUser" type="number" min="0" step="1" />
+                                            </div>
+
+                                            <div class="rewards-field">
+                                                <label>Global cooldown enabled</label>
+                                                <label class="rewards-toggle"><input id="rewardCooldownEnabled" type="checkbox" /> Use Twitch cooldown</label>
+                                            </div>
+
+                                            <div class="rewards-field">
+                                                <label for="rewardCooldownSeconds">Global cooldown seconds</label>
+                                                <input class="input" id="rewardCooldownSeconds" type="number" min="0" step="1" />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </section>
+
+                                <section class="rewards-panel">
+                                    <div class="rewards-panel__head">
+                                        <div class="rewards-panel__title">Mode-S Client behaviour</div>
+                                        <div class="rewards-panel__hint">What the app does when the redemption arrives</div>
+                                    </div>
+                                    <div class="rewards-panel__body">
+                                        <div class="rewards-grid">
+                                            <div class="rewards-field">
+                                                <label>Overlay enabled</label>
+                                                <label class="rewards-toggle"><input id="actionOverlayEnabled" type="checkbox" /> Show in overlay</label>
+                                            </div>
+
+                                            <div class="rewards-field">
+                                                <label for="actionOverlayTemplate">Overlay template</label>
+                                                <input class="input" id="actionOverlayTemplate" type="text" placeholder="channel_points_standard" />
+                                            </div>
+
+                                            <div class="rewards-field">
+                                                <label>Sound enabled</label>
+                                                <label class="rewards-toggle"><input id="actionSoundEnabled" type="checkbox" /> Play a sound</label>
+                                            </div>
+
+                                            <div class="rewards-field">
+                                                <label for="actionSoundFile">Sound file</label>
+                                                <input class="input" id="actionSoundFile" type="text" placeholder="hydrate.wav" />
+                                            </div>
+
+                                            <div class="rewards-field">
+                                                <label>Image enabled</label>
+                                                <label class="rewards-toggle"><input id="actionImageEnabled" type="checkbox" /> Show an image</label>
+                                            </div>
+
+                                            <div class="rewards-field">
+                                                <label for="actionImageFile">Image file</label>
+                                                <input class="input" id="actionImageFile" type="text" placeholder="happy-birthday.png" />
+                                            </div>
+
+                                            <div class="rewards-field">
+                                                <label>Video enabled</label>
+                                                <label class="rewards-toggle"><input id="actionVideoEnabled" type="checkbox" /> Show a video</label>
+                                            </div>
+
+                                            <div class="rewards-field">
+                                                <label for="actionVideoFile">Video file</label>
+                                                <input class="input" id="actionVideoFile" type="text" placeholder="confetti.webm" />
+                                            </div>
+
+                                            <div class="rewards-field">
+                                                <label>Chat echo</label>
+                                                <label class="rewards-toggle"><input id="actionChatEcho" type="checkbox" /> Add to merged chat</label>
+                                            </div>
+
+                                            <div class="rewards-field">
+                                                <label for="actionDeliveryMode">Delivery mode</label>
+                                                <select class="input" id="actionDeliveryMode">
+                                                    <option value="immediate">Immediate</option>
+                                                    <option value="manual">Manual</option>
+                                                </select>
+                                            </div>
+
+                                            <div class="rewards-field">
+                                                <label>Client hold</label>
+                                                <label class="rewards-toggle">
+                                                    <input id="actionClientHold" type="checkbox" />
+                                                    Hold locally until released
+                                                </label>
+                                            </div>
+
+                                            <div class="rewards-field">
+                                                <label for="actionOverlaySurface">Overlay surface</label>
+                                                <select class="input" id="actionOverlaySurface">
+                                                    <option value="both">Both</option>
+                                                    <option value="landscape">Landscape only</option>
+                                                    <option value="portrait">Portrait only</option>
+                                                </select>
+                                            </div>
+
+                                            <div class="rewards-field">
+                                                <label for="actionPriority">Priority</label>
+                                                <input class="input" id="actionPriority" type="number" min="0" step="1" />
+                                            </div>
+
+                                            <div class="rewards-field rewards-field--span2">
+                                                <label for="actionAlertText">Alert text</label>
+                                                <input class="input" id="actionAlertText" type="text" placeholder="{user} redeemed {reward}" />
+                                            </div>
+
+                                            <div class="rewards-field">
+                                                <label for="actionCooldownMs">Local cooldown (ms)</label>
+                                                <input class="input" id="actionCooldownMs" type="number" min="0" step="1000" />
+                                            </div>
+
+                                            <div class="rewards-field">
+                                                <label for="actionType">Action type</label>
+                                                <input class="input" id="actionType" type="text" placeholder="none" />
+                                            </div>
+
+                                            <div class="rewards-field rewards-field--span2">
+                                                <label for="actionNotes">Internal notes</label>
+                                                <textarea class="input textarea" id="actionNotes" placeholder="Optional notes about how this reward should behave"></textarea>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </section>
+                            </div>
+
+                            <div class="rewards-actions-row">
+                                <div class="rewards-actions">
+                                    <button class="btn btn--primary" id="btnRewardsSaveBoth">Save Twitch + Client</button>
+                                    <button class="btn btn--ghost" id="btnRewardsSaveClient">Save client only</button>
+                                    <button class="btn btn--danger" id="btnRewardsDelete">Delete reward</button>
+                                </div>
+                                <div class="rewards-status" id="rewardsStatus"></div>
+                            </div>
+
+                            <section class="rewards-queue">
+                                <div class="rewards-queue__head">
+                                    <div>
+                                        <div class="rewards-panel__title">Redemption queue</div>
+                                        <div class="rewards-panel__hint">Live join between the Twitch redemption and the client mapping</div>
+                                    </div>
+                                    <span class="badge" id="rewardQueueBadge">0 pending</span>
+                                </div>
+                                <div class="rewards-queue__body">
+                                    <table class="table">
+                                        <thead>
+                                            <tr>
+                                                <th>Time</th>
+                                                <th>User</th>
+                                                <th>Redemption</th>
+                                                <th>Twitch side</th>
+                                                <th>Client side</th>
+                                                <th>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="rewardQueueBody">
+                                            <tr><td colspan="6" class="rewards-muted">Select a reward to load its queue.</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </section>
+                        </section>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="/app/app.js"></script>
+</body>
+</html>
