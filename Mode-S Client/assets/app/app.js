@@ -1223,7 +1223,11 @@ function wireTwitchRewardsPage() {
         actionPriority: document.getElementById("actionPriority"),
         actionCooldownMs: document.getElementById("actionCooldownMs"),
         actionType: document.getElementById("actionType"),
-        actionNotes: document.getElementById("actionNotes")
+        actionNotes: document.getElementById("actionNotes"),
+
+        actionDeliveryMode: document.getElementById("actionDeliveryMode"),
+        actionClientHold: document.getElementById("actionClientHold"),
+        actionOverlaySurface: document.getElementById("actionOverlaySurface")
     };
 
     function setStatus(text) {
@@ -1242,11 +1246,25 @@ function wireTwitchRewardsPage() {
 
     function actionSummary(action) {
         if (!action || typeof action !== "object" || Array.isArray(action)) return "Not configured";
+
         const parts = [];
         if (action.overlay_enabled) parts.push("Overlay");
         if (action.sound_enabled) parts.push("Sound");
         if (action.chat_echo) parts.push("Chat");
-        return parts.length ? parts.join(" + ") : "Not configured";
+
+        const routing = [];
+        const deliveryMode = String(action.delivery_mode || "immediate").toLowerCase();
+        const overlaySurface = String(action.overlay_surface || "both").toLowerCase();
+
+        routing.push(deliveryMode === "manual" ? "Manual" : "Immediate");
+        if (action.client_hold) routing.push("Held");
+
+        if (overlaySurface === "landscape") routing.push("Landscape");
+        else if (overlaySurface === "portrait") routing.push("Portrait");
+        else routing.push("Both");
+
+        const left = parts.length ? parts.join(" + ") : "Not configured";
+        return `${left} • ${routing.join(" • ")}`;
     }
 
     function rewardOwnership(reward) {
@@ -1275,12 +1293,14 @@ function wireTwitchRewardsPage() {
             const enabled = reward?.is_enabled !== false;
             const paused = !!reward?.is_paused;
             const action = reward?.app_action || {};
+
             const chips = [
                 `<span class="rewards-chip ${ownership === "Managed" ? "rewards-chip--ok" : "rewards-chip--warn"}">${ownership}</span>`,
                 `<span class="rewards-chip ${enabled && !paused ? "rewards-chip--live" : ""}">${paused ? "Paused" : (enabled ? "Enabled" : "Disabled")}</span>`,
                 `<span class="rewards-chip">${reward?.should_redemptions_skip_request_queue ? "Auto queue" : "Manual queue"}</span>`,
                 `<span class="rewards-chip">${escapeHtml(actionSummary(action))}</span>`
             ].join("");
+
             return `
         <button type="button" class="rewards-item ${selected ? "is-selected" : ""}" data-reward-select="${escapeHtml(id)}">
           <div class="rewards-item__top">
@@ -1306,7 +1326,10 @@ function wireTwitchRewardsPage() {
             priority: 50,
             cooldown_ms: 15000,
             action_type: "none",
-            notes: ""
+            notes: "",
+            delivery_mode: "immediate",
+            client_hold: false,
+            overlay_surface: "both"
         };
     }
 
@@ -1360,6 +1383,10 @@ function wireTwitchRewardsPage() {
         els.actionCooldownMs.value = Number.isFinite(Number(action.cooldown_ms)) ? Number(action.cooldown_ms) : 15000;
         els.actionType.value = action.action_type || "none";
         els.actionNotes.value = action.notes || "";
+
+        if (els.actionDeliveryMode) els.actionDeliveryMode.value = action.delivery_mode || "immediate";
+        if (els.actionClientHold) els.actionClientHold.checked = !!action.client_hold;
+        if (els.actionOverlaySurface) els.actionOverlaySurface.value = action.overlay_surface || "both";
     }
 
     function updateLinkLayer(reward) {
@@ -1367,8 +1394,11 @@ function wireTwitchRewardsPage() {
         if (els.linkId) els.linkId.textContent = linkedId;
 
         if (els.linkTwitch) {
-            if (!reward) els.linkTwitch.textContent = "Select a reward to view Twitch-owned fields.";
-            else els.linkTwitch.textContent = `${reward?.title || "Untitled"} · ${formatRewardCost(reward?.cost)} · ${reward?.should_redemptions_skip_request_queue ? "Auto queue" : "Manual queue"}`;
+            if (!reward) {
+                els.linkTwitch.textContent = "Select a reward to view Twitch-owned fields.";
+            } else {
+                els.linkTwitch.textContent = `${reward?.title || "Untitled"} · ${formatRewardCost(reward?.cost)} · ${reward?.should_redemptions_skip_request_queue ? "Auto queue" : "Manual queue"}`;
+            }
         }
 
         if (els.linkClient) {
@@ -1402,7 +1432,7 @@ function wireTwitchRewardsPage() {
         }
 
         if (!state.pendingRedemptions.length) {
-            els.queueBody.innerHTML = '<tr><td colspan="6" class="rewards-muted">No unfulfilled redemptions for this reward.</td></tr>';
+            els.queueBody.innerHTML = '<tr><td colspan="6" class="rewards-muted">No pending local Channel Points events for this reward.</td></tr>';
             if (els.queueBadge) els.queueBadge.textContent = "0 pending";
             return;
         }
@@ -1410,29 +1440,29 @@ function wireTwitchRewardsPage() {
         if (els.queueBadge) els.queueBadge.textContent = `${state.pendingRedemptions.length} pending`;
 
         const reward = state.selectedReward;
-        const action = reward.app_action || {};
-        const twitchSide = `${formatRewardCost(reward.cost)} · ${reward.should_redemptions_skip_request_queue ? "Auto" : "Manual"} queue`;
-        const clientSide = actionSummary(action);
+        const clientSide = actionSummary(reward.app_action || {});
 
         els.queueBody.innerHTML = state.pendingRedemptions.map((item) => {
             const input = trim(item?.user_input || "");
             const redeemedAt = trim(item?.redeemed_at || "");
             const tsLabel = redeemedAt ? redeemedAt.replace("T", " ").replace("Z", " UTC") : "—";
-            const redemptionId = String(item?.id || "");
+            const redemptionId = String(item?.redemption_id || item?.id || "");
             const manageable = rewardOwnership(reward) === "Managed";
+
             return `
         <tr>
           <td>${escapeHtml(tsLabel)}</td>
-          <td>${escapeHtml(item?.user_name || item?.user_login || "—")}</td>
+          <td>${escapeHtml(item?.user || item?.user_name || item?.user_login || "—")}</td>
           <td>
-            <div>${escapeHtml(item?.reward?.title || reward.title || "—")}</div>
+            <div>${escapeHtml(item?.reward_title || reward.title || "—")}</div>
             ${input ? `<div class="rewards-queue__input">Input: ${escapeHtml(input)}</div>` : ""}
           </td>
-          <td>${escapeHtml(twitchSide)}</td>
+          <td>${escapeHtml(formatRewardCost(item?.cost || reward.cost))} · ${escapeHtml(String(item?.delivery_mode || reward?.app_action?.delivery_mode || "immediate"))}</td>
           <td>${escapeHtml(clientSide)}</td>
           <td>
             <div class="rewards-inline-actions">
-              <button class="btn btn--primary btn--small" data-redeem-action="FULFILLED" data-redemption-id="${escapeHtml(redemptionId)}" ${manageable ? "" : "disabled"}>Fulfil</button>
+              <button class="btn btn--primary btn--small" data-redeem-release="${escapeHtml(redemptionId)}">Release</button>
+              <button class="btn btn--ghost btn--small" data-redeem-action="FULFILLED" data-redemption-id="${escapeHtml(redemptionId)}" ${manageable ? "" : "disabled"}>Fulfil</button>
               <button class="btn btn--ghost btn--small" data-redeem-action="CANCELED" data-redemption-id="${escapeHtml(redemptionId)}" ${manageable ? "" : "disabled"}>Cancel</button>
             </div>
           </td>
@@ -1494,7 +1524,10 @@ function wireTwitchRewardsPage() {
             priority: safeNumber(els.actionPriority.value, 0),
             cooldown_ms: safeNumber(els.actionCooldownMs.value, 0),
             action_type: trim(els.actionType.value),
-            notes: els.actionNotes.value || ""
+            notes: els.actionNotes.value || "",
+            delivery_mode: trim(els.actionDeliveryMode?.value || "immediate") || "immediate",
+            client_hold: !!els.actionClientHold?.checked,
+            overlay_surface: trim(els.actionOverlaySurface?.value || "both") || "both"
         };
     }
 
@@ -1560,8 +1593,10 @@ function wireTwitchRewardsPage() {
         }
 
         try {
-            const payload = await apiGet(`/api/twitch/rewards/redemptions?reward_id=${encodeURIComponent(state.selectedReward.id)}&status=UNFULFILLED&first=20`);
-            state.pendingRedemptions = Array.isArray(payload?.data) ? payload.data : [];
+            const payload = await apiGet("/api/twitch/channelpoints/pending?limit=200");
+            const items = Array.isArray(payload?.events) ? payload.events : [];
+            const rewardId = String(state.selectedReward.id);
+            state.pendingRedemptions = items.filter((item) => String(item?.reward_id || "") === rewardId);
         } catch (e) {
             console.error(e);
             state.pendingRedemptions = [];
@@ -1572,6 +1607,7 @@ function wireTwitchRewardsPage() {
     async function saveRewardAndMaybeMapping(saveClientOnly) {
         const rewardPayload = buildRewardPayload();
         const actionPayload = buildActionPayload();
+
         if (!saveClientOnly && !trim(rewardPayload.title)) {
             setStatus("Reward title is required.");
             return;
@@ -1657,6 +1693,20 @@ function wireTwitchRewardsPage() {
         }
     }
 
+    async function releasePendingRedemption(redemptionId) {
+        if (!redemptionId) return;
+        try {
+            await apiPost("/api/twitch/channelpoints/release", {
+                redemption_id: redemptionId
+            });
+            setStatus("Pending redemption released to live overlay.");
+            await loadQueue();
+        } catch (e) {
+            console.error(e);
+            setStatus(`Release failed (${e.message})`);
+        }
+    }
+
     els.list?.addEventListener("click", (ev) => {
         const btn = ev.target.closest("[data-reward-select]");
         if (!btn) return;
@@ -1664,6 +1714,18 @@ function wireTwitchRewardsPage() {
     });
 
     els.queueBody?.addEventListener("click", async (ev) => {
+        const releaseBtn = ev.target.closest("[data-redeem-release]");
+        if (releaseBtn) {
+            const redemptionId = releaseBtn.getAttribute("data-redeem-release") || "";
+            setActionBusy(releaseBtn, true, "Releasing...");
+            try {
+                await releasePendingRedemption(redemptionId);
+            } finally {
+                setActionBusy(releaseBtn, false);
+            }
+            return;
+        }
+
         const btn = ev.target.closest("[data-redeem-action]");
         if (!btn) return;
         const redemptionId = btn.getAttribute("data-redemption-id") || "";

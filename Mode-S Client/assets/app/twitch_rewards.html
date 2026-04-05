@@ -187,6 +187,31 @@
                                             </div>
 
                                             <div class="rewards-field">
+                                                <label for="actionDeliveryMode">Delivery mode</label>
+                                                <select class="input" id="actionDeliveryMode">
+                                                    <option value="immediate">Immediate</option>
+                                                    <option value="manual">Manual</option>
+                                                </select>
+                                            </div>
+
+                                            <div class="rewards-field">
+                                                <label>Client hold</label>
+                                                <label class="rewards-toggle">
+                                                    <input id="actionClientHold" type="checkbox" />
+                                                    Hold locally until released
+                                                </label>
+                                            </div>
+
+                                            <div class="rewards-field">
+                                                <label for="actionOverlaySurface">Overlay surface</label>
+                                                <select class="input" id="actionOverlaySurface">
+                                                    <option value="both">Both</option>
+                                                    <option value="landscape">Landscape only</option>
+                                                    <option value="portrait">Portrait only</option>
+                                                </select>
+                                            </div>
+
+                                            <div class="rewards-field">
                                                 <label for="actionPriority">Priority</label>
                                                 <input class="input" id="actionPriority" type="number" min="0" step="1" />
                                             </div>
