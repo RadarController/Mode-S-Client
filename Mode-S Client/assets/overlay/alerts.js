@@ -130,6 +130,22 @@
         return String(p || '').toLowerCase();
     }
 
+    function isChannelPointsEvent(e) {
+    if (!e) return false;
+    const platform = normalizePlatform(e.platform);
+    const type = String(e.type || '').toLowerCase();
+
+    if (platform !== 'twitch') return false;
+
+    return (
+        type === 'channel.channel_points_custom_reward_redemption.add' ||
+        type === 'channel.channel_points_custom_reward_redemption.update' ||
+        type === 'channel.channel_points_custom_reward.add' ||
+        type === 'channel.channel_points_custom_reward.update' ||
+        type === 'channel.channel_points_custom_reward.remove'
+    );
+    }
+
     function eventKey(e) {
         if (!e) return '';
         if (e.id) return `id:${e.id}`;
@@ -457,6 +473,8 @@
     }
 
     function enqueue(rawEvent) {
+        if (isChannelPointsEvent(rawEvent)) return;
+
         const a = mapEvent(rawEvent);
         if (!a.user && !a.callsign) return;
 
