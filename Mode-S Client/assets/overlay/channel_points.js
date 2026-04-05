@@ -100,8 +100,16 @@
       ? e.app_action
       : {};
 
-    if (action.overlay_enabled === false) return false;
+    const overlayEnabled = action.overlay_enabled !== false;
+    const soundEnabled = !!action.sound_enabled;
 
+    // Ignore events that do absolutely nothing.
+    if (!overlayEnabled && !soundEnabled) return false;
+
+    // Sound-only rewards should still be processed even with no visual popup.
+    if (!overlayEnabled) return true;
+
+    // Visual rewards still respect the surface selector.
     const surface = String(action.overlay_surface || 'both').toLowerCase();
     if (!surface || surface === 'both') return true;
     return surface === currentSurface;
@@ -378,26 +386,41 @@
 
     playing = true;
     try {
+      const action = getAction(next);
+      const overlayEnabled = action.overlay_enabled !== false;
+
       render(next);
-      await applyMediaForEvent(next);
+
+      if (overlayEnabled) {
+        await applyMediaForEvent(next);
+      } else {
+        clearMedia();
+      }
+
       await playSoundForEvent(next);
 
-      card.hidden = false;
-      clearAnim();
-      card.classList.add('enter');
+      if (overlayEnabled) {
+        card.hidden = false;
+        clearAnim();
+        card.classList.add('enter');
 
-      await sleep(320);
-      card.classList.remove('enter');
-      card.classList.add('hold');
+        await sleep(320);
+        card.classList.remove('enter');
+        card.classList.add('hold');
 
-      await sleep(CONFIG.holdMs);
-      card.classList.remove('hold');
-      card.classList.add('exit');
+        await sleep(CONFIG.holdMs);
+        card.classList.remove('hold');
+        card.classList.add('exit');
 
-      await sleep(420);
-      card.classList.remove('exit');
-      clearMedia();
-      card.hidden = true;
+        await sleep(420);
+        card.classList.remove('exit');
+        clearMedia();
+        card.hidden = true;
+      } else {
+        clearMedia();
+        card.hidden = true;
+        await sleep(150);
+      }
 
       await sleep(CONFIG.gapMs);
     } catch (err) {
