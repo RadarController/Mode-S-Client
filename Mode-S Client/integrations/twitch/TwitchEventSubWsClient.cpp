@@ -1171,7 +1171,6 @@ void TwitchEventSubWsClient::HandleNotification(const void* payloadPtr)
                 evOut["bits"] = getInt(ev, "bits", 0);
             }
             else if (subType == "channel.raid") {
-                // Useful for overlays that want to render the raid size as a number.
                 evOut["viewers"] = getInt(ev, "viewers", 0);
             }
             else if (subType == "channel.subscription.message") {
@@ -1188,8 +1187,8 @@ void TwitchEventSubWsClient::HandleNotification(const void* payloadPtr)
                 evOut["resub_message"] = resubText;
             }
             else if (subType == "channel.channel_points_custom_reward.add" ||
-                     subType == "channel.channel_points_custom_reward.update" ||
-                     subType == "channel.channel_points_custom_reward.remove") {
+                subType == "channel.channel_points_custom_reward.update" ||
+                subType == "channel.channel_points_custom_reward.remove") {
                 evOut["reward_id"] = getStr(ev, "id");
                 evOut["reward_title"] = getStr(ev, "title");
                 evOut["cost"] = getInt(ev, "cost", 0);
@@ -1199,7 +1198,7 @@ void TwitchEventSubWsClient::HandleNotification(const void* payloadPtr)
                 evOut["is_in_stock"] = ev.value("is_in_stock", false);
             }
             else if (subType == "channel.channel_points_custom_reward_redemption.add" ||
-                     subType == "channel.channel_points_custom_reward_redemption.update") {
+                subType == "channel.channel_points_custom_reward_redemption.update") {
                 evOut["id"] = getStr(ev, "id");
                 evOut["redemption_id"] = getStr(ev, "id");
                 evOut["status"] = getStr(ev, "status");
