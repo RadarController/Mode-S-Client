@@ -1,6 +1,8 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+#include <winhttp.h>
+#pragma comment(lib, "winhttp.lib")
 
 #include "app/AppBootstrap.h"
 
@@ -13,6 +15,7 @@
 #include <unordered_map>
 
 #include "AppConfig.h"
+#include "json.hpp"
 #include "oauth/EmbeddedOAuthConfig.h"
 #include "AppState.h"
 #include "chat/ChatAggregator.h"
@@ -35,6 +38,299 @@
 
 namespace {
 
+struct HttpResult {
+    int status = 0;
+    DWORD winerr = 0;
+    std::string body;
+};
+
+struct WinHttpHandle {
+    HINTERNET h = nullptr;
+    WinHttpHandle() = default;
+    explicit WinHttpHandle(HINTERNET v) : h(v) {}
+    ~WinHttpHandle() { if (h) WinHttpCloseHandle(h); }
+    WinHttpHandle(const WinHttpHandle&) = delete;
+    WinHttpHandle& operator=(const WinHttpHandle&) = delete;
+    WinHttpHandle(WinHttpHandle&& o) noexcept : h(o.h) { o.h = nullptr; }
+    WinHttpHandle& operator=(WinHttpHandle&& o) noexcept {
+        if (this != &o) {
+            if (h) WinHttpCloseHandle(h);
+            h = o.h;
+            o.h = nullptr;
+        }
+        return *this;
+    }
+    bool valid() const { return h != nullptr; }
+    operator HINTERNET() const { return h; }
+};
+
+static HttpResult WinHttpRequestUtf8(const std::wstring& method,
+    const std::wstring& host,
+    INTERNET_PORT port,
+    const std::wstring& path,
+    const std::wstring& extraHeaders,
+    const std::string& body,
+    bool secure)
+{
+    HttpResult r;
+
+    WinHttpHandle hSession(WinHttpOpen(L"Mode-S Client/1.0",
+        WINHTTP_ACCESS_TYPE_NO_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
+    if (!hSession.valid()) { r.winerr = GetLastError(); return r; }
+
+    WinHttpSetTimeouts(hSession, 5000, 5000, 10000, 10000);
+
+    WinHttpHandle hConnect(WinHttpConnect(hSession, host.c_str(), port, 0));
+    if (!hConnect.valid()) { r.winerr = GetLastError(); return r; }
+
+    const DWORD flags = secure ? WINHTTP_FLAG_SECURE : 0;
+    WinHttpHandle hRequest(WinHttpOpenRequest(hConnect, method.c_str(), path.c_str(),
+        nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, flags));
+    if (!hRequest.valid()) { r.winerr = GetLastError(); return r; }
+
+    if (!extraHeaders.empty()) {
+        WinHttpAddRequestHeaders(hRequest, extraHeaders.c_str(), (ULONG)-1L, WINHTTP_ADDREQ_FLAG_ADD);
+    }
+
+    BOOL ok = WinHttpSendRequest(
+        hRequest,
+        WINHTTP_NO_ADDITIONAL_HEADERS, 0,
+        body.empty() ? WINHTTP_NO_REQUEST_DATA : (LPVOID)body.data(),
+        (DWORD)body.size(),
+        (DWORD)body.size(),
+        0);
+    if (!ok) { r.winerr = GetLastError(); return r; }
+
+    ok = WinHttpReceiveResponse(hRequest, nullptr);
+    if (!ok) { r.winerr = GetLastError(); return r; }
+
+    DWORD status = 0;
+    DWORD statusSize = sizeof(status);
+    if (WinHttpQueryHeaders(hRequest,
+        WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+        WINHTTP_HEADER_NAME_BY_INDEX, &status, &statusSize, WINHTTP_NO_HEADER_INDEX))
+    {
+        r.status = (int)status;
+    }
+
+    std::string out;
+    for (;;) {
+        DWORD avail = 0;
+        if (!WinHttpQueryDataAvailable(hRequest, &avail)) { r.winerr = GetLastError(); break; }
+        if (avail == 0) break;
+
+        const size_t cur = out.size();
+        out.resize(cur + (size_t)avail);
+
+        DWORD read = 0;
+        if (!WinHttpReadData(hRequest, out.data() + cur, avail, &read)) {
+            r.winerr = GetLastError();
+            break;
+        }
+        out.resize(cur + (size_t)read);
+    }
+
+    r.body = std::move(out);
+    return r;
+}
+
+static std::string SanitizeSingleLineReply(std::string s)
+{
+    s.erase(std::remove(s.begin(), s.end(), '\r'), s.end());
+    s.erase(std::remove(s.begin(), s.end(), '\n'), s.end());
+    if (s.size() > 180) s.resize(180);
+    return s;
+}
+
+static bool ContainsNoCase(const std::string& haystack, const std::string& needle)
+{
+    auto lower = [](std::string s) {
+        std::transform(s.begin(), s.end(), s.begin(),
+            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        return s;
+    };
+    return lower(haystack).find(lower(needle)) != std::string::npos;
+}
+
+static bool TryGetActiveYouTubeLiveChatId(const std::string& accessToken,
+    std::string& outLiveChatId,
+    std::string* outError)
+{
+    outLiveChatId.clear();
+    if (accessToken.empty()) {
+        if (outError) *outError = "YouTube access token missing";
+        return false;
+    }
+
+    const std::wstring headers =
+        L"Authorization: Bearer " + ToW(accessToken) + L"\r\n" +
+        L"Accept: application/json\r\n";
+
+    const HttpResult r = WinHttpRequestUtf8(
+        L"GET",
+        L"www.googleapis.com",
+        INTERNET_DEFAULT_HTTPS_PORT,
+        L"/youtube/v3/liveBroadcasts?part=snippet,status&mine=true&broadcastType=all&maxResults=25",
+        headers,
+        "",
+        true);
+
+    if (r.status != 200 || r.body.empty()) {
+        if (outError) {
+            *outError = "liveBroadcasts.list failed: HTTP " + std::to_string(r.status);
+            if (!r.body.empty()) *outError += " body=" + r.body;
+        }
+        return false;
+    }
+
+    try {
+        const auto j = nlohmann::json::parse(r.body, nullptr, false);
+        if (!j.is_object()) {
+            if (outError) *outError = "liveBroadcasts.list returned invalid JSON";
+            return false;
+        }
+
+        const auto items = j.value("items", nlohmann::json::array());
+
+        // Prefer genuinely live broadcasts first, then fall back to any owned broadcast
+        // that exposes a liveChatId.
+        for (const auto& item : items) {
+            const auto snippet = item.value("snippet", nlohmann::json::object());
+            const auto status = item.value("status", nlohmann::json::object());
+            const std::string lifeCycleStatus = status.value("lifeCycleStatus", std::string{});
+            const std::string liveChatId = snippet.value("liveChatId", std::string{});
+            if (!liveChatId.empty() && (lifeCycleStatus == "live" || lifeCycleStatus == "liveStarting" || lifeCycleStatus == "testing" || lifeCycleStatus == "testStarting")) {
+                outLiveChatId = liveChatId;
+                return true;
+            }
+        }
+
+        for (const auto& item : items) {
+            const auto snippet = item.value("snippet", nlohmann::json::object());
+            const std::string liveChatId = snippet.value("liveChatId", std::string{});
+            if (!liveChatId.empty()) {
+                outLiveChatId = liveChatId;
+                return true;
+            }
+        }
+
+        if (outError) *outError = "No owned YouTube broadcast with a live chat was found";
+        return false;
+    }
+    catch (...) {
+        if (outError) *outError = "Failed to parse liveBroadcasts.list response";
+        return false;
+    }
+}
+
+static bool TryPostYouTubeLiveChatMessage(const std::string& accessToken,
+    const std::string& liveChatId,
+    const std::string& text,
+    std::string* outError)
+{
+    if (accessToken.empty()) {
+        if (outError) *outError = "YouTube access token missing";
+        return false;
+    }
+    if (liveChatId.empty()) {
+        if (outError) *outError = "YouTube liveChatId missing";
+        return false;
+    }
+
+    nlohmann::json body = {
+        {"snippet", {
+            {"liveChatId", liveChatId},
+            {"type", "textMessageEvent"},
+            {"textMessageDetails", {
+                {"messageText", SanitizeSingleLineReply(text)}
+            }}
+        }}
+    };
+
+    const std::wstring headers =
+        L"Authorization: Bearer " + ToW(accessToken) + L"\r\n" +
+        L"Content-Type: application/json\r\n" +
+        L"Accept: application/json\r\n";
+
+    const HttpResult r = WinHttpRequestUtf8(
+        L"POST",
+        L"www.googleapis.com",
+        INTERNET_DEFAULT_HTTPS_PORT,
+        L"/youtube/v3/liveChat/messages?part=snippet",
+        headers,
+        body.dump(),
+        true);
+
+    if (r.status == 200) {
+        return true;
+    }
+
+    if (outError) {
+        *outError = "liveChatMessages.insert failed: HTTP " + std::to_string(r.status);
+        if (!r.body.empty()) *outError += " body=" + r.body;
+    }
+    return false;
+}
+
+static bool TrySendYouTubeReply(YouTubeAuth& youtubeAuth,
+    const std::string& text,
+    std::string* outError)
+{
+    static std::mutex cacheMu;
+    static std::string cachedLiveChatId;
+    static long long cachedAtMs = 0;
+
+    const auto tokenOpt = youtubeAuth.GetAccessToken();
+    if (!tokenOpt.has_value() || tokenOpt->empty()) {
+        if (outError) *outError = "YouTube OAuth token unavailable";
+        return false;
+    }
+
+    const long long nowMs = static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count());
+
+    std::string liveChatId;
+    {
+        std::lock_guard<std::mutex> lk(cacheMu);
+        if (!cachedLiveChatId.empty() && (nowMs - cachedAtMs) < 60000) {
+            liveChatId = cachedLiveChatId;
+        }
+    }
+
+    if (liveChatId.empty()) {
+        std::string resolveError;
+        if (!TryGetActiveYouTubeLiveChatId(*tokenOpt, liveChatId, &resolveError)) {
+            if (outError) *outError = resolveError;
+            return false;
+        }
+        std::lock_guard<std::mutex> lk(cacheMu);
+        cachedLiveChatId = liveChatId;
+        cachedAtMs = nowMs;
+    }
+
+    std::string sendError;
+    if (TryPostYouTubeLiveChatMessage(*tokenOpt, liveChatId, text, &sendError)) {
+        return true;
+    }
+
+    if (ContainsNoCase(sendError, "liveChatEnded") ||
+        ContainsNoCase(sendError, "liveChatNotFound") ||
+        ContainsNoCase(sendError, "No active YouTube live chat found")) {
+        std::string refreshedLiveChatId;
+        std::string resolveError;
+        if (TryGetActiveYouTubeLiveChatId(*tokenOpt, refreshedLiveChatId, &resolveError) &&
+            TryPostYouTubeLiveChatMessage(*tokenOpt, refreshedLiveChatId, text, &sendError)) {
+            std::lock_guard<std::mutex> lk(cacheMu);
+            cachedLiveChatId = refreshedLiveChatId;
+            cachedAtMs = nowMs;
+            return true;
+        }
+    }
+
+    if (outError) *outError = sendError;
+    return false;
+}
+
 std::wstring GetExeDir()
 {
     wchar_t path[MAX_PATH];
@@ -54,7 +350,8 @@ void SubscribeBotCommandHandler(AppBootstrap::Dependencies& deps)
         pChat = &deps.chat,
         pState = &deps.state,
         pTwitch = &deps.twitch,
-        pTikTok = &deps.tiktok
+        pTikTok = &deps.tiktok,
+        pYouTubeAuth = &deps.youtubeAuth
     ](const ChatMessage& m) {
         if (m.user == "StreamingATC.Bot") return;
         if (m.message.size() < 2 || m.message[0] != '!') return;
@@ -153,6 +450,12 @@ void SubscribeBotCommandHandler(AppBootstrap::Dependencies& deps)
         if (platform_lc == "tiktok" && pTikTok) {
             if (!pTikTok->send_chat(reply)) {
                 LogLine(L"BOT: TikTok send failed (sidecar)");
+            }
+        }
+        if (platform_lc == "youtube" && pYouTubeAuth) {
+            std::string err;
+            if (!TrySendYouTubeReply(*pYouTubeAuth, reply, &err)) {
+                LogLine(ToW(std::string("BOT: YouTube send failed: ") + err));
             }
         }
     });

@@ -269,7 +269,14 @@ namespace PlatformControl {
         bool ok = tiktok.start(L"python", sidecarPath, [log, &state, &chat](const json& j) {
             std::string type = j.value("type", "");
             std::string msg = j.value("message", "");
-            if (type.rfind("tiktok.", 0) == 0 && log) {
+            if (type == "tiktok.send_result" && log) {
+                const bool ok = j.value("ok", false);
+                const std::string text = j.value("text", "");
+                std::string extra = ok ? " | send_chat OK" : " | send_chat FAILED";
+                if (!text.empty()) extra += " | " + text;
+                log(ToW("TIKTOK: " + type + extra));
+            }
+            else if (type.rfind("tiktok.", 0) == 0 && log) {
                 std::string extra;
                 if (!msg.empty()) extra = " | " + msg;
                 log(ToW("TIKTOK: " + type + extra));
