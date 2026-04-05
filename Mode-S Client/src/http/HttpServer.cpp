@@ -1953,6 +1953,11 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
                     res.set_content(json{{"ok", false}, {"error", err}}.dump(2), "application/json; charset=utf-8");
                     return;
                 }
+                if (status == "FULFILLED") {
+                    nlohmann::json moved;
+                    std::string release_err;
+                    (void)state_.release_twitch_channel_points_pending(id, &moved, &release_err);
+                }
                 out["ok"] = true;
                 res.status = 200;
                 res.set_content(out.dump(2), "application/json; charset=utf-8");
@@ -2010,6 +2015,72 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
                 res.set_content(R"({"ok":false,"error":"invalid_json"})", "application/json; charset=utf-8");
             }
         });
+
+        svr.Get("/api/twitch/channelpoints/live", [&](const httplib::Request& req, httplib::Response& res) {
+            if (!require_local(req, res)) return;
+            int limit = 50;
+            if (req.has_param("limit")) {
+                try { limit = std::stoi(req.get_param_value("limit")); }
+                catch (...) {}
+            }
+            auto j = state_.twitch_channel_points_live_json(limit);
+            res.status = 200;
+            res.set_content(j.dump(2), "application/json; charset=utf-8");
+            });
+
+        svr.Get("/api/twitch/channelpoints/pending", [&](const httplib::Request& req, httplib::Response& res) {
+            if (!require_local(req, res)) return;
+            int limit = 200;
+            if (req.has_param("limit")) {
+                try { limit = std::stoi(req.get_param_value("limit")); }
+                catch (...) {}
+            }
+            auto j = state_.twitch_channel_points_pending_json(limit);
+            res.status = 200;
+            res.set_content(j.dump(2), "application/json; charset=utf-8");
+            });
+
+        svr.Get("/api/twitch/channelpoints/history", [&](const httplib::Request& req, httplib::Response& res) {
+            if (!require_local(req, res)) return;
+            int limit = 200;
+            if (req.has_param("limit")) {
+                try { limit = std::stoi(req.get_param_value("limit")); }
+                catch (...) {}
+            }
+            auto j = state_.twitch_channel_points_history_json(limit);
+            res.status = 200;
+            res.set_content(j.dump(2), "application/json; charset=utf-8");
+            });
+
+        svr.Post("/api/twitch/channelpoints/release", [&](const httplib::Request& req, httplib::Response& res) {
+            if (!require_local(req, res)) return;
+            try {
+                auto body = json::parse(req.body.empty() ? "{}" : req.body);
+                const std::string redemption_id = body.value("redemption_id", std::string{});
+
+                json moved;
+                std::string err;
+                if (!state_.release_twitch_channel_points_pending(redemption_id, &moved, &err)) {
+                    res.status = 400;
+                    res.set_content(json{
+                        {"ok", false},
+                        {"error", err}
+                        }.dump(2), "application/json; charset=utf-8");
+                    return;
+                }
+
+                res.status = 200;
+                res.set_content(json{
+                    {"ok", true},
+                    {"released", true},
+                    {"event", moved}
+                    }.dump(2), "application/json; charset=utf-8");
+            }
+            catch (...) {
+                res.status = 400;
+                res.set_content(R"({"ok":false,"error":"invalid_json"})", "application/json; charset=utf-8");
+            }
+            });
 
         // --- API: settings (read) ---
         // General app settings only. Do not expose secrets/cookies here.

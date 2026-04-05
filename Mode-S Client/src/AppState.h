@@ -211,7 +211,6 @@ public:
     nlohmann::json overlay_header_json() const;
     OverlayHeader overlay_header_snapshot() const;
 
-
     // -----------------------------------------------------------------
     // Twitch Stream Info draft (used by /app/twitch_stream.html)
     // Persists to config.json under key: twitch_streaminfo
@@ -233,11 +232,21 @@ public:
     bool set_twitch_reward_action(const std::string& reward_id, const nlohmann::json& action_obj, std::string* err = nullptr);
     bool delete_twitch_reward_action(const std::string& reward_id);
 
+    // Twitch Channel Points runtime queues (separate from generic EventSub diagnostics).
+    nlohmann::json twitch_channel_points_live_json(int limit = 200) const;
+    nlohmann::json twitch_channel_points_pending_json(int limit = 200) const;
+    nlohmann::json twitch_channel_points_history_json(int limit = 200) const;
+    bool release_twitch_channel_points_pending(const std::string& redemption_id, nlohmann::json* released = nullptr, std::string* err = nullptr);
+
 private:
     void load_twitch_stream_draft_from_config_unlocked();
     void save_twitch_stream_draft_to_config_unlocked();
     void load_twitch_reward_actions_from_config_unlocked();
     void save_twitch_reward_actions_to_config_unlocked();
+    void route_twitch_channel_points_event_unlocked(const nlohmann::json& ev);
+    void push_twitch_channel_points_live_unlocked(const nlohmann::json& ev);
+    void upsert_twitch_channel_points_pending_unlocked(const nlohmann::json& ev);
+    bool remove_twitch_channel_points_pending_unlocked(const std::string& redemption_id, nlohmann::json* removed = nullptr);
 
     void load_metrics_cache_from_config_unlocked();
     void save_metrics_cache_to_config_unlocked();
@@ -269,6 +278,11 @@ private:
     // Twitch reward action metadata (loaded lazily from config.json)
     bool twitch_reward_actions_loaded_ = false;
     nlohmann::json twitch_reward_actions_ = nlohmann::json::object();
+
+    std::deque<nlohmann::json> twitch_channel_points_live_;
+    std::deque<nlohmann::json> twitch_channel_points_pending_;
+    std::deque<nlohmann::json> twitch_channel_points_history_;
+    static constexpr std::size_t kTwitchChannelPointsQueueMax_ = 500;
 
     // Metrics cache (loaded lazily from config.json under key: metrics_cache)
     bool metrics_cache_loaded_ = false;

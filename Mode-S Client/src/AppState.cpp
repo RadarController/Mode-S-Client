@@ -11,6 +11,66 @@ static std::string ToLower(std::string s) {
     return s;
 }
 
+static bool JsonBoolLooseField(const nlohmann::json& obj, const char* key, bool fallback) {
+    if (!obj.is_object() || !obj.contains(key)) return fallback;
+    const auto& v = obj.at(key);
+    if (v.is_boolean()) return v.get<bool>();
+    if (v.is_number_integer()) return v.get<long long>() != 0;
+    if (v.is_string()) {
+        std::string s = ToLower(v.get<std::string>());
+        if (s == "1" || s == "true" || s == "yes" || s == "on") return true;
+        if (s == "0" || s == "false" || s == "no" || s == "off") return false;
+    }
+    return fallback;
+}
+
+static std::string JsonStringField(const nlohmann::json& obj, const char* key, const std::string& fallback = {}) {
+    if (!obj.is_object() || !obj.contains(key)) return fallback;
+    const auto& v = obj.at(key);
+    if (v.is_string()) return v.get<std::string>();
+    return fallback;
+}
+
+static std::string ChannelPointsRedemptionId(const nlohmann::json& j) {
+    std::string id = JsonStringField(j, "redemption_id");
+    if (id.empty()) id = JsonStringField(j, "id");
+    return id;
+}
+
+static void EraseChannelPointsByRedemptionId(std::deque<nlohmann::json>& q, const std::string& redemption_id) {
+    if (redemption_id.empty()) return;
+    q.erase(
+        std::remove_if(q.begin(), q.end(), [&](const nlohmann::json& item) {
+            return ChannelPointsRedemptionId(item) == redemption_id;
+            }),
+        q.end());
+}
+
+static nlohmann::json TakeChannelPointsByRedemptionId(std::deque<nlohmann::json>& q, const std::string& redemption_id) {
+    if (redemption_id.empty()) return nlohmann::json();
+    for (auto it = q.begin(); it != q.end(); ++it) {
+        if (ChannelPointsRedemptionId(*it) == redemption_id) {
+            nlohmann::json out = *it;
+            q.erase(it);
+            return out;
+        }
+    }
+    return nlohmann::json();
+}
+
+static void PushBoundedJson(std::deque<nlohmann::json>& q, const nlohmann::json& item, std::size_t max_items) {
+    q.push_back(item);
+    while (q.size() > max_items) q.pop_front();
+}
+
+static void UpsertChannelPointsByRedemptionId(std::deque<nlohmann::json>& q, const nlohmann::json& item, std::size_t max_items) {
+    const std::string redemption_id = ChannelPointsRedemptionId(item);
+    if (!redemption_id.empty()) {
+        EraseChannelPointsByRedemptionId(q, redemption_id);
+    }
+    PushBoundedJson(q, item, max_items);
+}
+
 std::int64_t AppState::now_ms() {
     using namespace std::chrono;
     return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
@@ -443,12 +503,142 @@ void AppState::add_twitch_eventsub_event(const nlohmann::json& ev) {
     }
 
     std::lock_guard<std::mutex> lk(mtx_);
+
     twitch_eventsub_events_.push_back(ev);
     if (request_subscriber_refresh) {
         twitch_subscriber_refresh_requested_ = true;
     }
-    // Keep small
     while (twitch_eventsub_events_.size() > 200) twitch_eventsub_events_.pop_front();
+
+    const std::string type_lc = ToLower(ev.value("type", std::string{}));
+    const bool is_cp_add =
+        (type_lc == "channel.channel_points_custom_reward_redemption.add");
+    const bool is_cp_update =
+        (type_lc == "channel.channel_points_custom_reward_redemption.update");
+
+    if (!is_cp_add && !is_cp_update) {
+        return;
+    }
+
+    nlohmann::json cp = ev.is_object() ? ev : nlohmann::json::object();
+    cp["platform"] = "twitch";
+    cp["channel_points"] = true;
+
+    if (!cp.contains("ts_ms") || !cp["ts_ms"].is_number_integer()) {
+        cp["ts_ms"] = now_ms();
+    }
+
+    const std::string reward_id = cp.value("reward_id", std::string{});
+    std::string redemption_id = cp.value("redemption_id", std::string{});
+    if (redemption_id.empty()) redemption_id = cp.value("id", std::string{});
+    if (!redemption_id.empty()) {
+        cp["redemption_id"] = redemption_id;
+        cp["id"] = redemption_id;
+    }
+
+    if (!cp.contains("reward_title")) cp["reward_title"] = "";
+    if (!cp.contains("user")) cp["user"] = "";
+    if (!cp.contains("message")) cp["message"] = "";
+
+    // Load local reward action metadata if available in this working copy.
+    nlohmann::json action = nlohmann::json::object();
+    try {
+        load_twitch_reward_actions_from_config_unlocked();
+        if (twitch_reward_actions_.is_object() &&
+            !reward_id.empty() &&
+            twitch_reward_actions_.contains(reward_id) &&
+            twitch_reward_actions_[reward_id].is_object()) {
+            action = twitch_reward_actions_[reward_id];
+        }
+    }
+    catch (...) {
+        action = nlohmann::json::object();
+    }
+
+    std::string delivery_mode = ToLower(JsonStringField(action, "delivery_mode", "immediate"));
+    if (delivery_mode != "manual") delivery_mode = "immediate";
+    const bool client_hold = JsonBoolLooseField(action, "client_hold", false);
+
+    cp["app_action"] = action;
+    cp["delivery_mode"] = delivery_mode;
+    cp["client_hold"] = client_hold;
+
+    std::string status = ToLower(cp.value("status", std::string{}));
+    if (status.empty() && is_cp_add) status = "unfulfilled";
+    cp["status"] = status;
+
+    if (is_cp_add) {
+        if (delivery_mode == "manual" || client_hold) {
+            cp["queue_state"] = "pending";
+            UpsertChannelPointsByRedemptionId(
+                twitch_channel_points_pending_,
+                cp,
+                kTwitchChannelPointsQueueMax_);
+        }
+        else {
+            cp["queue_state"] = "live";
+            UpsertChannelPointsByRedemptionId(
+                twitch_channel_points_live_,
+                cp,
+                kTwitchChannelPointsQueueMax_);
+
+            nlohmann::json hist = cp;
+            hist["queue_state"] = "history";
+            hist["history_ts_ms"] = now_ms();
+            UpsertChannelPointsByRedemptionId(
+                twitch_channel_points_history_,
+                hist,
+                kTwitchChannelPointsQueueMax_);
+        }
+        return;
+    }
+
+    // Update flow
+    if (status == "fulfilled") {
+        const nlohmann::json pending = TakeChannelPointsByRedemptionId(
+            twitch_channel_points_pending_, redemption_id);
+
+        const bool was_pending = pending.is_object();
+        if (was_pending || delivery_mode == "manual" || client_hold) {
+            nlohmann::json live_item = was_pending ? pending : cp;
+            live_item["status"] = "fulfilled";
+            live_item["queue_state"] = "live";
+            live_item["app_action"] = action;
+            live_item["delivery_mode"] = delivery_mode;
+            live_item["client_hold"] = client_hold;
+
+            UpsertChannelPointsByRedemptionId(
+                twitch_channel_points_live_,
+                live_item,
+                kTwitchChannelPointsQueueMax_);
+
+            nlohmann::json hist = live_item;
+            hist["queue_state"] = "history";
+            hist["history_ts_ms"] = now_ms();
+            UpsertChannelPointsByRedemptionId(
+                twitch_channel_points_history_,
+                hist,
+                kTwitchChannelPointsQueueMax_);
+        }
+        else {
+            // Immediate-mode redemption already fired on the initial add event.
+            EraseChannelPointsByRedemptionId(twitch_channel_points_pending_, redemption_id);
+        }
+        return;
+    }
+
+    if (status == "canceled" || status == "cancelled") {
+        EraseChannelPointsByRedemptionId(twitch_channel_points_pending_, redemption_id);
+        return;
+    }
+
+    if (status == "unfulfilled" && (delivery_mode == "manual" || client_hold)) {
+        cp["queue_state"] = "pending";
+        UpsertChannelPointsByRedemptionId(
+            twitch_channel_points_pending_,
+            cp,
+            kTwitchChannelPointsQueueMax_);
+    }
 }
 
 void AppState::request_twitch_subscriber_refresh() {
@@ -517,6 +707,98 @@ nlohmann::json AppState::twitch_eventsub_errors_json(int limit) const {
     }
     out["errors"] = std::move(arr);
     return out;
+}
+
+nlohmann::json AppState::twitch_channel_points_live_json(int limit) const {
+    std::lock_guard<std::mutex> lk(mtx_);
+    limit = std::max(1, std::min(limit, 1000));
+
+    nlohmann::json out;
+    out["ok"] = true;
+    out["count"] = (int)twitch_channel_points_live_.size();
+    out["events"] = nlohmann::json::array();
+
+    int start = (int)twitch_channel_points_live_.size() - limit;
+    if (start < 0) start = 0;
+    for (int i = start; i < (int)twitch_channel_points_live_.size(); ++i) {
+        out["events"].push_back(twitch_channel_points_live_[i]);
+    }
+    return out;
+}
+
+nlohmann::json AppState::twitch_channel_points_pending_json(int limit) const {
+    std::lock_guard<std::mutex> lk(mtx_);
+    limit = std::max(1, std::min(limit, 1000));
+
+    nlohmann::json out;
+    out["ok"] = true;
+    out["count"] = (int)twitch_channel_points_pending_.size();
+    out["events"] = nlohmann::json::array();
+
+    int start = (int)twitch_channel_points_pending_.size() - limit;
+    if (start < 0) start = 0;
+    for (int i = start; i < (int)twitch_channel_points_pending_.size(); ++i) {
+        out["events"].push_back(twitch_channel_points_pending_[i]);
+    }
+    return out;
+}
+
+nlohmann::json AppState::twitch_channel_points_history_json(int limit) const {
+    std::lock_guard<std::mutex> lk(mtx_);
+    limit = std::max(1, std::min(limit, 1000));
+
+    nlohmann::json out;
+    out["ok"] = true;
+    out["count"] = (int)twitch_channel_points_history_.size();
+    out["events"] = nlohmann::json::array();
+
+    int start = (int)twitch_channel_points_history_.size() - limit;
+    if (start < 0) start = 0;
+    for (int i = start; i < (int)twitch_channel_points_history_.size(); ++i) {
+        out["events"].push_back(twitch_channel_points_history_[i]);
+    }
+    return out;
+}
+
+bool AppState::release_twitch_channel_points_pending(
+    const std::string& redemption_id,
+    nlohmann::json* moved,
+    std::string* err)
+{
+    if (redemption_id.empty()) {
+        if (err) *err = "missing_redemption_id";
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lk(mtx_);
+
+    nlohmann::json item = TakeChannelPointsByRedemptionId(
+        twitch_channel_points_pending_, redemption_id);
+
+    if (!item.is_object()) {
+        if (err) *err = "not_found";
+        return false;
+    }
+
+    item["queue_state"] = "live";
+    item["released_by_client"] = true;
+    item["released_ts_ms"] = now_ms();
+
+    UpsertChannelPointsByRedemptionId(
+        twitch_channel_points_live_,
+        item,
+        kTwitchChannelPointsQueueMax_);
+
+    nlohmann::json hist = item;
+    hist["queue_state"] = "history";
+    hist["history_ts_ms"] = now_ms();
+    UpsertChannelPointsByRedemptionId(
+        twitch_channel_points_history_,
+        hist,
+        kTwitchChannelPointsQueueMax_);
+
+    if (moved) *moved = item;
+    return true;
 }
 
 void AppState::push_tiktok_event(const EventItem& e) {
