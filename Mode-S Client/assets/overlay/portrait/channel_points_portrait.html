@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Channel Points Overlay Portrait</title>
+  <style>
+    :root {
+      --font-stack: {{FONT_STACK}};
+      --shadow-style: {{TEXT_SHADOW_STYLE}};
+    }
+  </style>
+  <link rel="stylesheet" href="/overlay/portrait/channel_points_portrait.css" />
+</head>
+<body>
+  <div id="stage" aria-live="polite" aria-atomic="true">
+    <div id="centerWrap">
+      <div id="card" class="cp-card" hidden>
+        <div class="cp-card__bg"></div>
+        <div class="cp-card__glow"></div>
+
+        <div class="cp-logoShell" aria-hidden="true">
+          <div class="cp-logoRing"></div>
+          <img class="cp-logo" src="/assets/icons/RClogo.svg" alt="" />
+        </div>
+
+        <div class="cp-copy">
+          <div class="cp-kicker" id="platformLabel">TWITCH CHANNEL POINTS</div>
+          <div class="cp-title" id="rewardTitle">Reward Title</div>
+          <div class="cp-redeemer" id="redeemer">Redeemed by RadarController</div>
+          <div class="cp-input" id="userInputRow" hidden>
+            <div class="cp-input__label">Viewer input</div>
+            <div class="cp-input__text" id="userInput">What runway is active?</div>
+          </div>
+          <div class="cp-meta">
+            <div class="cp-badge" id="costBadge">1 point</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="debug">CHANNEL POINTS • <span id="debugText">init</span></div>
+
+  <script src="/overlay/channel_points.js"></script>
+</body>
+</html>
