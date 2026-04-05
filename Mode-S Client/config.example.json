@@ -1,17 +1,29 @@
 {
-  "overlay_font_family": "",
-  "overlay_font_size": ,
-  "overlay_text_shadow": ,
-  "tiktok_sessionid": "",
-  "tiktok_sessionid_ss": "",
-  "tiktok_tt_target_idc": "",
-  "tiktok_unique_id": "",
-  "twitch": {
-    "user_access_token": "",
-    "user_refresh_token": ""
+  "metrics_cache": {
+    "tiktok_followers": 0,
+    "ts_ms": 1775060734792,
+    "twitch_followers": 0,
+    "youtube_followers": 0
   },
-  "twitch_client_id": "",
-  "twitch_client_secret": "",
-  "twitch_login": "",
-  "youtube_handle": ""
+  "overlay_font_family": "Inter",
+  "overlay_font_size": 22,
+  "overlay_text_shadow": true,
+  "tiktok_sessionid": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "tiktok_sessionid_ss": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "tiktok_tt_target_idc": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "tiktok_unique_id": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "twitch": {
+    "user_access_token": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "user_refresh_token": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  "twitch_login": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "youtube": {
+    "access_token": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "channel_id": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "expires_at_unix": 1775067566,
+    "refresh_token": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "scope": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "token_type": "Bearer"
+  },
+  "youtube_handle": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 }

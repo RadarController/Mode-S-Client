@@ -1818,6 +1818,199 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
             return false;
             };
 
+
+        // --- API: Twitch custom rewards and local reward actions (local only) ---
+        svr.Get("/api/twitch/rewards", [&](const httplib::Request& req, httplib::Response& res) {
+            if (!require_local(req, res)) return;
+
+            const bool only_manageable =
+                (req.has_param("only_manageable") && (req.get_param_value("only_manageable") == "1" || req.get_param_value("only_manageable") == "true")) ||
+                (req.has_param("manageable") && (req.get_param_value("manageable") == "1" || req.get_param_value("manageable") == "true"));
+
+            json rewards;
+            std::string err;
+            if (!TwitchHelixGetCustomRewards(config_, only_manageable, &rewards, &err)) {
+                TwitchHttpLog(log_, L"Get rewards failed: " + ToW(err));
+                res.status = 500;
+                res.set_content(json{{"ok", false}, {"error", err}}.dump(2), "application/json; charset=utf-8");
+                return;
+            }
+
+            json actions = state_.twitch_reward_actions_json();
+            json action_map = actions.value("actions", json::object());
+            if (rewards.contains("data") && rewards["data"].is_array()) {
+                for (auto& item : rewards["data"]) {
+                    const std::string id = item.value("id", std::string{});
+                    if (!id.empty() && action_map.contains(id)) item["app_action"] = action_map[id];
+                    else item["app_action"] = json::object();
+                }
+            }
+            rewards["ok"] = true;
+            rewards["only_manageable_rewards"] = only_manageable;
+            res.status = 200;
+            res.set_content(rewards.dump(2), "application/json; charset=utf-8");
+        });
+
+        svr.Post("/api/twitch/rewards", [&](const httplib::Request& req, httplib::Response& res) {
+            if (!require_local(req, res)) return;
+            try {
+                auto body = json::parse(req.body.empty() ? "{}" : req.body);
+                json out;
+                std::string err;
+                if (!TwitchHelixCreateCustomReward(config_, body, &out, &err)) {
+                    TwitchHttpLog(log_, L"Create reward failed: " + ToW(err));
+                    res.status = 400;
+                    res.set_content(json{{"ok", false}, {"error", err}}.dump(2), "application/json; charset=utf-8");
+                    return;
+                }
+                out["ok"] = true;
+                res.status = 200;
+                res.set_content(out.dump(2), "application/json; charset=utf-8");
+            } catch (...) {
+                res.status = 400;
+                res.set_content(R"({"ok":false,"error":"invalid_json"})", "application/json; charset=utf-8");
+            }
+        });
+
+        svr.Post("/api/twitch/rewards/update", [&](const httplib::Request& req, httplib::Response& res) {
+            if (!require_local(req, res)) return;
+            try {
+                auto body = json::parse(req.body.empty() ? "{}" : req.body);
+                const std::string id = body.value("id", std::string{});
+                json out;
+                std::string err;
+                if (!TwitchHelixUpdateCustomReward(config_, id, body, &out, &err)) {
+                    TwitchHttpLog(log_, L"Update reward failed: " + ToW(err));
+                    res.status = 400;
+                    res.set_content(json{{"ok", false}, {"error", err}}.dump(2), "application/json; charset=utf-8");
+                    return;
+                }
+                out["ok"] = true;
+                res.status = 200;
+                res.set_content(out.dump(2), "application/json; charset=utf-8");
+            } catch (...) {
+                res.status = 400;
+                res.set_content(R"({"ok":false,"error":"invalid_json"})", "application/json; charset=utf-8");
+            }
+        });
+
+        svr.Post("/api/twitch/rewards/delete", [&](const httplib::Request& req, httplib::Response& res) {
+            if (!require_local(req, res)) return;
+            try {
+                auto body = json::parse(req.body.empty() ? "{}" : req.body);
+                const std::string id = body.value("id", std::string{});
+                std::string err;
+                if (!TwitchHelixDeleteCustomReward(config_, id, &err)) {
+                    TwitchHttpLog(log_, L"Delete reward failed: " + ToW(err));
+                    res.status = 400;
+                    res.set_content(json{{"ok", false}, {"error", err}}.dump(2), "application/json; charset=utf-8");
+                    return;
+                }
+                // Clean up any local app-side mapping if the reward is removed from Twitch.
+                (void)state_.delete_twitch_reward_action(id);
+                res.status = 200;
+                res.set_content(json{{"ok", true}, {"id", id}}.dump(2), "application/json; charset=utf-8");
+            } catch (...) {
+                res.status = 400;
+                res.set_content(R"({"ok":false,"error":"invalid_json"})", "application/json; charset=utf-8");
+            }
+        });
+
+        svr.Get("/api/twitch/rewards/redemptions", [&](const httplib::Request& req, httplib::Response& res) {
+            if (!require_local(req, res)) return;
+            const std::string reward_id = req.has_param("reward_id") ? req.get_param_value("reward_id") : std::string{};
+            const std::string status = req.has_param("status") ? req.get_param_value("status") : std::string("UNFULFILLED");
+            int first = 20;
+            if (req.has_param("first")) {
+                try { first = std::stoi(req.get_param_value("first")); } catch (...) {}
+            }
+
+            json out;
+            std::string err;
+            if (!TwitchHelixGetCustomRewardRedemptions(config_, reward_id, status, first, &out, &err)) {
+                TwitchHttpLog(log_, L"Get reward redemptions failed: " + ToW(err));
+                res.status = 400;
+                res.set_content(json{{"ok", false}, {"error", err}}.dump(2), "application/json; charset=utf-8");
+                return;
+            }
+            out["ok"] = true;
+            res.status = 200;
+            res.set_content(out.dump(2), "application/json; charset=utf-8");
+        });
+
+        svr.Post("/api/twitch/redemptions/update", [&](const httplib::Request& req, httplib::Response& res) {
+            if (!require_local(req, res)) return;
+            try {
+                auto body = json::parse(req.body.empty() ? "{}" : req.body);
+                const std::string reward_id = body.value("reward_id", std::string{});
+                const std::string id = body.value("id", std::string{});
+                const std::string status = body.value("status", std::string{});
+                json out;
+                std::string err;
+                if (!TwitchHelixUpdateRedemptionStatus(config_, reward_id, id, status, &out, &err)) {
+                    TwitchHttpLog(log_, L"Update redemption status failed: " + ToW(err));
+                    res.status = 400;
+                    res.set_content(json{{"ok", false}, {"error", err}}.dump(2), "application/json; charset=utf-8");
+                    return;
+                }
+                out["ok"] = true;
+                res.status = 200;
+                res.set_content(out.dump(2), "application/json; charset=utf-8");
+            } catch (...) {
+                res.status = 400;
+                res.set_content(R"({"ok":false,"error":"invalid_json"})", "application/json; charset=utf-8");
+            }
+        });
+
+        svr.Get("/api/twitch/reward-actions", [&](const httplib::Request& req, httplib::Response& res) {
+            if (!require_local(req, res)) return;
+            if (req.has_param("reward_id")) {
+                auto j = state_.twitch_reward_action_json(req.get_param_value("reward_id"));
+                res.status = 200;
+                res.set_content(j.dump(2), "application/json; charset=utf-8");
+                return;
+            }
+            auto j = state_.twitch_reward_actions_json();
+            res.status = 200;
+            res.set_content(j.dump(2), "application/json; charset=utf-8");
+        });
+
+        svr.Post("/api/twitch/reward-actions", [&](const httplib::Request& req, httplib::Response& res) {
+            if (!require_local(req, res)) return;
+            try {
+                auto body = json::parse(req.body.empty() ? "{}" : req.body);
+                const std::string reward_id = body.value("reward_id", std::string{});
+                json action = body.contains("action") && body["action"].is_object() ? body["action"] : body;
+                action.erase("reward_id");
+                std::string err;
+                if (!state_.set_twitch_reward_action(reward_id, action, &err)) {
+                    res.status = 400;
+                    res.set_content(json{{"ok", false}, {"error", err}}.dump(2), "application/json; charset=utf-8");
+                    return;
+                }
+                auto j = state_.twitch_reward_action_json(reward_id);
+                res.status = 200;
+                res.set_content(j.dump(2), "application/json; charset=utf-8");
+            } catch (...) {
+                res.status = 400;
+                res.set_content(R"({"ok":false,"error":"invalid_json"})", "application/json; charset=utf-8");
+            }
+        });
+
+        svr.Post("/api/twitch/reward-actions/delete", [&](const httplib::Request& req, httplib::Response& res) {
+            if (!require_local(req, res)) return;
+            try {
+                auto body = json::parse(req.body.empty() ? "{}" : req.body);
+                const std::string reward_id = body.value("reward_id", std::string{});
+                const bool removed = state_.delete_twitch_reward_action(reward_id);
+                res.status = 200;
+                res.set_content(json{{"ok", true}, {"removed", removed}, {"reward_id", reward_id}}.dump(2), "application/json; charset=utf-8");
+            } catch (...) {
+                res.status = 400;
+                res.set_content(R"({"ok":false,"error":"invalid_json"})", "application/json; charset=utf-8");
+            }
+        });
+
         // --- API: settings (read) ---
         // General app settings only. Do not expose secrets/cookies here.
         svr.Get("/api/settings", [&](const httplib::Request&, httplib::Response& res) {

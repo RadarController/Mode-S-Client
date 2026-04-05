@@ -1262,3 +1262,107 @@ nlohmann::json AppState::twitch_stream_draft_json()
     j["description"] = twitch_stream_draft_.description;
     return j;
 }
+
+
+// --- Twitch reward action metadata ---
+
+void AppState::load_twitch_reward_actions_from_config_unlocked()
+{
+    if (twitch_reward_actions_loaded_) return;
+    twitch_reward_actions_loaded_ = true;
+    twitch_reward_actions_ = nlohmann::json::object();
+
+    try {
+        const auto path = std::filesystem::absolute("config.json");
+        std::ifstream in(path, std::ios::binary);
+        if (!in) return;
+
+        std::string s((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        if (s.empty()) return;
+
+        auto j = nlohmann::json::parse(s);
+        if (!j.is_object()) return;
+
+        if (j.contains("twitch_reward_actions") && j["twitch_reward_actions"].is_object()) {
+            twitch_reward_actions_ = j["twitch_reward_actions"];
+        }
+    }
+    catch (...) {
+        twitch_reward_actions_ = nlohmann::json::object();
+    }
+}
+
+void AppState::save_twitch_reward_actions_to_config_unlocked()
+{
+    try {
+        const auto path = std::filesystem::absolute("config.json");
+
+        nlohmann::json j = nlohmann::json::object();
+        {
+            std::ifstream in(path, std::ios::binary);
+            if (in) {
+                std::string s((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+                if (!s.empty()) {
+                    j = nlohmann::json::parse(s);
+                    if (!j.is_object()) j = nlohmann::json::object();
+                }
+            }
+        }
+
+        j["twitch_reward_actions"] = twitch_reward_actions_;
+        AtomicWriteUtf8File(path.u8string(), j.dump(2));
+    }
+    catch (...) {
+    }
+}
+
+nlohmann::json AppState::twitch_reward_actions_json()
+{
+    std::lock_guard<std::mutex> lk(mtx_);
+    load_twitch_reward_actions_from_config_unlocked();
+    nlohmann::json out = nlohmann::json::object();
+    out["ok"] = true;
+    out["actions"] = twitch_reward_actions_;
+    return out;
+}
+
+nlohmann::json AppState::twitch_reward_action_json(const std::string& reward_id)
+{
+    std::lock_guard<std::mutex> lk(mtx_);
+    load_twitch_reward_actions_from_config_unlocked();
+    nlohmann::json out = nlohmann::json::object();
+    out["ok"] = true;
+    out["reward_id"] = reward_id;
+    if (!reward_id.empty() && twitch_reward_actions_.contains(reward_id)) out["action"] = twitch_reward_actions_[reward_id];
+    else out["action"] = nlohmann::json::object();
+    return out;
+}
+
+bool AppState::set_twitch_reward_action(const std::string& reward_id, const nlohmann::json& action_obj, std::string* err)
+{
+    if (reward_id.empty()) {
+        if (err) *err = "missing_reward_id";
+        return false;
+    }
+    if (!action_obj.is_object()) {
+        if (err) *err = "action_not_object";
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lk(mtx_);
+    load_twitch_reward_actions_from_config_unlocked();
+    twitch_reward_actions_[reward_id] = action_obj;
+    save_twitch_reward_actions_to_config_unlocked();
+    return true;
+}
+
+bool AppState::delete_twitch_reward_action(const std::string& reward_id)
+{
+    if (reward_id.empty()) return false;
+    std::lock_guard<std::mutex> lk(mtx_);
+    load_twitch_reward_actions_from_config_unlocked();
+    if (!twitch_reward_actions_.is_object()) twitch_reward_actions_ = nlohmann::json::object();
+    const auto erased = twitch_reward_actions_.erase(reward_id);
+    if (erased > 0) save_twitch_reward_actions_to_config_unlocked();
+    return erased > 0;
+}
