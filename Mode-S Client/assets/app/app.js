@@ -1218,6 +1218,10 @@ function wireTwitchRewardsPage() {
         actionOverlayTemplate: document.getElementById("actionOverlayTemplate"),
         actionSoundEnabled: document.getElementById("actionSoundEnabled"),
         actionSoundFile: document.getElementById("actionSoundFile"),
+        actionImageEnabled: document.getElementById("actionImageEnabled"),
+        actionImageFile: document.getElementById("actionImageFile"),
+        actionVideoEnabled: document.getElementById("actionVideoEnabled"),
+        actionVideoFile: document.getElementById("actionVideoFile"),
         actionChatEcho: document.getElementById("actionChatEcho"),
         actionAlertText: document.getElementById("actionAlertText"),
         actionPriority: document.getElementById("actionPriority"),
@@ -1250,6 +1254,8 @@ function wireTwitchRewardsPage() {
         const parts = [];
         if (action.overlay_enabled) parts.push("Overlay");
         if (action.sound_enabled) parts.push("Sound");
+        if (action.image_enabled && String(action.image_file || "").trim()) parts.push("Image");
+        if (action.video_enabled && String(action.video_file || "").trim()) parts.push("Video");
         if (action.chat_echo) parts.push("Chat");
 
         const routing = [];
@@ -1321,6 +1327,10 @@ function wireTwitchRewardsPage() {
             overlay_template: "channel_points_standard",
             sound_enabled: false,
             sound_file: "",
+            image_enabled: false,
+            image_file: "",
+            video_enabled: false,
+            video_file: "",
             chat_echo: true,
             alert_text: "{user} redeemed {reward}",
             priority: 50,
@@ -1377,6 +1387,10 @@ function wireTwitchRewardsPage() {
         els.actionOverlayTemplate.value = action.overlay_template || "";
         els.actionSoundEnabled.checked = !!action.sound_enabled;
         els.actionSoundFile.value = action.sound_file || "";
+        if (els.actionImageEnabled) els.actionImageEnabled.checked = !!action.image_enabled;
+        if (els.actionImageFile) els.actionImageFile.value = action.image_file || "";
+        if (els.actionVideoEnabled) els.actionVideoEnabled.checked = !!action.video_enabled;
+        if (els.actionVideoFile) els.actionVideoFile.value = action.video_file || "";
         els.actionChatEcho.checked = !!action.chat_echo;
         els.actionAlertText.value = action.alert_text || "";
         els.actionPriority.value = Number.isFinite(Number(action.priority)) ? Number(action.priority) : 50;
@@ -1519,6 +1533,10 @@ function wireTwitchRewardsPage() {
             overlay_template: trim(els.actionOverlayTemplate.value),
             sound_enabled: !!els.actionSoundEnabled.checked,
             sound_file: trim(els.actionSoundFile.value),
+            image_enabled: !!els.actionImageEnabled?.checked,
+            image_file: trim(els.actionImageFile?.value || ""),
+            video_enabled: !!els.actionVideoEnabled?.checked,
+            video_file: trim(els.actionVideoFile?.value || ""),
             chat_echo: !!els.actionChatEcho.checked,
             alert_text: els.actionAlertText.value || "",
             priority: safeNumber(els.actionPriority.value, 0),

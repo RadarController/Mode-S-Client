@@ -17,12 +17,14 @@
   const userInput = $('#userInput');
   const costBadge = $('#costBadge');
   const debugText = $('#debugText');
+  const logoShell = card ? card.querySelector('.cp-logoShell') : null;
 
   const queue = [];
   const seen = new Map();
   let playing = false;
   let lastPollOk = 0;
   let lastPollErr = '';
+  let currentAudio = null;
 
   const isDebug = new URLSearchParams(location.search).has('debug');
   if (isDebug) document.body.classList.add('debug');
@@ -93,15 +95,6 @@
     return `${v.toLocaleString()} point${v === 1 ? '' : 's'}`;
   }
 
-  function buildTitle(e) {
-    return String(e.reward_title || e.message || 'Channel Points').trim();
-  }
-
-  function buildRedeemer(e) {
-    const user = String(e.user || 'Unknown').trim();
-    return `Redeemed by ${user}`;
-  }
-
   function shouldRenderEvent(e) {
     const action = (e && typeof e.app_action === 'object' && !Array.isArray(e.app_action))
       ? e.app_action
@@ -112,6 +105,240 @@
     const surface = String(action.overlay_surface || 'both').toLowerCase();
     if (!surface || surface === 'both') return true;
     return surface === currentSurface;
+  }
+
+  function getAction(e) {
+    return (e && typeof e.app_action === 'object' && !Array.isArray(e.app_action))
+      ? e.app_action
+      : {};
+  }
+
+  function renderTemplate(template, e) {
+    const input = String(e?.user_input || '').trim();
+    const costText = formatCost(e?.cost);
+
+    const values = {
+      user: String(e?.user || 'Unknown').trim(),
+      reward: String(e?.reward_title || e?.message || 'Channel Points').trim(),
+      input,
+      cost: String(e?.cost ?? '').trim(),
+      cost_text: costText,
+      prompt: String(e?.prompt || '').trim()
+    };
+
+    return String(template || '')
+      .replace(/\{(user|reward|input|cost|cost_text|prompt)\}/gi, (match, key) => {
+        const value = values[String(key || '').toLowerCase()];
+        return value != null ? String(value) : '';
+      })
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+  }
+
+  function buildTitle(e) {
+    const action = getAction(e);
+    const template = String(action.alert_text || '').trim();
+    if (template) {
+      const rendered = renderTemplate(template, e);
+      if (rendered) return rendered;
+    }
+    return String(e.reward_title || e.message || 'Channel Points').trim();
+  }
+
+  function buildRedeemer(e) {
+    const user = String(e.user || 'Unknown').trim();
+    return `Redeemed by ${user}`;
+  }
+
+  function resolveAssetUrl(rawValue, defaultBase) {
+    const raw = String(rawValue || '').trim();
+    if (!raw) return '';
+
+    if (/^https?:\/\//i.test(raw)) return raw;
+    if (raw.startsWith('/')) return raw;
+
+    return `${defaultBase}/${raw}`;
+  }
+
+  function resolveSoundUrl(soundFile) {
+    return resolveAssetUrl(soundFile, '/assets/sounds');
+  }
+
+  function resolveImageUrl(imageFile) {
+    return resolveAssetUrl(imageFile, '/assets/channel-points');
+  }
+
+  function resolveVideoUrl(videoFile) {
+    return resolveAssetUrl(videoFile, '/assets/channel-points');
+  }
+
+  function ensureMediaLayer() {
+    if (!card) return null;
+
+    let wrap = document.getElementById('cpMediaWrap');
+    let image = document.getElementById('cpMediaImage');
+    let video = document.getElementById('cpMediaVideo');
+    let shade = document.getElementById('cpMediaShade');
+
+    if (wrap && image && video && shade) {
+      return { wrap, image, video, shade };
+    }
+
+    wrap = document.createElement('div');
+    wrap.id = 'cpMediaWrap';
+    Object.assign(wrap.style, {
+      position: 'absolute',
+      inset: '0',
+      borderRadius: 'inherit',
+      overflow: 'hidden',
+      display: 'none',
+      zIndex: '1',
+      pointerEvents: 'none'
+    });
+
+    image = document.createElement('img');
+    image.id = 'cpMediaImage';
+    image.alt = '';
+    Object.assign(image.style, {
+      position: 'absolute',
+      inset: '0',
+      width: '100%',
+      height: '100%',
+      objectFit: 'cover',
+      objectPosition: 'center',
+      display: 'none'
+    });
+
+    video = document.createElement('video');
+    video.id = 'cpMediaVideo';
+    video.muted = true;
+    video.loop = true;
+    video.autoplay = true;
+    video.playsInline = true;
+    video.setAttribute('playsinline', '');
+    video.setAttribute('muted', '');
+    video.setAttribute('autoplay', '');
+    Object.assign(video.style, {
+      position: 'absolute',
+      inset: '0',
+      width: '100%',
+      height: '100%',
+      objectFit: 'cover',
+      objectPosition: 'center',
+      display: 'none'
+    });
+
+    shade = document.createElement('div');
+    shade.id = 'cpMediaShade';
+    Object.assign(shade.style, {
+      position: 'absolute',
+      inset: '0',
+      background: 'linear-gradient(180deg, rgba(6,8,12,0.16) 0%, rgba(6,8,12,0.42) 55%, rgba(6,8,12,0.70) 100%)',
+      display: 'none'
+    });
+
+    wrap.appendChild(image);
+    wrap.appendChild(video);
+    wrap.appendChild(shade);
+    card.appendChild(wrap);
+
+    return { wrap, image, video, shade };
+  }
+
+  const media = ensureMediaLayer();
+
+  function stopCurrentAudio() {
+    if (!currentAudio) return;
+    try {
+      currentAudio.pause();
+      currentAudio.currentTime = 0;
+    } catch {}
+    currentAudio = null;
+  }
+
+  function stopVideoPlayback() {
+    if (!media) return;
+    try {
+      media.video.pause();
+    } catch {}
+    try {
+      media.video.removeAttribute('src');
+      media.video.load();
+    } catch {}
+    media.video.style.display = 'none';
+  }
+
+  function clearMedia() {
+    if (!media) return;
+
+    stopVideoPlayback();
+
+    media.image.style.display = 'none';
+    media.image.removeAttribute('src');
+
+    media.shade.style.display = 'none';
+    media.wrap.style.display = 'none';
+
+    if (logoShell) logoShell.style.display = '';
+  }
+
+  async function applyMediaForEvent(e) {
+    if (!media) return;
+
+    const action = getAction(e);
+    const videoUrl = action.video_enabled ? resolveVideoUrl(action.video_file) : '';
+    const imageUrl = action.image_enabled ? resolveImageUrl(action.image_file) : '';
+
+    clearMedia();
+
+    if (videoUrl) {
+      try {
+        if (logoShell) logoShell.style.display = 'none';
+        media.wrap.style.display = 'block';
+        media.shade.style.display = 'block';
+        media.image.style.display = 'none';
+        media.image.removeAttribute('src');
+
+        media.video.src = videoUrl;
+        media.video.style.display = 'block';
+        media.video.load();
+        await media.video.play();
+        return;
+      } catch (err) {
+        console.debug('[channel_points] video playback failed', videoUrl, err);
+        stopVideoPlayback();
+      }
+    }
+
+    if (imageUrl) {
+      if (logoShell) logoShell.style.display = 'none';
+      media.wrap.style.display = 'block';
+      media.shade.style.display = 'block';
+      media.image.src = imageUrl;
+      media.image.style.display = 'block';
+      return;
+    }
+
+    clearMedia();
+  }
+
+  async function playSoundForEvent(e) {
+    const action = getAction(e);
+    if (!action.sound_enabled) return;
+
+    const url = resolveSoundUrl(action.sound_file);
+    if (!url) return;
+
+    try {
+      stopCurrentAudio();
+      currentAudio = new Audio(url);
+      currentAudio.preload = 'auto';
+      currentAudio.currentTime = 0;
+      await currentAudio.play();
+    } catch (err) {
+      console.debug('[channel_points] sound playback failed', url, err);
+      currentAudio = null;
+    }
   }
 
   function render(a) {
@@ -144,6 +371,7 @@
     const next = queue.shift();
     if (!next) {
       playing = false;
+      clearMedia();
       card.hidden = true;
       return;
     }
@@ -151,6 +379,9 @@
     playing = true;
     try {
       render(next);
+      await applyMediaForEvent(next);
+      await playSoundForEvent(next);
+
       card.hidden = false;
       clearAnim();
       card.classList.add('enter');
@@ -165,6 +396,7 @@
 
       await sleep(420);
       card.classList.remove('exit');
+      clearMedia();
       card.hidden = true;
 
       await sleep(CONFIG.gapMs);
@@ -172,6 +404,7 @@
       console.error('[channel_points] playNext crashed', next, err);
       try {
         clearAnim();
+        clearMedia();
         card.hidden = true;
       } catch {}
     } finally {
@@ -229,8 +462,19 @@
         user: 'RadarController',
         user_input: '',
         cost: 1,
+        prompt: '',
         ts_ms: Date.now(),
-        app_action: { overlay_enabled: true, overlay_surface: 'both' }
+        app_action: {
+          overlay_enabled: true,
+          overlay_surface: 'both',
+          alert_text: '{user} redeemed {reward}',
+          sound_enabled: false,
+          sound_file: '',
+          image_enabled: false,
+          image_file: '',
+          video_enabled: false,
+          video_file: ''
+        }
       }, e || {});
       const key = eventKey(fake);
       if (!seen.has(key)) seen.set(key, Date.now());
