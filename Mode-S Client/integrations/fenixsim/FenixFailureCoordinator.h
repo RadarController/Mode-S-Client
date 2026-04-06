@@ -20,6 +20,7 @@ class AppState;
 namespace fenixsim {
 
 class FenixSimFailuresClient;
+struct ArmedFailureCondition;
 
 class FenixFailureCoordinator {
 public:
@@ -55,6 +56,7 @@ private:
     bool SpendOnePendingCredit();
     bool TriggerOneFailure(std::string& triggered_id,
                            std::string& triggered_title,
+                           std::string& action_desc,
                            std::string& detail);
     bool IsFailureOnRecentCooldown(const std::string& failure_id,
                                    std::int64_t now_ms,
@@ -62,6 +64,11 @@ private:
     void RememberTriggeredFailure(const std::string& failure_id,
                                   std::int64_t now_ms);
     void PruneRecentFailureCooldowns(std::int64_t now_ms);
+
+    bool ShouldArmRandomly();
+    int RandomIntInclusive(int min_value, int max_value);
+    ArmedFailureCondition MakeRandomArmedCondition();
+    std::string DescribeArmedCondition(const ArmedFailureCondition& condition) const;
 
     void Log(const std::wstring& msg) const;
 
@@ -90,6 +97,8 @@ private:
 
     // Runtime-only recent-use cooldown. Set to 0 to disable.
     static constexpr std::int64_t kRecentFailureCooldownMs_ = 15LL * 60LL * 1000LL;
+    // First-pass armed/immediate split.
+    static constexpr int kArmFailureChancePercent_ = 40;
     std::unordered_map<std::string, std::int64_t> recent_failure_last_used_ms_;
 
     std::mt19937 rng_{ std::random_device{}() };

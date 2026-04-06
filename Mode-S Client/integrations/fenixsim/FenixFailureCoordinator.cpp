@@ -318,8 +318,8 @@ int FenixFailureCoordinator::TierToCredits(const std::string& tier) const {
 }
 
 bool FenixFailureCoordinator::IsFailureOnRecentCooldown(const std::string& failure_id,
-                                                    std::int64_t now_ms,
-                                                    std::int64_t* remaining_ms) const {
+                                                        std::int64_t now_ms,
+                                                        std::int64_t* remaining_ms) const {
     if (remaining_ms != nullptr) {
         *remaining_ms = 0;
     }
@@ -370,6 +370,66 @@ void FenixFailureCoordinator::PruneRecentFailureCooldowns(std::int64_t now_ms) {
     }
 }
 
+bool FenixFailureCoordinator::ShouldArmRandomly() {
+    const int roll = RandomIntInclusive(1, 100);
+    return roll <= kArmFailureChancePercent_;
+}
+
+int FenixFailureCoordinator::RandomIntInclusive(int min_value, int max_value) {
+    if (max_value < min_value) {
+        std::swap(min_value, max_value);
+    }
+
+    std::lock_guard<std::mutex> lk(mu_);
+    std::uniform_int_distribution<int> dist(min_value, max_value);
+    return dist(rng_);
+}
+
+ArmedFailureCondition FenixFailureCoordinator::MakeRandomArmedCondition() {
+    ArmedFailureCondition condition;
+    const int template_id = RandomIntInclusive(0, 2);
+
+    switch (template_id) {
+    case 0:
+        condition.ias = RandomIntInclusive(180, 280);
+        break;
+    case 1:
+        condition.alt_above_amsl = RandomIntInclusive(5000, 37000);
+        break;
+    case 2:
+    default:
+        condition.after_event = "V1";
+        condition.after_event_seconds = RandomIntInclusive(10, 120);
+        break;
+    }
+
+    return condition;
+}
+
+std::string FenixFailureCoordinator::DescribeArmedCondition(const ArmedFailureCondition& condition) const {
+    std::ostringstream oss;
+
+    if (condition.ias.has_value()) {
+        oss << "armed via IAS " << *condition.ias << " kt";
+        return oss.str();
+    }
+
+    if (condition.alt_above_amsl.has_value()) {
+        oss << "armed via altitude above " << *condition.alt_above_amsl << " ft";
+        return oss.str();
+    }
+
+    if (condition.after_event.has_value()) {
+        oss << "armed after " << *condition.after_event;
+        if (condition.after_event_seconds.has_value()) {
+            oss << " +" << *condition.after_event_seconds << "s";
+        }
+        return oss.str();
+    }
+
+    return "armed";
+}
+
 bool FenixFailureCoordinator::SpendOnePendingCredit() {
     int pending_before = 0;
     {
@@ -380,8 +440,9 @@ bool FenixFailureCoordinator::SpendOnePendingCredit() {
 
     std::string triggered_id;
     std::string triggered_title;
+    std::string action_desc;
     std::string detail;
-    if (!TriggerOneFailure(triggered_id, triggered_title, detail)) {
+    if (!TriggerOneFailure(triggered_id, triggered_title, action_desc, detail)) {
         const std::int64_t now = NowMs();
         bool should_log = false;
         {
@@ -408,7 +469,7 @@ bool FenixFailureCoordinator::SpendOnePendingCredit() {
     }
 
     std::wstringstream ws;
-    ws << L"FENIX: triggered failure " << SafeToW(triggered_id);
+    ws << L"FENIX: " << SafeToW(action_desc) << L" " << SafeToW(triggered_id);
     if (!triggered_title.empty()) {
         ws << L" (" << SafeToW(triggered_title) << L")";
     }
@@ -419,9 +480,11 @@ bool FenixFailureCoordinator::SpendOnePendingCredit() {
 
 bool FenixFailureCoordinator::TriggerOneFailure(std::string& triggered_id,
                                                 std::string& triggered_title,
+                                                std::string& action_desc,
                                                 std::string& detail) {
     triggered_id.clear();
     triggered_title.clear();
+    action_desc.clear();
     detail.clear();
 
     FenixSimFailuresClient* client = nullptr;
@@ -456,7 +519,7 @@ bool FenixFailureCoordinator::TriggerOneFailure(std::string& triggered_id,
         if (failure.id.empty()) continue;
 
         // Option A semantics: any armed/delayed failure is treated as already
-        // "in flight" and is excluded from random selection.
+        // "in flight" and is excluded from selection.
         if (failure.IsActive() || failure.IsInFlight()) {
             ++active_or_inflight_skipped;
             continue;
@@ -499,6 +562,36 @@ bool FenixFailureCoordinator::TriggerOneFailure(std::string& triggered_id,
     for (const Failure* candidate : candidates) {
         if (candidate == nullptr) continue;
 
+        const bool arm_this_failure = ShouldArmRandomly();
+
+        if (arm_this_failure) {
+            const ArmedFailureCondition armed_condition = MakeRandomArmedCondition();
+
+            SafeWriteResult result = SafeWriteResult::InvalidResponse;
+            std::string write_error;
+            const bool ok = client->ArmFailureIfInactive(candidate->id, armed_condition, result, &write_error);
+
+            if (ok && result == SafeWriteResult::Success) {
+                RememberTriggeredFailure(candidate->id, now_ms);
+                triggered_id = candidate->id;
+                triggered_title = candidate->title;
+                action_desc = DescribeArmedCondition(armed_condition);
+                return true;
+            }
+
+            if (result == SafeWriteResult::SkippedAlreadyActive || result == SafeWriteResult::SkippedAlreadyArmed) {
+                continue;
+            }
+
+            std::ostringstream oss;
+            oss << "Failed to arm " << candidate->id << ": " << SafeWriteResultToString(result);
+            if (!write_error.empty()) {
+                oss << " (" << write_error << ")";
+            }
+            detail = oss.str();
+            continue;
+        }
+
         SafeWriteResult result = SafeWriteResult::InvalidResponse;
         std::string write_error;
         const bool ok = client->TriggerFailureNowIfInactive(candidate->id, result, &write_error);
@@ -507,6 +600,7 @@ bool FenixFailureCoordinator::TriggerOneFailure(std::string& triggered_id,
             RememberTriggeredFailure(candidate->id, now_ms);
             triggered_id = candidate->id;
             triggered_title = candidate->title;
+            action_desc = "triggered immediate failure";
             return true;
         }
 
@@ -523,7 +617,7 @@ bool FenixFailureCoordinator::TriggerOneFailure(std::string& triggered_id,
     }
 
     if (detail.empty()) {
-        detail = "Failed to trigger a random eligible Fenix failure.";
+        detail = "Failed to select and write a random eligible Fenix failure.";
     }
     return false;
 }
