@@ -1785,9 +1785,11 @@ background: rgba(59,130,246,.18);
 
 .home-simauto__activity{
   flex:1 1 auto;
-  min-height:200px;
-  max-height:100%;
+  min-height:0;
+  height:260px;
+  max-height:260px;
   overflow:auto;
+  overscroll-behavior:contain;
   border:1px solid rgba(255,255,255,.08);
   border-radius:16px;
   background:rgba(255,255,255,.025);
@@ -1802,7 +1804,11 @@ background: rgba(59,130,246,.18);
 }
 
 .home-simauto__activity-item{
-  padding:10px 12px;
+  display:grid;
+  grid-template-columns:auto 1fr;
+  align-items:center;
+  gap:10px;
+  padding:9px 12px;
   border-bottom:1px solid rgba(255,255,255,.06);
 }
 
@@ -1814,14 +1820,19 @@ background: rgba(59,130,246,.18);
   display:block;
   font-size:11px;
   color:var(--muted2);
-  margin-bottom:4px;
+  margin-bottom:0;
   font-family:var(--mono);
+  white-space:nowrap;
 }
 
 .home-simauto__activity-text{
   display:block;
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
   font-size:12px;
-  line-height:1.45;
+  line-height:1.3;
   color:rgba(255,255,255,.88);
 }
 
@@ -1837,7 +1848,8 @@ background: rgba(59,130,246,.18);
 
 @media (max-width: 1100px){
   .home-simauto__activity{
-    min-height:160px;
+    height:220px;
+    max-height:220px;
   }
 }
 

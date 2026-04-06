@@ -1060,6 +1060,33 @@ async function replayHomeAlert(historyId, button){
 }
 
 
+function compactSimAutomationText(value, maxLen = 96){
+  let text = String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  text = text
+    .replace(/^FENIX:\s*/i, "")
+    .replace(/^SIMAUTO:\s*/i, "");
+
+  if (text.length > maxLen) {
+    text = `${text.slice(0, Math.max(0, maxLen - 1)).trimEnd()}…`;
+  }
+  return text || "—";
+}
+
+function normalizeSimAutomationRecentItems(items){
+  const src = Array.isArray(items) ? items : [];
+  return src
+    .slice(-10)
+    .reverse()
+    .map((item) => ({
+      time: String(item?.time || "—"),
+      text: compactSimAutomationText(item?.text || "")
+    }))
+    .filter((item) => item.text && item.text !== "—");
+}
+
 function simAutomationActivityFromLogs(entries){
   const src = Array.isArray(entries) ? entries : [];
   const filtered = src
@@ -1067,7 +1094,7 @@ function simAutomationActivityFromLogs(entries){
       const msg = String(entry?.msg || "");
       return msg.includes("FENIX:") || msg.includes("SIMAUTO:");
     })
-    .slice(-8)
+    .slice(-10)
     .reverse();
 
   return filtered.map((entry) => {
@@ -1080,7 +1107,7 @@ function simAutomationActivityFromLogs(entries){
     }
     return {
       time: timeLabel,
-      text: String(entry?.msg || "")
+      text: compactSimAutomationText(entry?.msg || "")
     };
   });
 }
@@ -1090,8 +1117,8 @@ function simAutomationNormalizeStatus(payload){
   const recent = Array.isArray(node.recent_activity)
     ? node.recent_activity.map((item) => ({
         time: trim(item?.time || item?.ts || item?.label || ""),
-        text: String(item?.text || item?.message || item?.msg || "")
-      })).filter((item) => item.text)
+        text: item?.text || item?.message || item?.msg || ""
+      }))
     : [];
 
   return {
@@ -1104,7 +1131,7 @@ function simAutomationNormalizeStatus(payload){
     modeLabel: String(node.selection_mode || node.mode_label || "60% immediate / 40% armed"),
     summary: String(node.summary || "Simulator automation status available."),
     summarySub: String(node.summary_sub || "Live status is being provided by the backend."),
-    recentActivity: recent,
+    recentActivity: normalizeSimAutomationRecentItems(recent),
     statusChip: String(node.status_label || (node.enabled === true ? "Enabled" : (node.enabled === false ? "Disabled" : "Available")))
   };
 }
@@ -1185,7 +1212,7 @@ async function pollSimulatorAutomationPanel(options = {}){
     nextState.statusChip = "Unavailable";
   }
 
-  const fallbackActivity = await loadSimulatorAutomationActivityFromLogs();
+  const fallbackActivity = normalizeSimAutomationRecentItems(await loadSimulatorAutomationActivityFromLogs());
   if (!nextState.recentActivity || nextState.recentActivity.length === 0) {
     nextState.recentActivity = fallbackActivity;
   }
