@@ -15,6 +15,7 @@ class TwitchEventSubWsClient;
 class TwitchAuth;
 class YouTubeLiveChatService;
 class HttpServer;
+namespace fenixsim { class FenixFailureCoordinator; }
 
 namespace AppShutdown {
 
@@ -31,6 +32,7 @@ struct Dependencies {
     YouTubeLiveChatService& youtubeChat;
     TikTokSidecar& youtube;
     TikTokSidecar& tiktok;
+    fenixsim::FenixFailureCoordinator& fenixFailureCoordinator;
 
     std::atomic<bool>& running;
     std::atomic<bool>& twitchHelixRunning;

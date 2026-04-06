@@ -22,6 +22,7 @@ typedef struct HWND__* HWND;
 #include "euroscope/EuroScopeIngestService.h"
 #include "obs/ObsWsClient.h"
 #include "fenixsim/FenixSimFailures.h"
+#include "fenixsim/FenixFailureCoordinator.h"
 
 struct AppRuntime {
     AppConfig config;
@@ -41,6 +42,7 @@ struct AppRuntime {
     EuroScopeIngestService euroscope;
     ObsWsClient obs;
     fenixsim::FenixSimFailuresClient fenixFailures;
+    fenixsim::FenixFailureCoordinator fenixFailureCoordinator;
     std::atomic<bool> running{ true };
     std::atomic<bool> twitchHelixRunning{ true };
     std::string twitchHelixBoundLogin;

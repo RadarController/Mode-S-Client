@@ -35,6 +35,7 @@
 #include "ui/WebViewHost.h"
 #include "youtube/YouTubeAuth.h"
 #include "youtube/YouTubeLiveChatService.h"
+#include "fenixsim/FenixFailureCoordinator.h"
 
 namespace {
 
@@ -762,6 +763,8 @@ void StartBackend(
     auto& tiktokFollowersThread = deps.tiktokFollowersThread;
     auto& euroscope = deps.euroscope;
     auto& obs = deps.obs;
+    auto& fenixFailures = deps.fenixFailures;
+    auto& fenixFailureCoordinator = deps.fenixFailureCoordinator;
     auto& running = deps.running;
     auto& twitchHelixBoundLogin = deps.twitchHelixBoundLogin;
 
@@ -981,6 +984,11 @@ void StartBackend(
         j["scopes_encoded"] = std::string(YouTubeAuth::RequiredScopeEncoded());
         return j.dump(2);
         };
+
+    fenixFailureCoordinator.Start(
+        state,
+        fenixFailures,
+        [](const std::wstring& s) { LogLine(s); });
 
     httpServer = std::make_unique<HttpServer>(
         state,
