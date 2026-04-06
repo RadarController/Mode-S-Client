@@ -62,6 +62,7 @@ void FenixFailureCoordinator::Start(AppState& state, FenixSimFailuresClient& cli
         twitch_bits_remainder_ = 0;
         tiktok_gift_remainder_ = 0;
         last_no_trigger_log_ms_ = 0;
+        automation_enabled_ = true;
         recent_failure_last_used_ms_.clear();
         rng_.seed(std::random_device{}());
     }
@@ -77,6 +78,96 @@ void FenixFailureCoordinator::Stop() {
     }
 }
 
+void FenixFailureCoordinator::SetEnabled(bool enabled) {
+    std::lock_guard<std::mutex> lk(mu_);
+    automation_enabled_ = enabled;
+    if (!automation_enabled_) {
+        pending_credits_ = 0;
+        twitch_bits_remainder_ = 0;
+        tiktok_gift_remainder_ = 0;
+        last_no_trigger_log_ms_ = 0;
+    }
+}
+
+bool FenixFailureCoordinator::enabled() const {
+    std::lock_guard<std::mutex> lk(mu_);
+    return automation_enabled_;
+}
+
+void FenixFailureCoordinator::PanicStop() {
+    std::lock_guard<std::mutex> lk(mu_);
+    automation_enabled_ = false;
+    pending_credits_ = 0;
+    twitch_bits_remainder_ = 0;
+    tiktok_gift_remainder_ = 0;
+    last_no_trigger_log_ms_ = 0;
+}
+
+nlohmann::json FenixFailureCoordinator::StatusJson() const {
+    nlohmann::json out;
+    out["ok"] = true;
+
+    FenixSimFailuresClient* client = nullptr;
+    bool enabled_now = false;
+    int pending_now = 0;
+
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        client = client_;
+        enabled_now = automation_enabled_;
+        pending_now = pending_credits_;
+    }
+
+    out["enabled"] = enabled_now;
+    out["pending_credits"] = pending_now;
+    out["selection_mode"] = "60% immediate / 40% armed";
+    out["mode_label"] = "60% immediate / 40% armed";
+
+    if (client == nullptr) {
+        out["connected"] = false;
+        out["active_failures"] = 0;
+        out["armed_failures"] = 0;
+        out["status_label"] = "Unavailable";
+        out["summary"] = "Simulator automation backend is running, but the Fenix integration is not initialized.";
+        out["summary_sub"] = "Start the app normally with the Fenix integration available to populate live status.";
+        out["recent_activity"] = nlohmann::json::array();
+        return out;
+    }
+
+    std::vector<Failure> failures;
+    std::string fetch_error;
+    if (!client->FetchManualFailures(failures, &fetch_error)) {
+        out["connected"] = false;
+        out["active_failures"] = 0;
+        out["armed_failures"] = 0;
+        out["status_label"] = "Unavailable";
+        out["summary"] = fetch_error.empty()
+            ? "Simulator automation could not read the Fenix manual failures endpoint."
+            : ("Simulator automation could not read the Fenix manual failures endpoint: " + fetch_error);
+        out["summary_sub"] = "Load the Fenix aircraft and EFB, then retry.";
+        out["recent_activity"] = nlohmann::json::array();
+        return out;
+    }
+
+    int active = 0;
+    int armed = 0;
+    for (const auto& failure : failures) {
+        if (failure.IsActive()) ++active;
+        else if (failure.IsArmed()) ++armed;
+    }
+
+    out["connected"] = true;
+    out["active_failures"] = active;
+    out["armed_failures"] = armed;
+    out["status_label"] = enabled_now ? "Enabled" : "Disabled";
+    out["summary"] = enabled_now
+        ? "Simulator automation is enabled and ready to react to support events."
+        : "Simulator automation is disabled.";
+    out["summary_sub"] = "This panel provides light-touch live status and emergency controls; deeper settings can live in the Settings section later.";
+    out["recent_activity"] = nlohmann::json::array();
+    return out;
+}
+
 void FenixFailureCoordinator::WorkerLoop() {
     SeedSeenFromCurrentQueues();
     Log(L"FENIX: failure coordinator started.");
@@ -90,9 +181,17 @@ void FenixFailureCoordinator::WorkerLoop() {
                 const int credits = CreditsFromEvent(event);
                 if (credits <= 0) continue;
 
+                bool automation_enabled = false;
                 {
                     std::lock_guard<std::mutex> lk(mu_);
-                    pending_credits_ += credits;
+                    automation_enabled = automation_enabled_;
+                    if (automation_enabled) {
+                        pending_credits_ += credits;
+                    }
+                }
+
+                if (!automation_enabled) {
+                    continue;
                 }
 
                 const std::string platform = event.value("platform", "");
@@ -112,11 +211,13 @@ void FenixFailureCoordinator::WorkerLoop() {
 
             for (;;) {
                 int pending = 0;
+                bool automation_enabled = false;
                 {
                     std::lock_guard<std::mutex> lk(mu_);
                     pending = pending_credits_;
+                    automation_enabled = automation_enabled_;
                 }
-                if (pending <= 0) break;
+                if (!automation_enabled || pending <= 0) break;
                 if (!SpendOnePendingCredit()) break;
             }
         }
@@ -511,17 +612,17 @@ bool FenixFailureCoordinator::TriggerOneFailure(std::string& triggered_id,
     std::vector<const Failure*> candidates;
     candidates.reserve(failures.size());
 
-    int active_or_inflight_skipped = 0;
+    int active_or_armed_skipped = 0;
     int cooldown_skipped = 0;
     std::int64_t shortest_remaining_cooldown_ms = -1;
 
     for (const auto& failure : failures) {
         if (failure.id.empty()) continue;
 
-        // Option A semantics: any armed/delayed failure is treated as already
-        // "in flight" and is excluded from selection.
-        if (failure.IsActive() || failure.IsInFlight()) {
-            ++active_or_inflight_skipped;
+        // Option A semantics here are represented by "already armed" failures:
+        // any delayed/armed failure is treated as already in-flight and excluded.
+        if (failure.IsActive() || failure.IsArmed()) {
+            ++active_or_armed_skipped;
             continue;
         }
 
@@ -539,11 +640,11 @@ bool FenixFailureCoordinator::TriggerOneFailure(std::string& triggered_id,
 
     if (candidates.empty()) {
         std::ostringstream oss;
-        oss << "No eligible Fenix failures are available after excluding active/in-flight failures";
+        oss << "No eligible Fenix failures are available after excluding active/armed failures";
         if (kRecentFailureCooldownMs_ > 0) {
             oss << " and recent-use cooldown candidates";
         }
-        oss << ". Excluded active/in-flight=" << active_or_inflight_skipped;
+        oss << ". Excluded active/armed=" << active_or_armed_skipped;
         if (kRecentFailureCooldownMs_ > 0) {
             oss << ", cooldown=" << cooldown_skipped;
             if (shortest_remaining_cooldown_ms >= 0) {

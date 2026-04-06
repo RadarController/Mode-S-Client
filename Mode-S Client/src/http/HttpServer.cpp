@@ -1913,6 +1913,118 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
             };
 
 
+        // --- API: simulator automation (light-touch home page panel) ---
+        svr.Get("/api/simulator-automation/status", [&](const httplib::Request& req, httplib::Response& res) {
+            if (!require_local(req, res)) return;
+
+            if (!opt_.simulator_automation_status_json) {
+                res.status = 404;
+                res.set_content(R"({"ok":false,"error":"not_implemented"})", "application/json; charset=utf-8");
+                return;
+            }
+
+            try {
+                auto j = opt_.simulator_automation_status_json();
+                res.status = 200;
+                res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+                res.set_header("Pragma", "no-cache");
+                res.set_content(j.dump(2), "application/json; charset=utf-8");
+            }
+            catch (...) {
+                res.status = 500;
+                res.set_content(R"({"ok":false,"error":"exception"})", "application/json; charset=utf-8");
+            }
+        });
+
+        svr.Post("/api/simulator-automation/enable", [&](const httplib::Request& req, httplib::Response& res) {
+            if (!require_local(req, res)) return;
+            if (!opt_.simulator_automation_enable) {
+                res.status = 404;
+                res.set_content(R"({"ok":false,"error":"not_implemented"})", "application/json; charset=utf-8");
+                return;
+            }
+
+            bool ok = false;
+            try { ok = opt_.simulator_automation_enable(); }
+            catch (...) {
+                res.status = 500;
+                res.set_content(R"({"ok":false,"error":"exception"})", "application/json; charset=utf-8");
+                return;
+            }
+
+            if (!ok) {
+                res.status = 500;
+                res.set_content(R"({"ok":false,"error":"failed"})", "application/json; charset=utf-8");
+                return;
+            }
+
+            nlohmann::json out;
+            out["ok"] = true;
+            out["enabled"] = true;
+            res.status = 200;
+            res.set_content(out.dump(2), "application/json; charset=utf-8");
+        });
+
+        svr.Post("/api/simulator-automation/disable", [&](const httplib::Request& req, httplib::Response& res) {
+            if (!require_local(req, res)) return;
+            if (!opt_.simulator_automation_disable) {
+                res.status = 404;
+                res.set_content(R"({"ok":false,"error":"not_implemented"})", "application/json; charset=utf-8");
+                return;
+            }
+
+            bool ok = false;
+            try { ok = opt_.simulator_automation_disable(); }
+            catch (...) {
+                res.status = 500;
+                res.set_content(R"({"ok":false,"error":"exception"})", "application/json; charset=utf-8");
+                return;
+            }
+
+            if (!ok) {
+                res.status = 500;
+                res.set_content(R"({"ok":false,"error":"failed"})", "application/json; charset=utf-8");
+                return;
+            }
+
+            nlohmann::json out;
+            out["ok"] = true;
+            out["enabled"] = false;
+            res.status = 200;
+            res.set_content(out.dump(2), "application/json; charset=utf-8");
+        });
+
+        svr.Post("/api/simulator-automation/panic", [&](const httplib::Request& req, httplib::Response& res) {
+            if (!require_local(req, res)) return;
+            if (!opt_.simulator_automation_panic) {
+                res.status = 404;
+                res.set_content(R"({"ok":false,"error":"not_implemented"})", "application/json; charset=utf-8");
+                return;
+            }
+
+            bool ok = false;
+            try { ok = opt_.simulator_automation_panic(); }
+            catch (...) {
+                res.status = 500;
+                res.set_content(R"({"ok":false,"error":"exception"})", "application/json; charset=utf-8");
+                return;
+            }
+
+            if (!ok) {
+                res.status = 500;
+                res.set_content(R"({"ok":false,"error":"failed"})", "application/json; charset=utf-8");
+                return;
+            }
+
+            nlohmann::json out;
+            out["ok"] = true;
+            out["panic"] = true;
+            out["enabled"] = false;
+            res.status = 200;
+            res.set_content(out.dump(2), "application/json; charset=utf-8");
+        });
+
+
         // --- API: Twitch custom rewards and local reward actions (local only) ---
         svr.Get("/api/twitch/rewards", [&](const httplib::Request& req, httplib::Response& res) {
             if (!require_local(req, res)) return;

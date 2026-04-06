@@ -34,6 +34,12 @@ public:
 
     bool running() const { return running_.load(); }
 
+    // Light-touch runtime control/state for the home page simulator automation panel.
+    void SetEnabled(bool enabled);
+    bool enabled() const;
+    void PanicStop();
+    nlohmann::json StatusJson() const;
+
 private:
     void WorkerLoop();
 
@@ -94,6 +100,7 @@ private:
     int twitch_bits_remainder_ = 0;
     int tiktok_gift_remainder_ = 0;
     std::int64_t last_no_trigger_log_ms_ = 0;
+    bool automation_enabled_ = true;
 
     // Runtime-only recent-use cooldown. Set to 0 to disable.
     static constexpr std::int64_t kRecentFailureCooldownMs_ = 15LL * 60LL * 1000LL;

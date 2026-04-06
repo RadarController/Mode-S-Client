@@ -450,9 +450,10 @@ background: rgba(59,130,246,.18);
 
 .home-platforms__head{
   display:flex;
-  align-items:flex-start;
+  align-items:center;
   justify-content:space-between;
-  gap:10px;
+  gap:12px;
+  min-height:44px;
 }
 
 .home-platforms__summary{
@@ -1086,8 +1087,8 @@ background: rgba(59,130,246,.18);
 }
 
 .home-panel--platforms .home-platforms__head{
-  flex-direction:column;
-  align-items:stretch;
+  flex-direction:row;
+  align-items:center;
 }
 
 .home-panel--platforms .home-platforms__summary{
@@ -1107,6 +1108,16 @@ background: rgba(59,130,246,.18);
   align-items:center;
   justify-content:space-between;
   gap:12px;
+  min-height:44px;
+}
+
+.home-simauto__head{
+  min-height:44px;
+}
+
+.card__head-spacer{
+  visibility:hidden;
+  pointer-events:none;
 }
 
 .home-alerts__tablewrap{

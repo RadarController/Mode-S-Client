@@ -985,6 +985,28 @@ void StartBackend(
         return j.dump(2);
         };
 
+    opt.simulator_automation_status_json = [&fenixFailureCoordinator]() {
+        return fenixFailureCoordinator.StatusJson();
+        };
+
+    opt.simulator_automation_enable = [&fenixFailureCoordinator]() -> bool {
+        fenixFailureCoordinator.SetEnabled(true);
+        LogLine(L"SIMAUTO: simulator automation enabled");
+        return true;
+        };
+
+    opt.simulator_automation_disable = [&fenixFailureCoordinator]() -> bool {
+        fenixFailureCoordinator.SetEnabled(false);
+        LogLine(L"SIMAUTO: simulator automation disabled");
+        return true;
+        };
+
+    opt.simulator_automation_panic = [&fenixFailureCoordinator]() -> bool {
+        fenixFailureCoordinator.PanicStop();
+        LogLine(L"SIMAUTO: simulator automation panic stop engaged");
+        return true;
+        };
+
     fenixFailureCoordinator.Start(
         state,
         fenixFailures,
