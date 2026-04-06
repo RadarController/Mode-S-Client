@@ -6,6 +6,7 @@
 #include <deque>
 #include <functional>
 #include <mutex>
+#include <random>
 #include <string>
 #include <thread>
 #include <unordered_set>
@@ -78,10 +79,9 @@ private:
     int pending_credits_ = 0;
     int twitch_bits_remainder_ = 0;
     int tiktok_gift_remainder_ = 0;
-    std::size_t next_failure_index_ = 0;
     std::int64_t last_no_trigger_log_ms_ = 0;
 
-    std::vector<std::string> allowed_failures_;
+    std::mt19937 rng_{ std::random_device{}() };
 };
 
 } // namespace fenixsim

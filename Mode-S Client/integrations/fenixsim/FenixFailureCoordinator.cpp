@@ -61,16 +61,8 @@ void FenixFailureCoordinator::Start(AppState& state, FenixSimFailuresClient& cli
         pending_credits_ = 0;
         twitch_bits_remainder_ = 0;
         tiktok_gift_remainder_ = 0;
-        next_failure_index_ = 0;
         last_no_trigger_log_ms_ = 0;
-        allowed_failures_ = {
-            "F_SDCU",
-            "F_PNEUMATIC_CPC_1",
-            "F_ICE_STAT_STBY_L",
-            "F_HYD_LEAK_BLUE",
-            "F_HYD_LEAK_GREEN",
-            "F_HYD_LEAK_YELLOW"
-        };
+        rng_.seed(std::random_device{}());
     }
 
     running_.store(true);
@@ -379,17 +371,12 @@ bool FenixFailureCoordinator::TriggerOneFailure(std::string& triggered_id,
     detail.clear();
 
     FenixSimFailuresClient* client = nullptr;
-    std::vector<std::string> allowlist;
-    std::size_t start_index = 0;
-
     {
         std::lock_guard<std::mutex> lk(mu_);
         client = client_;
-        allowlist = allowed_failures_;
-        start_index = next_failure_index_;
     }
 
-    if (client == nullptr || allowlist.empty()) {
+    if (client == nullptr) {
         detail = "Fenix failure client is not initialized.";
         return false;
     }
@@ -401,33 +388,34 @@ bool FenixFailureCoordinator::TriggerOneFailure(std::string& triggered_id,
         return false;
     }
 
-    for (std::size_t offset = 0; offset < allowlist.size(); ++offset) {
-        const std::size_t index = (start_index + offset) % allowlist.size();
-        const std::string& candidate_id = allowlist[index];
+    std::vector<const Failure*> candidates;
+    candidates.reserve(failures.size());
+    for (const auto& failure : failures) {
+        if (failure.id.empty()) continue;
+        if (failure.IsActive() || failure.IsArmed()) continue;
+        candidates.push_back(&failure);
+    }
 
-        auto it = std::find_if(failures.begin(), failures.end(), [&](const Failure& failure) {
-            return failure.id == candidate_id;
-        });
+    if (candidates.empty()) {
+        detail = "No eligible inactive Fenix failures are available.";
+        return false;
+    }
 
-        if (it == failures.end()) {
-            continue;
-        }
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        std::shuffle(candidates.begin(), candidates.end(), rng_);
+    }
 
-        if (it->IsActive() || it->IsArmed()) {
-            continue;
-        }
+    for (const Failure* candidate : candidates) {
+        if (candidate == nullptr) continue;
 
         SafeWriteResult result = SafeWriteResult::InvalidResponse;
         std::string write_error;
-        const bool ok = client->TriggerFailureNowIfInactive(candidate_id, result, &write_error);
+        const bool ok = client->TriggerFailureNowIfInactive(candidate->id, result, &write_error);
 
         if (ok && result == SafeWriteResult::Success) {
-            {
-                std::lock_guard<std::mutex> lk(mu_);
-                next_failure_index_ = (index + 1) % allowlist.size();
-            }
-            triggered_id = candidate_id;
-            triggered_title = it->title;
+            triggered_id = candidate->id;
+            triggered_title = candidate->title;
             return true;
         }
 
@@ -436,7 +424,7 @@ bool FenixFailureCoordinator::TriggerOneFailure(std::string& triggered_id,
         }
 
         std::ostringstream oss;
-        oss << "Failed to trigger " << candidate_id << ": " << SafeWriteResultToString(result);
+        oss << "Failed to trigger " << candidate->id << ": " << SafeWriteResultToString(result);
         if (!write_error.empty()) {
             oss << " (" << write_error << ")";
         }
@@ -444,7 +432,7 @@ bool FenixFailureCoordinator::TriggerOneFailure(std::string& triggered_id,
     }
 
     if (detail.empty()) {
-        detail = "No eligible inactive Fenix failures are available in the current allow-list.";
+        detail = "Failed to trigger a random eligible Fenix failure.";
     }
     return false;
 }
