@@ -301,6 +301,12 @@ namespace PlatformControl {
                     double ts = j.value("ts", 0.0);
                     e.ts_ms = (std::int64_t)(ts * 1000.0);
                 }
+
+                // Preserve the full structured sidecar payload so later app logic
+                // can use gift_count / gift_total_value / subscription flags without
+                // having to parse the human-readable message text.
+                e.data = j;
+
                 state.push_tiktok_event(e);
             }
             else if (type == "tiktok.chat") {

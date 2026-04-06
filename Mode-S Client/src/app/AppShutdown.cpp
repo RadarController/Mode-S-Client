@@ -12,6 +12,7 @@
 #include "tiktok/TikTokSidecar.h"
 #include "http/HttpServer.h"
 #include "log/UiLog.h"
+#include "fenixsim/FenixFailureCoordinator.h"
 
 namespace AppShutdown {
 
@@ -56,6 +57,11 @@ void BeginShutdown(Dependencies& deps, HWND hwndToDestroy)
 
     // 4) Stop services last
     LogLine(L"SHUTDOWN: stopping services...");
+
+    LogLine(L"SHUTDOWN: stopping fenixFailureCoordinator...");
+    try { deps.fenixFailureCoordinator.Stop(); }
+    catch (...) {}
+    LogLine(L"SHUTDOWN: stopped fenixFailureCoordinator");
 
     LogLine(L"SHUTDOWN: stopping twitchEventSub...");
     try { deps.twitchEventSub.Stop(); }

@@ -155,6 +155,26 @@ let homeAlertsState = {
   status: "Loading alert history…"
 };
 
+let simAutomationState = {
+  apiAvailable: false,
+  enabled: null,
+  connected: null,
+  pendingCredits: null,
+  activeFailures: null,
+  armedFailures: null,
+  modeLabel: "60% immediate / 40% armed",
+  summary: "Waiting for simulator automation status…",
+  summarySub: "Recent Fenix activity will appear here even before a dedicated status API is added.",
+  recentActivity: [],
+  statusChip: "Unavailable"
+};
+
+const SIM_AUTOMATION_STATUS_URL = "/api/simulator-automation/status";
+const SIM_AUTOMATION_ENABLE_URL = "/api/simulator-automation/enable";
+const SIM_AUTOMATION_DISABLE_URL = "/api/simulator-automation/disable";
+const SIM_AUTOMATION_PANIC_URL = "/api/simulator-automation/panic";
+
+
 function isHomePage(){
   return !!document.getElementById("homePage");
 }
@@ -1039,6 +1059,199 @@ async function replayHomeAlert(historyId, button){
   }
 }
 
+
+function compactSimAutomationText(value, maxLen = 96){
+  let text = String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  text = text
+    .replace(/^FENIX:\s*/i, "")
+    .replace(/^SIMAUTO:\s*/i, "");
+
+  if (text.length > maxLen) {
+    text = `${text.slice(0, Math.max(0, maxLen - 1)).trimEnd()}…`;
+  }
+  return text || "—";
+}
+
+function normalizeSimAutomationRecentItems(items){
+  const src = Array.isArray(items) ? items : [];
+  return src
+    .slice(-10)
+    .reverse()
+    .map((item) => ({
+      time: String(item?.time || "—"),
+      text: compactSimAutomationText(item?.text || "")
+    }))
+    .filter((item) => item.text && item.text !== "—");
+}
+
+function simAutomationActivityFromLogs(entries){
+  const src = Array.isArray(entries) ? entries : [];
+  const filtered = src
+    .filter((entry) => {
+      const msg = String(entry?.msg || "");
+      return msg.includes("FENIX:") || msg.includes("SIMAUTO:");
+    })
+    .slice(-10)
+    .reverse();
+
+  return filtered.map((entry) => {
+    const tsMs = Number(entry?.ts_ms || 0);
+    let timeLabel = "—";
+    if (Number.isFinite(tsMs) && tsMs > 0) {
+      try {
+        timeLabel = new Date(tsMs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      } catch (_) {}
+    }
+    return {
+      time: timeLabel,
+      text: compactSimAutomationText(entry?.msg || "")
+    };
+  });
+}
+
+function simAutomationNormalizeStatus(payload){
+  const node = (payload && typeof payload === "object") ? payload : {};
+  const recent = Array.isArray(node.recent_activity)
+    ? node.recent_activity.map((item) => ({
+        time: trim(item?.time || item?.ts || item?.label || ""),
+        text: item?.text || item?.message || item?.msg || ""
+      }))
+    : [];
+
+  return {
+    apiAvailable: !!(node.ok === true || Object.keys(node).length > 0),
+    enabled: (node.enabled !== undefined) ? !!node.enabled : null,
+    connected: (node.connected !== undefined) ? !!node.connected : ((node.integration_connected !== undefined) ? !!node.integration_connected : null),
+    pendingCredits: node.pending_credits ?? node.pendingCredits ?? null,
+    activeFailures: node.active_failures ?? node.activeFailures ?? null,
+    armedFailures: node.armed_failures ?? node.armedFailures ?? null,
+    modeLabel: String(node.selection_mode || node.mode_label || "60% immediate / 40% armed"),
+    summary: String(node.summary || "Simulator automation status available."),
+    summarySub: String(node.summary_sub || "Live status is being provided by the backend."),
+    recentActivity: normalizeSimAutomationRecentItems(recent),
+    statusChip: String(node.status_label || (node.enabled === true ? "Enabled" : (node.enabled === false ? "Disabled" : "Available")))
+  };
+}
+
+function renderSimulatorAutomationPanel(){
+  if (!isHomePage()) return;
+
+  const chip = document.getElementById("simAutoChip");
+  const toggleBtn = document.getElementById("btnSimAutoToggle");
+  const panicBtn = document.getElementById("btnSimAutoPanic");
+  const activity = document.getElementById("simAutoActivity");
+
+  if (!chip || !toggleBtn || !panicBtn || !activity) return;
+
+  setText("simAutoIntegration", simAutomationState.connected === null ? "—" : (simAutomationState.connected ? "Connected" : "Unavailable"));
+  setText("simAutoAutomation", simAutomationState.enabled === null ? "—" : (simAutomationState.enabled ? "Enabled" : "Disabled"));
+  setText("simAutoPending", fmtNum(simAutomationState.pendingCredits));
+  setText("simAutoActive", fmtNum(simAutomationState.activeFailures));
+  setText("simAutoArmed", fmtNum(simAutomationState.armedFailures));
+  setText("simAutoMode", simAutomationState.modeLabel || "60% immediate / 40% armed");
+
+  chip.textContent = simAutomationState.statusChip || "Unavailable";
+  chip.classList.remove("badge--live", "badge--warn", "badge--muted");
+  if (simAutomationState.enabled === true) chip.classList.add("badge--live");
+  else if (simAutomationState.apiAvailable) chip.classList.add("badge--warn");
+  else chip.classList.add("badge--muted");
+
+  toggleBtn.textContent = simAutomationState.enabled ? "Disable automation" : "Enable automation";
+  toggleBtn.disabled = !simAutomationState.apiAvailable;
+  panicBtn.disabled = !simAutomationState.apiAvailable;
+
+  if (!Array.isArray(simAutomationState.recentActivity) || simAutomationState.recentActivity.length === 0) {
+    activity.innerHTML = '<div class="home-simauto__activity-empty">No simulator automation activity yet.</div>';
+  } else {
+    activity.innerHTML = simAutomationState.recentActivity.map((item) => `
+      <div class="home-simauto__activity-item">
+        <span class="home-simauto__activity-time">${escapeHtml(item.time || "—")}</span>
+        <span class="home-simauto__activity-text">${escapeHtml(item.text || "")}</span>
+      </div>
+    `).join("");
+  }
+}
+
+async function loadSimulatorAutomationActivityFromLogs(){
+  try {
+    const payload = await apiGet("/api/log?limit=200");
+    return simAutomationActivityFromLogs(payload?.entries || []);
+  } catch (_) {
+    return [];
+  }
+}
+
+async function pollSimulatorAutomationPanel(options = {}){
+  if (!isHomePage()) return;
+
+  const silent = !!options.silent;
+
+  let nextState = {
+    ...simAutomationState,
+    apiAvailable: false,
+    statusChip: "Unavailable"
+  };
+
+  try {
+    const payload = await apiGet(SIM_AUTOMATION_STATUS_URL);
+    nextState = {
+      ...nextState,
+      ...simAutomationNormalizeStatus(payload)
+    };
+  } catch (_) {
+    nextState.summary = "Simulator automation backend status is not available in this build.";
+    nextState.summarySub = "Recent Fenix coordinator activity is shown below from Diagnostics logs.";
+    nextState.connected = null;
+    nextState.enabled = null;
+    nextState.pendingCredits = null;
+    nextState.activeFailures = null;
+    nextState.armedFailures = null;
+    nextState.statusChip = "Unavailable";
+  }
+
+  const fallbackActivity = normalizeSimAutomationRecentItems(await loadSimulatorAutomationActivityFromLogs());
+  if (!nextState.recentActivity || nextState.recentActivity.length === 0) {
+    nextState.recentActivity = fallbackActivity;
+  }
+
+  if (!nextState.apiAvailable && fallbackActivity.length > 0) {
+    nextState.summary = "Recent simulator automation activity detected.";
+    nextState.summarySub = "The panel is reading Fenix activity from the app log while waiting for a dedicated status API.";
+  }
+
+  simAutomationState = nextState;
+  if (!silent || true) renderSimulatorAutomationPanel();
+}
+
+async function postSimulatorAutomationCommand(url, busyText){
+  const toggleBtn = document.getElementById("btnSimAutoToggle");
+  const panicBtn = document.getElementById("btnSimAutoPanic");
+
+  if (!simAutomationState.apiAvailable) {
+    simAutomationState.summary = "Simulator automation controls are not available in this build yet.";
+    simAutomationState.summarySub = "Add the backend simulator automation control routes to enable these buttons.";
+    renderSimulatorAutomationPanel();
+    return;
+  }
+
+  const busyButton = url === SIM_AUTOMATION_PANIC_URL ? panicBtn : toggleBtn;
+  setActionBusy(busyButton, true, busyText);
+
+  try {
+    await apiPost(url, {});
+    await pollSimulatorAutomationPanel();
+  } catch (e) {
+    simAutomationState.summary = `Simulator automation command failed (${e.message})`;
+    simAutomationState.summarySub = "The UI is ready, but the backend command did not complete successfully.";
+    renderSimulatorAutomationPanel();
+  } finally {
+    setActionBusy(busyButton, false);
+  }
+}
+
 function wireHomePage(){
   const root = document.getElementById("homePage");
   if (!root) return;
@@ -1132,6 +1345,19 @@ function wireHomePage(){
     const replayBtn = ev.target.closest("button[data-alert-replay]");
     if (!replayBtn) return;
     await replayHomeAlert(replayBtn.getAttribute("data-alert-replay") || "", replayBtn);
+  });
+
+  document.getElementById("btnSimAutoToggle")?.addEventListener("click", async () => {
+    const url = simAutomationState.enabled ? SIM_AUTOMATION_DISABLE_URL : SIM_AUTOMATION_ENABLE_URL;
+    await postSimulatorAutomationCommand(url, simAutomationState.enabled ? "Disabling..." : "Enabling...");
+  });
+
+  document.getElementById("btnSimAutoPanic")?.addEventListener("click", async () => {
+    await postSimulatorAutomationCommand(SIM_AUTOMATION_PANIC_URL, "Stopping...");
+  });
+
+  document.getElementById("btnSimAutoSettings")?.addEventListener("click", () => {
+    window.location.href = "/app/settings.html";
   });
 }
 
@@ -1793,6 +2019,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       await fetchHomeAuthStatuses();
       await pollHomePlatformStatus();
       await loadHomeAlertsHistory();
+      await pollSimulatorAutomationPanel();
     }
 
     await pollMetrics();
@@ -1811,6 +2038,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     setInterval(fetchHomeAuthStatuses, 15000);
     setInterval(pollHomePlatformStatus, 3000);
     setInterval(() => { loadHomeAlertsHistory({ preservePage: true, silent: true }); }, 3000);
+    setInterval(() => { pollSimulatorAutomationPanel({ silent: true }); }, 3000);
   } else {
     setInterval(pollLog, 1000);
   }

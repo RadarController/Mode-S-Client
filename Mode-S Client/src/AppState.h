@@ -52,6 +52,11 @@ struct EventItem {
     std::string user;
     std::string message;
     std::int64_t ts_ms{};
+
+    // Optional structured platform-specific payload.
+    // For TikTok this preserves fields such as gift_count/gift_total_value so
+    // later app logic does not need to re-parse the human-readable message.
+    nlohmann::json data;
 };
 
 struct ErrorEntry {

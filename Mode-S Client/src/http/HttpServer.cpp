@@ -1147,6 +1147,100 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
     });
 #endif
 
+    // --- API: Debug / test injection for fake support events ---
+    // POST /api/debug/support-event
+    // Development-only: inject a synthetic monetization/support event into the same
+    // per-platform queues consumed by the Fenix failure coordinator.
+#ifndef NDEBUG
+    svr.Post("/api/debug/support-event", [&](const httplib::Request& req, httplib::Response& res) {
+        // Safety: only allow local requests
+        const std::string ra = req.remote_addr;
+        if (!(ra == "127.0.0.1" || ra == "::1" || ra == "localhost" || ra.rfind("127.", 0) == 0)) {
+            res.status = 403;
+            res.set_content(R"({"ok":false,"error":"forbidden"})", "application/json; charset=utf-8");
+            return;
+        }
+
+        try {
+            auto in = nlohmann::json::parse(req.body);
+            if (!in.is_object()) {
+                res.status = 400;
+                res.set_content(R"({"ok":false,"error":"invalid_json"})", "application/json; charset=utf-8");
+                return;
+            }
+
+            std::string platform = in.value("platform", "");
+            std::string type = in.value("type", "");
+            std::transform(platform.begin(), platform.end(), platform.begin(), [](unsigned char c) { return (char)std::tolower(c); });
+
+            if (platform.empty() || type.empty()) {
+                res.status = 400;
+                res.set_content(R"({"ok":false,"error":"expected_platform_and_type"})", "application/json; charset=utf-8");
+                return;
+            }
+
+            if (!in.contains("ts_ms") || !in["ts_ms"].is_number_integer()) {
+                const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count();
+                in["ts_ms"] = now;
+            }
+            if (!in.contains("id") || !in["id"].is_string() || in["id"].get<std::string>().empty()) {
+                in["id"] = std::string("debug-support-") + std::to_string(in["ts_ms"].get<long long>());
+            }
+
+            if (platform == "twitch") {
+                state_.add_twitch_eventsub_event(in);
+            }
+            else if (platform == "tiktok") {
+                EventItem e;
+                e.platform = "tiktok";
+                e.type = type;
+                e.user = in.value("user", in.value("user_name", "unknown"));
+                e.message = in.value("message", "");
+                e.ts_ms = (std::int64_t)in.value("ts_ms", 0LL);
+                e.data = in;
+                if (!in.contains("event_type") || !in["event_type"].is_string() || in["event_type"].get<std::string>().empty()) {
+                    e.data["event_type"] = type;
+                }
+                state_.push_tiktok_event(e);
+            }
+            else if (platform == "youtube") {
+                EventItem e;
+                e.platform = "youtube";
+                e.type = type;
+                e.user = in.value("user", in.value("user_name", "unknown"));
+                e.message = in.value("message", "");
+                e.ts_ms = (std::int64_t)in.value("ts_ms", 0LL);
+                e.data = in;
+                state_.push_youtube_event(e);
+            }
+            else {
+                res.status = 400;
+                res.set_content(R"({"ok":false,"error":"unsupported_platform"})", "application/json; charset=utf-8");
+                return;
+            }
+
+            nlohmann::json out;
+            out["ok"] = true;
+            out["id"] = in.value("id", "");
+            out["platform"] = platform;
+            out["type"] = type;
+            res.status = 200;
+            res.set_content(out.dump(2), "application/json; charset=utf-8");
+        }
+        catch (...) {
+            res.status = 400;
+            res.set_content(R"({"ok":false,"error":"invalid_json"})", "application/json; charset=utf-8");
+        }
+    });
+#else
+    // In release builds, keep this endpoint disabled.
+    svr.Post("/api/debug/support-event", [&](const httplib::Request&, httplib::Response& res) {
+        res.status = 404;
+        res.set_content(R"({"ok":false,"error":"not_found"})", "application/json; charset=utf-8");
+    });
+#endif
+
     // --- API: YouTube VOD draft (stored in twitch_streaminfo.json for now) ---
     // GET /api/youtube/vod/draft
     svr.Get("/api/youtube/vod/draft", [&](const httplib::Request&, httplib::Response& res) {
@@ -1817,6 +1911,118 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
             res.set_content(R"({"ok":false,"error":"forbidden"})", "application/json; charset=utf-8");
             return false;
             };
+
+
+        // --- API: simulator automation (light-touch home page panel) ---
+        svr.Get("/api/simulator-automation/status", [&](const httplib::Request& req, httplib::Response& res) {
+            if (!require_local(req, res)) return;
+
+            if (!opt_.simulator_automation_status_json) {
+                res.status = 404;
+                res.set_content(R"({"ok":false,"error":"not_implemented"})", "application/json; charset=utf-8");
+                return;
+            }
+
+            try {
+                auto j = opt_.simulator_automation_status_json();
+                res.status = 200;
+                res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+                res.set_header("Pragma", "no-cache");
+                res.set_content(j.dump(2), "application/json; charset=utf-8");
+            }
+            catch (...) {
+                res.status = 500;
+                res.set_content(R"({"ok":false,"error":"exception"})", "application/json; charset=utf-8");
+            }
+        });
+
+        svr.Post("/api/simulator-automation/enable", [&](const httplib::Request& req, httplib::Response& res) {
+            if (!require_local(req, res)) return;
+            if (!opt_.simulator_automation_enable) {
+                res.status = 404;
+                res.set_content(R"({"ok":false,"error":"not_implemented"})", "application/json; charset=utf-8");
+                return;
+            }
+
+            bool ok = false;
+            try { ok = opt_.simulator_automation_enable(); }
+            catch (...) {
+                res.status = 500;
+                res.set_content(R"({"ok":false,"error":"exception"})", "application/json; charset=utf-8");
+                return;
+            }
+
+            if (!ok) {
+                res.status = 500;
+                res.set_content(R"({"ok":false,"error":"failed"})", "application/json; charset=utf-8");
+                return;
+            }
+
+            nlohmann::json out;
+            out["ok"] = true;
+            out["enabled"] = true;
+            res.status = 200;
+            res.set_content(out.dump(2), "application/json; charset=utf-8");
+        });
+
+        svr.Post("/api/simulator-automation/disable", [&](const httplib::Request& req, httplib::Response& res) {
+            if (!require_local(req, res)) return;
+            if (!opt_.simulator_automation_disable) {
+                res.status = 404;
+                res.set_content(R"({"ok":false,"error":"not_implemented"})", "application/json; charset=utf-8");
+                return;
+            }
+
+            bool ok = false;
+            try { ok = opt_.simulator_automation_disable(); }
+            catch (...) {
+                res.status = 500;
+                res.set_content(R"({"ok":false,"error":"exception"})", "application/json; charset=utf-8");
+                return;
+            }
+
+            if (!ok) {
+                res.status = 500;
+                res.set_content(R"({"ok":false,"error":"failed"})", "application/json; charset=utf-8");
+                return;
+            }
+
+            nlohmann::json out;
+            out["ok"] = true;
+            out["enabled"] = false;
+            res.status = 200;
+            res.set_content(out.dump(2), "application/json; charset=utf-8");
+        });
+
+        svr.Post("/api/simulator-automation/panic", [&](const httplib::Request& req, httplib::Response& res) {
+            if (!require_local(req, res)) return;
+            if (!opt_.simulator_automation_panic) {
+                res.status = 404;
+                res.set_content(R"({"ok":false,"error":"not_implemented"})", "application/json; charset=utf-8");
+                return;
+            }
+
+            bool ok = false;
+            try { ok = opt_.simulator_automation_panic(); }
+            catch (...) {
+                res.status = 500;
+                res.set_content(R"({"ok":false,"error":"exception"})", "application/json; charset=utf-8");
+                return;
+            }
+
+            if (!ok) {
+                res.status = 500;
+                res.set_content(R"({"ok":false,"error":"failed"})", "application/json; charset=utf-8");
+                return;
+            }
+
+            nlohmann::json out;
+            out["ok"] = true;
+            out["panic"] = true;
+            out["enabled"] = false;
+            res.status = 200;
+            res.set_content(out.dump(2), "application/json; charset=utf-8");
+        });
 
 
         // --- API: Twitch custom rewards and local reward actions (local only) ---

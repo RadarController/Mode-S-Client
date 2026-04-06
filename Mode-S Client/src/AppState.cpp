@@ -802,8 +802,25 @@ bool AppState::release_twitch_channel_points_pending(
 }
 
 void AppState::push_tiktok_event(const EventItem& e) {
+    nlohmann::json payload = {
+        {"platform", e.platform},
+        {"type", e.type},
+        {"user", e.user},
+        {"message", e.message},
+        {"ts_ms", e.ts_ms}
+    };
+
+    if (e.data.is_object()) {
+        for (auto it = e.data.begin(); it != e.data.end(); ++it) {
+            if (!payload.contains(it.key())) {
+                payload[it.key()] = it.value();
+            }
+        }
+    }
+
     // Also record into unified alerts history.
-    record_alert_history_(nlohmann::json{{{"platform", e.platform}, {"type", e.type}, {"user", e.user}, {"message", e.message}, {"ts_ms", e.ts_ms}}});
+    record_alert_history_(payload);
+
     std::lock_guard<std::mutex> lk(mtx_);
     tiktok_events_.push_back(e);
     while (tiktok_events_.size() > 200) tiktok_events_.pop_front();
@@ -827,6 +844,15 @@ nlohmann::json AppState::tiktok_events_json(size_t limit) const {
         j["user"] = e.user;
         j["message"] = e.message;
         j["ts_ms"] = e.ts_ms;
+
+        if (e.data.is_object()) {
+            for (auto it = e.data.begin(); it != e.data.end(); ++it) {
+                if (!j.contains(it.key())) {
+                    j[it.key()] = it.value();
+                }
+            }
+        }
+
         arr.push_back(std::move(j));
     }
 
@@ -835,8 +861,24 @@ nlohmann::json AppState::tiktok_events_json(size_t limit) const {
 }
 
 void AppState::push_youtube_event(const EventItem& e) {
+    nlohmann::json payload = {
+        {"platform", e.platform},
+        {"type", e.type},
+        {"user", e.user},
+        {"message", e.message},
+        {"ts_ms", e.ts_ms}
+    };
+
+    if (e.data.is_object()) {
+        for (auto it = e.data.begin(); it != e.data.end(); ++it) {
+            if (!payload.contains(it.key())) {
+                payload[it.key()] = it.value();
+            }
+        }
+    }
+
     // Also record into unified alerts history.
-    record_alert_history_(nlohmann::json{{{"platform", e.platform}, {"type", e.type}, {"user", e.user}, {"message", e.message}, {"ts_ms", e.ts_ms}}});
+    record_alert_history_(payload);
     std::lock_guard<std::mutex> lk(mtx_);
     youtube_events_.push_back(e);
     while (youtube_events_.size() > 200) youtube_events_.pop_front();
@@ -861,6 +903,15 @@ nlohmann::json AppState::youtube_events_json(size_t limit) const {
         j["user"] = e.user;
         j["message"] = e.message;
         j["ts_ms"] = e.ts_ms;
+
+        if (e.data.is_object()) {
+            for (auto it = e.data.begin(); it != e.data.end(); ++it) {
+                if (!j.contains(it.key())) {
+                    j[it.key()] = it.value();
+                }
+            }
+        }
+
         arr.push_back(std::move(j));
     }
 
@@ -1420,16 +1471,32 @@ nlohmann::json AppState::log_json(std::uint64_t since, int limit) const {
     out["ok"] = true;
     nlohmann::json arr = nlohmann::json::array();
 
-    // Return entries with id > since, oldest -> newest
-    int count = 0;
-    for (const auto& e : log_) {
-        if (e.id <= since) continue;
-        arr.push_back({
-            {"id", e.id},
-            {"ts_ms", e.ts_ms},
-            {"msg", e.msg}
-            });
-        if (++count >= limit) break;
+    // When no cursor is supplied yet, return the most recent `limit` entries,
+    // but keep them in oldest -> newest order within that window.
+    if (since == 0) {
+        int start = static_cast<int>(log_.size()) - limit;
+        if (start < 0) start = 0;
+
+        for (int i = start; i < static_cast<int>(log_.size()); ++i) {
+            const auto& e = log_[i];
+            arr.push_back({
+                {"id", e.id},
+                {"ts_ms", e.ts_ms},
+                {"msg", e.msg}
+                });
+        }
+    } else {
+        // Incremental fetch path: return entries with id > since, oldest -> newest.
+        int count = 0;
+        for (const auto& e : log_) {
+            if (e.id <= since) continue;
+            arr.push_back({
+                {"id", e.id},
+                {"ts_ms", e.ts_ms},
+                {"msg", e.msg}
+                });
+            if (++count >= limit) break;
+        }
     }
 
     out["entries"] = std::move(arr);

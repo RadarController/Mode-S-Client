@@ -58,6 +58,12 @@ public:
         std::function<std::optional<std::string>()> twitch_get_client_id;
         std::function<std::optional<std::string>()> youtube_get_access_token;
         std::function<std::optional<std::string>()> youtube_get_channel_id;
+
+        // Simulator automation (light-touch home page status + emergency controls)
+        std::function<nlohmann::json()> simulator_automation_status_json;
+        std::function<bool()> simulator_automation_enable;
+        std::function<bool()> simulator_automation_disable;
+        std::function<bool()> simulator_automation_panic;
     };
 
     using LogFn = std::function<void(const std::wstring&)>;

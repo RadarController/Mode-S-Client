@@ -24,6 +24,8 @@ AppBootstrap::Dependencies AppRuntime::BuildBootstrapDeps(HWND hwnd)
         tiktokFollowersThread,
         euroscope,
         obs,
+        fenixFailures,
+        fenixFailureCoordinator,
         running,
         twitchHelixRunning,
         twitchHelixBoundLogin
@@ -43,6 +45,7 @@ AppShutdown::Dependencies AppRuntime::BuildShutdownDeps()
         youtubeChat,
         youtube,
         tiktok,
+        fenixFailureCoordinator,
         running,
         twitchHelixRunning
     };

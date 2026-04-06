@@ -35,8 +35,10 @@
         <main class="home-main-grid">
             <section class="card home-platforms home-panel home-panel--platforms">
                 <div class="card__head home-platforms__head">
-                    <div class="card__title">Platforms</div>
-                    <div class="home-platforms__summary" hidden></div>
+                    <div>
+                        <div class="card__title">Platforms</div>
+                    </div>
+                    <span class="badge badge--muted card__head-spacer" aria-hidden="true">Unavailable</span>
                 </div>
 
                 <div class="platforms platforms--home platforms--stacked">
@@ -149,6 +151,7 @@
                     <div>
                         <div class="card__title">Alert History</div>
                     </div>
+                    <span class="badge badge--muted card__head-spacer" aria-hidden="true">Unavailable</span>
                 </div>
 
                 <div class="home-alerts__tablewrap">
@@ -180,7 +183,56 @@
                 </div>
             </section>
 
-            <section class="card home-panel home-panel--blank home-blank" aria-hidden="true"></section>
+            <section class="card home-panel home-panel--simauto home-simauto" aria-label="Simulator automation">
+                <div class="card__head home-simauto__head">
+                    <div>
+                        <div class="card__title">Simulator Automation</div>
+                    </div>
+                    <span class="badge badge--muted" id="simAutoChip">Unavailable</span>
+                </div>
+
+                <div class="home-simauto__body">
+                    <div class="home-simauto__stats">
+                        <div class="home-simauto__stat">
+                            <div class="home-simauto__stat-k">Integration</div>
+                            <div class="home-simauto__stat-v" id="simAutoIntegration">—</div>
+                        </div>
+                        <div class="home-simauto__stat">
+                            <div class="home-simauto__stat-k">Automation</div>
+                            <div class="home-simauto__stat-v" id="simAutoAutomation">—</div>
+                        </div>
+                        <div class="home-simauto__stat">
+                            <div class="home-simauto__stat-k">Pending credits</div>
+                            <div class="home-simauto__stat-v" id="simAutoPending">—</div>
+                        </div>
+                        <div class="home-simauto__stat">
+                            <div class="home-simauto__stat-k">Active failures</div>
+                            <div class="home-simauto__stat-v" id="simAutoActive">—</div>
+                        </div>
+                        <div class="home-simauto__stat">
+                            <div class="home-simauto__stat-k">Armed failures</div>
+                            <div class="home-simauto__stat-v" id="simAutoArmed">—</div>
+                        </div>
+                        <div class="home-simauto__stat">
+                            <div class="home-simauto__stat-k">Selection mode</div>
+                            <div class="home-simauto__stat-v home-simauto__stat-v--small" id="simAutoMode">60% immediate / 40% armed</div>
+                        </div>
+                    </div>
+
+                    <div class="home-simauto__section">
+                        <div class="home-simauto__section-title">Recent activity</div>
+                        <div class="home-simauto__activity" id="simAutoActivity">
+                            <div class="home-simauto__activity-empty">No simulator automation activity yet.</div>
+                        </div>
+                    </div>
+
+                    <div class="home-simauto__controls">
+                        <button class="btn btn--primary" id="btnSimAutoToggle" type="button" disabled>Enable automation</button>
+                        <button class="btn btn--danger" id="btnSimAutoPanic" type="button" disabled>Panic stop</button>
+                        <button class="btn btn--ghost" id="btnSimAutoSettings" type="button">Settings</button>
+                    </div>
+                </div>
+            </section>
         </main>
 
         <footer class="footer">
