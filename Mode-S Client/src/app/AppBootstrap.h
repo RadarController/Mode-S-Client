@@ -20,6 +20,7 @@ class YouTubeLiveChatService;
 class HttpServer;
 class EuroScopeIngestService;
 class ObsWsClient;
+namespace fenixsim { class FenixSimFailuresClient; }
 
 namespace AppBootstrap {
 
@@ -42,6 +43,7 @@ struct Dependencies {
     std::thread& tiktokFollowersThread;
     EuroScopeIngestService& euroscope;
     ObsWsClient& obs;
+    fenixsim::FenixSimFailuresClient& fenixFailures;
     std::atomic<bool>& running;
     std::atomic<bool>& twitchHelixRunning;
     std::string& twitchHelixBoundLogin;

@@ -24,6 +24,7 @@ AppBootstrap::Dependencies AppRuntime::BuildBootstrapDeps(HWND hwnd)
         tiktokFollowersThread,
         euroscope,
         obs,
+        fenixFailures,
         running,
         twitchHelixRunning,
         twitchHelixBoundLogin

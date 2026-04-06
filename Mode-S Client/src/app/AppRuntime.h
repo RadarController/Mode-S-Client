@@ -21,6 +21,7 @@ typedef struct HWND__* HWND;
 #include "youtube/YouTubeLiveChatService.h"
 #include "euroscope/EuroScopeIngestService.h"
 #include "obs/ObsWsClient.h"
+#include "fenixsim/FenixSimFailures.h"
 
 struct AppRuntime {
     AppConfig config;
@@ -39,6 +40,7 @@ struct AppRuntime {
     std::thread tiktokFollowersThread;
     EuroScopeIngestService euroscope;
     ObsWsClient obs;
+    fenixsim::FenixSimFailuresClient fenixFailures;
     std::atomic<bool> running{ true };
     std::atomic<bool> twitchHelixRunning{ true };
     std::string twitchHelixBoundLogin;
