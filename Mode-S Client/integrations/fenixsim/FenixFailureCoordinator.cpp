@@ -9,6 +9,7 @@
 
 #include "AppState.h"
 #include "fenixsim/FenixSimFailures.h"
+#include "fenixsim/FenixFailureMetadataStore.h"
 
 namespace fenixsim {
 namespace {
@@ -64,8 +65,14 @@ void FenixFailureCoordinator::Start(AppState& state, FenixSimFailuresClient& cli
         last_no_trigger_log_ms_ = 0;
         automation_enabled_ = false;
         recent_failure_last_used_ms_.clear();
+        merged_catalog_.clear();
+        discovered_failure_count_ = 0;
+        metadata_entry_count_ = 0;
+        stale_metadata_entry_count_ = 0;
         rng_.seed(std::random_device{}());
     }
+
+    RefreshFailureMetadataOnStart();
 
     running_.store(true);
     worker_ = std::thread(&FenixFailureCoordinator::WorkerLoop, this);
@@ -237,9 +244,22 @@ nlohmann::json FenixFailureCoordinator::StatusJson() const {
         else if (failure.IsArmed()) ++armed;
     }
 
+    std::size_t discovered_failures = 0;
+    std::size_t metadata_entries = 0;
+    std::size_t stale_metadata_entries = 0;
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        discovered_failures = discovered_failure_count_;
+        metadata_entries = metadata_entry_count_;
+        stale_metadata_entries = stale_metadata_entry_count_;
+    }
+
     out["connected"] = true;
     out["active_failures"] = active;
     out["armed_failures"] = armed;
+    out["catalog_discovered_failures"] = discovered_failures;
+    out["catalog_metadata_entries"] = metadata_entries;
+    out["catalog_stale_entries"] = stale_metadata_entries;
     out["status_label"] = enabled_now ? "Enabled" : "Disabled";
     out["summary"] = enabled_now
         ? "Simulator automation is enabled and ready to react to support events."
@@ -247,6 +267,59 @@ nlohmann::json FenixFailureCoordinator::StatusJson() const {
     out["summary_sub"] = "This panel provides light-touch live status and emergency controls; deeper settings can live in the Settings section later.";
     out["recent_activity"] = nlohmann::json::array();
     return out;
+}
+
+
+void FenixFailureCoordinator::RefreshFailureMetadataOnStart() {
+    FenixSimFailuresClient* client = nullptr;
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        client = client_;
+    }
+
+    if (client == nullptr) {
+        Log(L"FENIX: failure metadata refresh skipped because the Fenix failure client is not initialized.");
+        return;
+    }
+
+    std::vector<Failure> failures;
+    std::string fetch_error;
+    if (!client->FetchManualFailures(failures, &fetch_error)) {
+        Log(L"FENIX: failure metadata refresh skipped because the manual failures endpoint could not be read: " +
+            SafeToW(fetch_error.empty() ? std::string("unknown_error") : fetch_error));
+        return;
+    }
+
+    FailureMetadataRefreshSummary summary;
+    std::string refresh_error;
+    if (!metadata_store_.RefreshFromFailures(failures, summary, &refresh_error)) {
+        Log(L"FENIX: failure metadata refresh failed: " +
+            SafeToW(refresh_error.empty() ? std::string("unknown_error") : refresh_error));
+        return;
+    }
+
+    std::vector<MergedFailureCatalogEntry> merged_catalog;
+    std::string load_error;
+    if (!metadata_store_.LoadMergedCatalog(failures, merged_catalog, &load_error)) {
+        Log(L"FENIX: failure metadata refresh saved successfully, but the merged catalog could not be reloaded: " +
+            SafeToW(load_error.empty() ? std::string("unknown_error") : load_error));
+    }
+
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        merged_catalog_ = std::move(merged_catalog);
+        discovered_failure_count_ = summary.discovered_failures;
+        metadata_entry_count_ = summary.metadata_entries_after;
+        stale_metadata_entry_count_ = summary.stale_entries;
+    }
+
+    std::wstringstream ws;
+    ws << L"FENIX: failure metadata refreshed; discovered=" << summary.discovered_failures
+       << L", metadata_entries=" << summary.metadata_entries_after
+       << L", new=" << summary.new_entries
+       << L", stale=" << summary.stale_entries
+       << L", file=" << summary.metadata_path;
+    Log(ws.str());
 }
 
 void FenixFailureCoordinator::WorkerLoop() {

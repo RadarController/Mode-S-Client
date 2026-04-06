@@ -15,6 +15,8 @@
 
 #include "json.hpp"
 
+#include "fenixsim/FenixFailureMetadataStore.h"
+
 class AppState;
 
 namespace fenixsim {
@@ -42,6 +44,7 @@ public:
 
 private:
     void WorkerLoop();
+    void RefreshFailureMetadataOnStart();
 
     void SeedSeenFromCurrentQueues();
     void CollectNewEvents(std::vector<nlohmann::json>& out_events);
@@ -109,6 +112,12 @@ private:
     std::unordered_map<std::string, std::int64_t> recent_failure_last_used_ms_;
 
     std::mt19937 rng_{ std::random_device{}() };
+
+    FenixFailureMetadataStore metadata_store_;
+    std::vector<MergedFailureCatalogEntry> merged_catalog_;
+    std::size_t discovered_failure_count_ = 0;
+    std::size_t metadata_entry_count_ = 0;
+    std::size_t stale_metadata_entry_count_ = 0;
 };
 
 } // namespace fenixsim
