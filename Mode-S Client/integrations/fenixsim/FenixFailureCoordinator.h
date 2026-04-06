@@ -9,6 +9,7 @@
 #include <random>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -55,6 +56,12 @@ private:
     bool TriggerOneFailure(std::string& triggered_id,
                            std::string& triggered_title,
                            std::string& detail);
+    bool IsFailureOnRecentCooldown(const std::string& failure_id,
+                                   std::int64_t now_ms,
+                                   std::int64_t* remaining_ms = nullptr) const;
+    void RememberTriggeredFailure(const std::string& failure_id,
+                                  std::int64_t now_ms);
+    void PruneRecentFailureCooldowns(std::int64_t now_ms);
 
     void Log(const std::wstring& msg) const;
 
@@ -80,6 +87,10 @@ private:
     int twitch_bits_remainder_ = 0;
     int tiktok_gift_remainder_ = 0;
     std::int64_t last_no_trigger_log_ms_ = 0;
+
+    // Runtime-only recent-use cooldown. Set to 0 to disable.
+    static constexpr std::int64_t kRecentFailureCooldownMs_ = 15LL * 60LL * 1000LL;
+    std::unordered_map<std::string, std::int64_t> recent_failure_last_used_ms_;
 
     std::mt19937 rng_{ std::random_device{}() };
 };

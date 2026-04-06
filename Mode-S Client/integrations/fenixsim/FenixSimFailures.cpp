@@ -209,6 +209,12 @@ bool Failure::IsArmed() const {
     return State() == FailureState::Armed;
 }
 
+bool Failure::IsInFlight() const {
+    // Option A: treat any armed/delayed failure as already in flight for
+    // random-selection purposes.
+    return IsArmed();
+}
+
 bool Failure::IsInactive() const {
     return State() == FailureState::Inactive;
 }

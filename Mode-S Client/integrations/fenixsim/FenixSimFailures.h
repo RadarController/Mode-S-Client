@@ -48,6 +48,10 @@ struct Failure {
     [[nodiscard]] FailureState State() const;
     [[nodiscard]] bool IsActive() const;
     [[nodiscard]] bool IsArmed() const;
+    // Option A semantics: any failure with a non-null failureCondition is treated
+    // as already "in flight" for random-selection purposes, because it is already
+    // armed/scheduled and should not be picked again.
+    [[nodiscard]] bool IsInFlight() const;
     [[nodiscard]] bool IsInactive() const;
 };
 

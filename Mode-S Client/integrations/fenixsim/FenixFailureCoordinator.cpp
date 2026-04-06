@@ -62,6 +62,7 @@ void FenixFailureCoordinator::Start(AppState& state, FenixSimFailuresClient& cli
         twitch_bits_remainder_ = 0;
         tiktok_gift_remainder_ = 0;
         last_no_trigger_log_ms_ = 0;
+        recent_failure_last_used_ms_.clear();
         rng_.seed(std::random_device{}());
     }
 
@@ -316,6 +317,59 @@ int FenixFailureCoordinator::TierToCredits(const std::string& tier) const {
     return 1;
 }
 
+bool FenixFailureCoordinator::IsFailureOnRecentCooldown(const std::string& failure_id,
+                                                    std::int64_t now_ms,
+                                                    std::int64_t* remaining_ms) const {
+    if (remaining_ms != nullptr) {
+        *remaining_ms = 0;
+    }
+
+    if (kRecentFailureCooldownMs_ <= 0 || failure_id.empty()) {
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lk(mu_);
+    const auto it = recent_failure_last_used_ms_.find(failure_id);
+    if (it == recent_failure_last_used_ms_.end()) {
+        return false;
+    }
+
+    const std::int64_t elapsed = now_ms - it->second;
+    if (elapsed >= kRecentFailureCooldownMs_) {
+        return false;
+    }
+
+    if (remaining_ms != nullptr) {
+        *remaining_ms = kRecentFailureCooldownMs_ - elapsed;
+    }
+    return true;
+}
+
+void FenixFailureCoordinator::RememberTriggeredFailure(const std::string& failure_id,
+                                                       std::int64_t now_ms) {
+    if (kRecentFailureCooldownMs_ <= 0 || failure_id.empty()) {
+        return;
+    }
+
+    std::lock_guard<std::mutex> lk(mu_);
+    recent_failure_last_used_ms_[failure_id] = now_ms;
+}
+
+void FenixFailureCoordinator::PruneRecentFailureCooldowns(std::int64_t now_ms) {
+    if (kRecentFailureCooldownMs_ <= 0) {
+        return;
+    }
+
+    std::lock_guard<std::mutex> lk(mu_);
+    for (auto it = recent_failure_last_used_ms_.begin(); it != recent_failure_last_used_ms_.end();) {
+        if ((now_ms - it->second) >= kRecentFailureCooldownMs_) {
+            it = recent_failure_last_used_ms_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
 bool FenixFailureCoordinator::SpendOnePendingCredit() {
     int pending_before = 0;
     {
@@ -388,16 +442,52 @@ bool FenixFailureCoordinator::TriggerOneFailure(std::string& triggered_id,
         return false;
     }
 
+    const std::int64_t now_ms = NowMs();
+    PruneRecentFailureCooldowns(now_ms);
+
     std::vector<const Failure*> candidates;
     candidates.reserve(failures.size());
+
+    int active_or_inflight_skipped = 0;
+    int cooldown_skipped = 0;
+    std::int64_t shortest_remaining_cooldown_ms = -1;
+
     for (const auto& failure : failures) {
         if (failure.id.empty()) continue;
-        if (failure.IsActive() || failure.IsArmed()) continue;
+
+        // Option A semantics: any armed/delayed failure is treated as already
+        // "in flight" and is excluded from random selection.
+        if (failure.IsActive() || failure.IsInFlight()) {
+            ++active_or_inflight_skipped;
+            continue;
+        }
+
+        std::int64_t remaining_ms = 0;
+        if (IsFailureOnRecentCooldown(failure.id, now_ms, &remaining_ms)) {
+            ++cooldown_skipped;
+            if (shortest_remaining_cooldown_ms < 0 || remaining_ms < shortest_remaining_cooldown_ms) {
+                shortest_remaining_cooldown_ms = remaining_ms;
+            }
+            continue;
+        }
+
         candidates.push_back(&failure);
     }
 
     if (candidates.empty()) {
-        detail = "No eligible inactive Fenix failures are available.";
+        std::ostringstream oss;
+        oss << "No eligible Fenix failures are available after excluding active/in-flight failures";
+        if (kRecentFailureCooldownMs_ > 0) {
+            oss << " and recent-use cooldown candidates";
+        }
+        oss << ". Excluded active/in-flight=" << active_or_inflight_skipped;
+        if (kRecentFailureCooldownMs_ > 0) {
+            oss << ", cooldown=" << cooldown_skipped;
+            if (shortest_remaining_cooldown_ms >= 0) {
+                oss << ", shortest_cooldown_remaining_ms=" << shortest_remaining_cooldown_ms;
+            }
+        }
+        detail = oss.str();
         return false;
     }
 
@@ -414,6 +504,7 @@ bool FenixFailureCoordinator::TriggerOneFailure(std::string& triggered_id,
         const bool ok = client->TriggerFailureNowIfInactive(candidate->id, result, &write_error);
 
         if (ok && result == SafeWriteResult::Success) {
+            RememberTriggeredFailure(candidate->id, now_ms);
             triggered_id = candidate->id;
             triggered_title = candidate->title;
             return true;
