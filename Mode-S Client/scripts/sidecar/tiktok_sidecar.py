@@ -45,15 +45,131 @@ ROOM_INFO_FAILURE_RESET_S = 45.0
 MAX_CONSECUTIVE_ROOM_INFO_FAILURES = 3
 
 
-def emit_event(event_type: str, user: str, message: str, ts_ms: int) -> None:
-    emit({
+def emit_event(event_type: str, user: str, message: str, ts_ms: int, **extra: Any) -> None:
+    payload = {
         "type": "tiktok.event",
         "event_type": event_type,
         "user": user,
         "message": message,
         "ts_ms": ts_ms,
         "ts": ts_ms / 1000.0,
-    })
+    }
+    for key, value in extra.items():
+        if value is not None:
+            payload[key] = value
+    emit(payload)
+
+
+def _first_value(obj: Any, *names: str, default: Any = None) -> Any:
+    if obj is None:
+        return default
+
+    if isinstance(obj, dict):
+        for name in names:
+            if name in obj:
+                return obj.get(name)
+        return default
+
+    for name in names:
+        try:
+            value = getattr(obj, name, None)
+        except Exception:
+            value = None
+        if value is not None:
+            return value
+
+    return default
+
+
+def _int_or_none(value: Any) -> Optional[int]:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            return None
+        try:
+            return int(value)
+        except Exception:
+            return None
+    return None
+
+
+def _str_or_default(value: Any, default: str = "") -> str:
+    if value is None:
+        return default
+    try:
+        text = str(value).strip()
+        return text if text else default
+    except Exception:
+        return default
+
+
+def _extract_user_display_and_id(user_obj: Any) -> Tuple[str, str]:
+    user = _str_or_default(
+        _first_value(user_obj, "nickname", "nick_name", "display_name", "unique_id", "username"),
+        "unknown",
+    )
+    user_id = _str_or_default(
+        _first_value(user_obj, "unique_id", "uniqueId", "username", "user_id", "sec_uid"),
+        user,
+    )
+    return user, user_id
+
+
+def _extract_gift_metadata(event: Any) -> Dict[str, Any]:
+    gift = getattr(event, "gift", None)
+
+    gift_id = _first_value(gift, "id", "gift_id", "giftId")
+    if gift_id is None:
+        gift_id = _first_value(event, "gift_id", "giftId")
+
+    gift_name = _first_value(gift, "name", "gift_name", "giftName")
+    if gift_name is None:
+        gift_name = _first_value(event, "gift_name", "giftName")
+
+    unit_value = _int_or_none(
+        _first_value(
+            gift,
+            "diamond_count",
+            "diamondCount",
+            "diamond_cost",
+            "diamondCost",
+            "coins",
+            "coin_count",
+            "coinCount",
+        )
+    )
+    if unit_value is None:
+        unit_value = _int_or_none(
+            _first_value(
+                event,
+                "diamond_count",
+                "diamondCount",
+                "diamond_cost",
+                "diamondCost",
+                "coins",
+                "coin_count",
+                "coinCount",
+            )
+        )
+
+    repeat_count = _int_or_none(_first_value(event, "repeat_count", "repeatCount")) or 1
+    repeat_end = bool(_first_value(event, "repeat_end", "repeatEnd", default=False))
+
+    return {
+        "gift_id": _str_or_default(gift_id, "unknown"),
+        "gift_name": _str_or_default(gift_name, "Gift"),
+        "gift_unit_value": unit_value,
+        "gift_repeat_count": repeat_count,
+        "gift_repeat_end": repeat_end,
+    }
 
 
 def _finalize_gift(key):
@@ -64,7 +180,22 @@ def _finalize_gift(key):
     name = g.get("gift_name") or "Gift"
     count = int(g.get("count") or 1)
     ts_ms = int(g.get("last_ts_ms") or int(now_ts() * 1000))
-    emit_event("gift", user, f"sent {name} x{count}", ts_ms)
+
+    unit_value = _int_or_none(g.get("gift_unit_value"))
+    total_value = unit_value * count if unit_value is not None else None
+
+    emit_event(
+        "gift",
+        user,
+        f"sent {name} x{count}",
+        ts_ms,
+        gift_id=g.get("gift_id") or "unknown",
+        gift_name=name,
+        gift_count=count,
+        gift_unit_value=unit_value,
+        gift_total_value=total_value,
+        gift_value=total_value,
+    )
 
 
 async def gift_aggregator_loop():
@@ -470,34 +601,93 @@ async def main_async() -> int:
     async def on_gift(event: GiftEvent):
         try:
             user_obj = getattr(event, "user", None)
-            user = getattr(user_obj, "nickname", None) or getattr(user_obj, "unique_id", None) or "unknown"
-            u_id = getattr(user_obj, "unique_id", None) or user
+            user, u_id = _extract_user_display_and_id(user_obj)
         except Exception:
             user = "unknown"
             u_id = "unknown"
 
-        gift = getattr(event, "gift", None)
-        gift_id = getattr(gift, "id", None) or getattr(event, "gift_id", None) or "unknown"
-        gift_name = getattr(gift, "name", None) or getattr(event, "gift_name", None) or "Gift"
+        meta = _extract_gift_metadata(event)
+        gift_id = meta["gift_id"]
+        gift_name = meta["gift_name"]
+        unit_value = meta["gift_unit_value"]
+        rep = int(meta["gift_repeat_count"] or 1)
 
-        rep = int(getattr(event, "repeat_count", None) or getattr(event, "repeatCount", None) or 1)
         ts = now_ts()
         ts_ms = int(ts * 1000)
 
         key = (str(u_id), str(gift_id))
         g = _gift_pending.get(key)
         if not g:
-            g = {"count": 0, "last_ts": ts, "last_ts_ms": ts_ms, "gift_name": str(gift_name), "user": str(user)}
+            g = {
+                "count": 0,
+                "last_ts": ts,
+                "last_ts_ms": ts_ms,
+                "gift_id": str(gift_id),
+                "gift_name": str(gift_name),
+                "gift_unit_value": unit_value,
+                "user": str(user),
+            }
             _gift_pending[key] = g
 
         g["count"] = int(g.get("count", 0)) + rep
         g["last_ts"] = ts
         g["last_ts_ms"] = ts_ms
+        g["gift_id"] = str(gift_id)
         g["gift_name"] = str(gift_name)
+        g["gift_unit_value"] = unit_value
         g["user"] = str(user)
 
-        if bool(getattr(event, "repeat_end", False) or getattr(event, "repeatEnd", False)):
+        if bool(meta["gift_repeat_end"]):
             _finalize_gift(key)
+
+    @client.on(SubscribeEvent)
+    async def on_subscribe(event: SubscribeEvent):
+        try:
+            user_obj = getattr(event, "user", None) or getattr(event, "user_info", None)
+            user, user_id = _extract_user_display_and_id(user_obj)
+        except Exception:
+            user = "unknown"
+            user_id = "unknown"
+
+        ts_ms = int(now_ts() * 1000)
+
+        months = _int_or_none(
+            _first_value(
+                event,
+                "sub_month",
+                "subMonth",
+                "month",
+                "months",
+                "member_month",
+                "memberMonth",
+            )
+        )
+        is_renewal = bool(
+            _first_value(
+                event,
+                "is_old_user",
+                "old_user",
+                "isOldUser",
+                "is_renewal",
+                "isRenewal",
+                default=False,
+            )
+        )
+
+        message = "subscribed"
+        if months is not None and months > 0:
+            message = f"subscribed ({months} month{'s' if months != 1 else ''})"
+
+        emit_event(
+            "subscribe",
+            user,
+            message,
+            ts_ms,
+            subscription=True,
+            subscription_user_id=user_id,
+            subscription_months=months,
+            is_renewal=is_renewal,
+        )
 
     attempt = 0
     while True:
