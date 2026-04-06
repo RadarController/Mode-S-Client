@@ -1678,3 +1678,160 @@ background: rgba(59,130,246,.18);
     grid-template-columns:1fr;
   }
 }
+
+
+/* ------------------------------
+   Home / simulator automation panel
+--------------------------------- */
+.home-panel--simauto{
+  padding:0;
+}
+
+.home-simauto__head{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:12px;
+}
+
+.home-simauto__body{
+  display:flex;
+  flex-direction:column;
+  gap:14px;
+  padding:12px;
+  height:100%;
+}
+
+.home-simauto__summary{
+  padding:12px 14px;
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:16px;
+  background:linear-gradient(180deg, rgba(17,26,54,.62), rgba(17,26,54,.46));
+}
+
+.home-simauto__summary-main{
+  font-size:14px;
+  font-weight:800;
+  line-height:1.35;
+}
+
+.home-simauto__summary-sub{
+  margin-top:6px;
+  color:var(--muted);
+  font-size:12px;
+  line-height:1.45;
+}
+
+.home-simauto__stats{
+  display:grid;
+  grid-template-columns:repeat(2, minmax(0, 1fr));
+  gap:10px;
+}
+
+.home-simauto__stat{
+  padding:10px 12px;
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;
+  background:rgba(255,255,255,.03);
+  min-height:74px;
+}
+
+.home-simauto__stat-k{
+  font-size:11px;
+  color:var(--muted2);
+  text-transform:uppercase;
+  letter-spacing:.08em;
+}
+
+.home-simauto__stat-v{
+  margin-top:6px;
+  font-size:18px;
+  font-weight:900;
+  line-height:1.15;
+  word-break:break-word;
+}
+
+.home-simauto__stat-v--small{
+  font-size:14px;
+  line-height:1.3;
+}
+
+.home-simauto__section{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  min-height:0;
+  flex:1 1 auto;
+}
+
+.home-simauto__section-title{
+  font-size:12px;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color:var(--muted2);
+  font-weight:800;
+}
+
+.home-simauto__activity{
+  flex:1 1 auto;
+  min-height:200px;
+  max-height:100%;
+  overflow:auto;
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:16px;
+  background:rgba(255,255,255,.025);
+  padding:6px;
+}
+
+.home-simauto__activity-empty{
+  padding:16px 12px;
+  color:var(--muted);
+  font-size:12px;
+  line-height:1.45;
+}
+
+.home-simauto__activity-item{
+  padding:10px 12px;
+  border-bottom:1px solid rgba(255,255,255,.06);
+}
+
+.home-simauto__activity-item:last-child{
+  border-bottom:none;
+}
+
+.home-simauto__activity-time{
+  display:block;
+  font-size:11px;
+  color:var(--muted2);
+  margin-bottom:4px;
+  font-family:var(--mono);
+}
+
+.home-simauto__activity-text{
+  display:block;
+  font-size:12px;
+  line-height:1.45;
+  color:rgba(255,255,255,.88);
+}
+
+.home-simauto__controls{
+  display:grid;
+  grid-template-columns:1fr;
+  gap:8px;
+}
+
+.home-simauto__controls .btn{
+  width:100%;
+}
+
+@media (max-width: 1100px){
+  .home-simauto__activity{
+    min-height:160px;
+  }
+}
+
+@media (max-width: 640px){
+  .home-simauto__stats{
+    grid-template-columns:1fr;
+  }
+}
