@@ -90,12 +90,98 @@ bool FenixFailureCoordinator::enabled() const {
 }
 
 void FenixFailureCoordinator::PanicStop() {
-    std::lock_guard<std::mutex> lk(mu_);
-    automation_enabled_ = false;
-    pending_credits_ = 0;
-    twitch_bits_remainder_ = 0;
-    tiktok_gift_remainder_ = 0;
-    last_no_trigger_log_ms_ = 0;
+    FenixSimFailuresClient* client = nullptr;
+    int pending_snapshot = 0;
+
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        automation_enabled_ = false;
+        last_no_trigger_log_ms_ = 0;
+        client = client_;
+        pending_snapshot = pending_credits_;
+    }
+
+    std::wstringstream start_ws;
+    start_ws << L"FENIX: panic stop engaged; automation disabled, pending credits preserved at "
+             << pending_snapshot << L". Clearing active and armed failures now.";
+    Log(start_ws.str());
+
+    if (client == nullptr) {
+        Log(L"FENIX: panic stop could not clear failures because the Fenix failure client is not initialized.");
+        return;
+    }
+
+    std::vector<Failure> failures;
+    std::string fetch_error;
+    if (!client->FetchManualFailures(failures, &fetch_error)) {
+        Log(L"FENIX: panic stop could not read current failures: " +
+            SafeToW(fetch_error.empty() ? std::string("unknown_error") : fetch_error));
+        return;
+    }
+
+    int active_found = 0;
+    int armed_found = 0;
+    int active_cleared = 0;
+    int armed_cleared = 0;
+    int clear_failures = 0;
+
+    for (const auto& failure : failures) {
+        if (failure.id.empty()) continue;
+
+        if (failure.IsActive()) {
+            ++active_found;
+            std::string clear_error;
+            if (client->ClearFailure(failure.id, &clear_error)) {
+                ++active_cleared;
+            } else {
+                ++clear_failures;
+                Log(L"FENIX: panic stop failed to clear active failure " + SafeToW(failure.id) +
+                    L": " + SafeToW(clear_error.empty() ? std::string("unknown_error") : clear_error));
+            }
+            continue;
+        }
+
+        if (failure.IsArmed()) {
+            ++armed_found;
+            std::string clear_error;
+            if (client->ClearArmedFailure(failure.id, &clear_error)) {
+                ++armed_cleared;
+            } else {
+                ++clear_failures;
+                Log(L"FENIX: panic stop failed to clear armed failure " + SafeToW(failure.id) +
+                    L": " + SafeToW(clear_error.empty() ? std::string("unknown_error") : clear_error));
+            }
+        }
+    }
+
+    int remaining_active = -1;
+    int remaining_armed = -1;
+    std::vector<Failure> verify_failures;
+    std::string verify_error;
+    if (client->FetchManualFailures(verify_failures, &verify_error)) {
+        remaining_active = 0;
+        remaining_armed = 0;
+        for (const auto& failure : verify_failures) {
+            if (failure.IsActive()) ++remaining_active;
+            else if (failure.IsArmed()) ++remaining_armed;
+        }
+    } else {
+        Log(L"FENIX: panic stop could not verify cleared failures: " +
+            SafeToW(verify_error.empty() ? std::string("unknown_error") : verify_error));
+    }
+
+    std::wstringstream done_ws;
+    done_ws << L"FENIX: panic stop completed; active cleared " << active_cleared << L"/" << active_found
+            << L", armed cleared " << armed_cleared << L"/" << armed_found
+            << L", pending credits preserved=" << pending_snapshot;
+    if (remaining_active >= 0 && remaining_armed >= 0) {
+        done_ws << L", remaining active=" << remaining_active
+                << L", remaining armed=" << remaining_armed;
+    }
+    if (clear_failures > 0) {
+        done_ws << L", clear failures=" << clear_failures;
+    }
+    Log(done_ws.str());
 }
 
 nlohmann::json FenixFailureCoordinator::StatusJson() const {
