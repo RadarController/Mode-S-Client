@@ -1113,13 +1113,11 @@ function renderSimulatorAutomationPanel(){
   if (!isHomePage()) return;
 
   const chip = document.getElementById("simAutoChip");
-  const summary = document.getElementById("simAutoSummary");
-  const summarySub = document.getElementById("simAutoSummarySub");
   const toggleBtn = document.getElementById("btnSimAutoToggle");
   const panicBtn = document.getElementById("btnSimAutoPanic");
   const activity = document.getElementById("simAutoActivity");
 
-  if (!chip || !summary || !summarySub || !toggleBtn || !panicBtn || !activity) return;
+  if (!chip || !toggleBtn || !panicBtn || !activity) return;
 
   setText("simAutoIntegration", simAutomationState.connected === null ? "—" : (simAutomationState.connected ? "Connected" : "Unavailable"));
   setText("simAutoAutomation", simAutomationState.enabled === null ? "—" : (simAutomationState.enabled ? "Enabled" : "Disabled"));
@@ -1133,9 +1131,6 @@ function renderSimulatorAutomationPanel(){
   if (simAutomationState.enabled === true) chip.classList.add("badge--live");
   else if (simAutomationState.apiAvailable) chip.classList.add("badge--warn");
   else chip.classList.add("badge--muted");
-
-  summary.textContent = simAutomationState.summary || "Simulator automation status unavailable.";
-  summarySub.textContent = simAutomationState.summarySub || "";
 
   toggleBtn.textContent = simAutomationState.enabled ? "Disable automation" : "Enable automation";
   toggleBtn.disabled = !simAutomationState.apiAvailable;
