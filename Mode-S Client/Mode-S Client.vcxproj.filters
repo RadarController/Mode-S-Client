@@ -165,6 +165,12 @@
     <ClInclude Include="integrations\youtube\YouTubeSupporterProvider.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="integrations\youtube\YouTubeSubscriberProvider.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="integrations\fenixsim\FenixSimFailures.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="integrations\obs\ObsWsClient.cpp">
@@ -267,6 +273,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="integrations\youtube\YouTubeSupporterProvider.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="integrations\youtube\YouTubeSubscriberProvider.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="integrations\fenixsim\FenixSimFailures.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
