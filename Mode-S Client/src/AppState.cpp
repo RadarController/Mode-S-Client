@@ -1471,16 +1471,32 @@ nlohmann::json AppState::log_json(std::uint64_t since, int limit) const {
     out["ok"] = true;
     nlohmann::json arr = nlohmann::json::array();
 
-    // Return entries with id > since, oldest -> newest
-    int count = 0;
-    for (const auto& e : log_) {
-        if (e.id <= since) continue;
-        arr.push_back({
-            {"id", e.id},
-            {"ts_ms", e.ts_ms},
-            {"msg", e.msg}
-            });
-        if (++count >= limit) break;
+    // When no cursor is supplied yet, return the most recent `limit` entries,
+    // but keep them in oldest -> newest order within that window.
+    if (since == 0) {
+        int start = static_cast<int>(log_.size()) - limit;
+        if (start < 0) start = 0;
+
+        for (int i = start; i < static_cast<int>(log_.size()); ++i) {
+            const auto& e = log_[i];
+            arr.push_back({
+                {"id", e.id},
+                {"ts_ms", e.ts_ms},
+                {"msg", e.msg}
+                });
+        }
+    } else {
+        // Incremental fetch path: return entries with id > since, oldest -> newest.
+        int count = 0;
+        for (const auto& e : log_) {
+            if (e.id <= since) continue;
+            arr.push_back({
+                {"id", e.id},
+                {"ts_ms", e.ts_ms},
+                {"msg", e.msg}
+                });
+            if (++count >= limit) break;
+        }
     }
 
     out["entries"] = std::move(arr);

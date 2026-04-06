@@ -227,14 +227,41 @@ bool FenixSimFailuresClient::FetchManualFailures(std::vector<Failure>& out_failu
 
     try {
         const json root = json::parse(response_body);
-        if (!root.is_array()) {
+
+        const json* ata_rows = nullptr;
+
+        if (root.is_array()) {
+            // Older assumption / fallback
+            ata_rows = &root;
+        }
+        else if (root.is_object()) {
+            auto it = root.find("atas");
+            if (it != root.end() && it->is_array()) {
+                ata_rows = &(*it);
+            }
+            else {
+                auto items_it = root.find("items");
+                if (items_it != root.end() && items_it->is_array()) {
+                    ata_rows = &(*items_it);
+                }
+                else {
+                    auto data_it = root.find("data");
+                    if (data_it != root.end() && data_it->is_array()) {
+                        ata_rows = &(*data_it);
+                    }
+                }
+            }
+        }
+
+        if (ata_rows == nullptr) {
             if (error != nullptr) {
-                *error = "Manual failures response was not a JSON array.";
+                std::string snippet = response_body.substr(0, 500);
+                *error = "Manual failures response was not a recognized array shape. Body: " + snippet;
             }
             return false;
         }
 
-        for (const auto& ata_entry : root) {
+        for (const auto& ata_entry : *ata_rows) {
             const int ata_id = ata_entry.value("id", 0);
             const std::string ata_title = ata_entry.value("title", "");
             const std::string ata_short_title = ata_entry.value("shortTitle", "");
