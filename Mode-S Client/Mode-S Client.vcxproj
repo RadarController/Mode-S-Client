@@ -227,6 +227,10 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClInclude Include="src\oauth\EmbeddedOAuthConfig.h" />
     <ClInclude Include="src\overlay\OverlayHeaderStorage.h" />
     <ClInclude Include="src\platform\PlatformControl.h" />
+    <ClInclude Include="src\runtime\ObsMetricsPublisher.h" />
+    <ClInclude Include="src\runtime\TikTokRuntimeCoordinator.h" />
+    <ClInclude Include="src\runtime\TwitchRuntimeCoordinator.h" />
+    <ClInclude Include="src\runtime\YouTubeRuntimeCoordinator.h" />
     <ClInclude Include="src\supporter\RecentSupporter.h" />
     <ClInclude Include="src\supporter\SupporterFeedService.h" />
     <ClInclude Include="src\ui\SplashScreen.h" />
@@ -275,6 +279,10 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClCompile Include="src\http\HttpServer.cpp" />
     <ClCompile Include="src\overlay\OverlayHeaderStorage.cpp" />
     <ClCompile Include="src\platform\PlatformControl.cpp" />
+    <ClCompile Include="src\runtime\ObsMetricsPublisher.cpp" />
+    <ClCompile Include="src\runtime\TikTokRuntimeCoordinator.cpp" />
+    <ClCompile Include="src\runtime\TwitchRuntimeCoordinator.cpp" />
+    <ClCompile Include="src\runtime\YouTubeRuntimeCoordinator.cpp" />
     <ClCompile Include="src\supporter\RecentSupporter.cpp" />
     <ClCompile Include="src\supporter\SupporterFeedService.cpp" />
     <ClCompile Include="src\ui\SplashScreen.cpp" />
