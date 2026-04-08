@@ -18,8 +18,10 @@
 #include "bot/BotCommandDispatcher.h"
 #include "bot/BotStorageBootstrap.h"
 #include "obs/ObsWsClient.h"
-#include "platform/PlatformControl.h"
-#include "tiktok/TikTokFollowersService.h"
+#include "runtime/ObsMetricsPublisher.h"
+#include "runtime/TikTokRuntimeCoordinator.h"
+#include "runtime/TwitchRuntimeCoordinator.h"
+#include "runtime/YouTubeRuntimeCoordinator.h"
 #include "twitch/TwitchAuth.h"
 #include "twitch/TwitchEventSubWsClient.h"
 #include "twitch/TwitchIrcWsClient.h"
@@ -32,7 +34,6 @@
 namespace {
 
 std::wstring GetExeDir()
-
 {
     wchar_t path[MAX_PATH];
     GetModuleFileNameW(nullptr, path, MAX_PATH);
@@ -119,18 +120,10 @@ void StartBackend(
     auto& config = deps.config;
     auto& state = deps.state;
     auto& chat = deps.chat;
-    auto& twitch = deps.twitch;
-    auto& twitchEventSub = deps.twitchEventSub;
-    auto& twitchAuth = deps.twitchAuth;
-    auto& youtubeAuth = deps.youtubeAuth;
     auto& httpServer = deps.httpServer;
-    auto& metricsThread = deps.metricsThread;
-    auto& tiktokFollowersThread = deps.tiktokFollowersThread;
     auto& euroscope = deps.euroscope;
-    auto& obs = deps.obs;
     auto& fenixFailures = deps.fenixFailures;
     auto& fenixFailureCoordinator = deps.fenixFailureCoordinator;
-    auto& running = deps.running;
 
     HttpServer::Options opt = httpoptions::BuildHttpServerOptions(
         deps,
@@ -153,62 +146,28 @@ void StartBackend(
 
     WebViewHost::SetHttpReadyAndNavigate(modernUiUrl);
 
-    metricsThread = std::thread([&state, &obs, &running]() {
-        while (running) {
-            const auto m = state.get_metrics();
-            obs.set_text("TOTAL_VIEWER_COUNT", std::to_string(m.total_viewers()));
-            obs.set_text("TOTAL_FOLLOWER_COUNT", std::to_string(m.total_followers()));
-            Sleep(5000);
-        }
-        });
+    runtime::StartObsMetricsPublisher(
+        deps.metricsThread,
+        deps.state,
+        deps.obs,
+        deps.running);
 
-    if (!youtubeAuth.Start()) {
-        LogLine(L"YOUTUBE: OAuth token refresh/start failed (check config: youtube.client_id / youtube.client_secret / youtube.refresh_token)");
-    }
-    else {
-        LogLine(L"YOUTUBE: OAuth token refresh/start OK");
-    }
+    runtime::StartYouTubeRuntimeServices(deps.youtubeAuth);
 
-    LogLine(L"TWITCH: starting Helix poller thread");
-    restartTwitchHelixPoller("init");
+    runtime::StartTwitchRuntimeServices(
+        restartTwitchHelixPoller,
+        deps.twitchAuth,
+        deps.config,
+        deps.twitchEventSub,
+        deps.twitch,
+        deps.state,
+        deps.chat);
 
-    LogLine(L"TIKTOK: starting followers poller thread");
-    tiktokFollowersThread = StartTikTokFollowersPoller(
-        config,
-        state,
-        running,
-        TikTokFollowersUiCallbacks{
-            [](const std::wstring& s) { LogLine(s); },
-            [](const std::wstring&) {},
-            [&](int) {}
-        });
-
-    LogLine(L"TWITCH: refreshing OAuth token...");
-    twitchAuth.on_tokens_updated = [&config, &twitchEventSub, &twitch, &state, &chat](
-        const std::string& access,
-        const std::string& /*refresh*/,
-        const std::string& login) {
-            const std::string effective_login = !login.empty() ? login : config.twitch_login;
-            LogLine(L"TWITCH: tokens updated - refreshing EventSub token and restarting IRC");
-
-            config.twitch_login = effective_login;
-            twitchEventSub.UpdateAccessToken(access);
-
-            PlatformControl::StartOrRestartTwitchIrc(
-                twitch,
-                state,
-                chat,
-                effective_login,
-                access,
-                [](const std::wstring& s) { LogLine(s); });
-        };
-
-    if (!twitchAuth.Start()) {
-        LogLine(L"TWITCH: OAuth token refresh/start failed (check embedded Twitch credentials and twitch.user_refresh_token)");
-    }
-    else {
-        LogLine(L"TWITCH: OAuth token refresh worker started");
-    }
+    runtime::StartTikTokRuntimeServices(
+        deps.tiktokFollowersThread,
+        deps.config,
+        deps.state,
+        deps.running);
 }
 
 } // namespace AppBootstrap
