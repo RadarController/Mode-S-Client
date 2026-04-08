@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "json.hpp"
+#include "fenixsim/FenixFailureMetadataStore.h"
 
 class AppState;
 
@@ -42,6 +43,7 @@ public:
 
 private:
     void WorkerLoop();
+    void RefreshFailureMetadataOnStart();
 
     void SeedSeenFromCurrentQueues();
     void CollectNewEvents(std::vector<nlohmann::json>& out_events);
@@ -65,11 +67,13 @@ private:
                            std::string& action_desc,
                            std::string& detail);
     bool IsFailureOnRecentCooldown(const std::string& failure_id,
+                                   std::int64_t cooldown_ms,
                                    std::int64_t now_ms,
                                    std::int64_t* remaining_ms = nullptr) const;
     void RememberTriggeredFailure(const std::string& failure_id,
                                   std::int64_t now_ms);
-    void PruneRecentFailureCooldowns(std::int64_t now_ms);
+    int TriggerCountThisSession(const std::string& failure_id) const;
+    int WeightedRandomIndex(const std::vector<const MergedFailureCatalogEntry*>& candidates);
 
     bool ShouldArmRandomly();
     int RandomIntInclusive(int min_value, int max_value);
@@ -102,13 +106,18 @@ private:
     std::int64_t last_no_trigger_log_ms_ = 0;
     bool automation_enabled_ = true;
 
-    // Runtime-only recent-use cooldown. Set to 0 to disable.
-    static constexpr std::int64_t kRecentFailureCooldownMs_ = 15LL * 60LL * 1000LL;
     // First-pass armed/immediate split.
     static constexpr int kArmFailureChancePercent_ = 40;
     std::unordered_map<std::string, std::int64_t> recent_failure_last_used_ms_;
+    std::unordered_map<std::string, int> triggered_failure_counts_session_;
 
     std::mt19937 rng_{ std::random_device{}() };
+
+    FenixFailureMetadataStore metadata_store_;
+    std::vector<MergedFailureCatalogEntry> merged_catalog_;
+    std::size_t discovered_failure_count_ = 0;
+    std::size_t metadata_entry_count_ = 0;
+    std::size_t stale_metadata_entry_count_ = 0;
 };
 
 } // namespace fenixsim

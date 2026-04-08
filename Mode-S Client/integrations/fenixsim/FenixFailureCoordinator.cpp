@@ -9,6 +9,7 @@
 
 #include "AppState.h"
 #include "fenixsim/FenixSimFailures.h"
+#include "fenixsim/FenixFailureMetadataStore.h"
 
 namespace fenixsim {
 namespace {
@@ -64,8 +65,15 @@ void FenixFailureCoordinator::Start(AppState& state, FenixSimFailuresClient& cli
         last_no_trigger_log_ms_ = 0;
         automation_enabled_ = false;
         recent_failure_last_used_ms_.clear();
+        triggered_failure_counts_session_.clear();
+        merged_catalog_.clear();
+        discovered_failure_count_ = 0;
+        metadata_entry_count_ = 0;
+        stale_metadata_entry_count_ = 0;
         rng_.seed(std::random_device{}());
     }
+
+    RefreshFailureMetadataOnStart();
 
     running_.store(true);
     worker_ = std::thread(&FenixFailureCoordinator::WorkerLoop, this);
@@ -237,9 +245,22 @@ nlohmann::json FenixFailureCoordinator::StatusJson() const {
         else if (failure.IsArmed()) ++armed;
     }
 
+    std::size_t discovered_failures = 0;
+    std::size_t metadata_entries = 0;
+    std::size_t stale_metadata_entries = 0;
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        discovered_failures = discovered_failure_count_;
+        metadata_entries = metadata_entry_count_;
+        stale_metadata_entries = stale_metadata_entry_count_;
+    }
+
     out["connected"] = true;
     out["active_failures"] = active;
     out["armed_failures"] = armed;
+    out["catalog_discovered_failures"] = discovered_failures;
+    out["catalog_metadata_entries"] = metadata_entries;
+    out["catalog_stale_entries"] = stale_metadata_entries;
     out["status_label"] = enabled_now ? "Enabled" : "Disabled";
     out["summary"] = enabled_now
         ? "Simulator automation is enabled and ready to react to support events."
@@ -247,6 +268,58 @@ nlohmann::json FenixFailureCoordinator::StatusJson() const {
     out["summary_sub"] = "This panel provides light-touch live status and emergency controls; deeper settings can live in the Settings section later.";
     out["recent_activity"] = nlohmann::json::array();
     return out;
+}
+
+void FenixFailureCoordinator::RefreshFailureMetadataOnStart() {
+    FenixSimFailuresClient* client = nullptr;
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        client = client_;
+    }
+
+    if (client == nullptr) {
+        Log(L"FENIX: failure metadata refresh skipped because the Fenix failure client is not initialized.");
+        return;
+    }
+
+    std::vector<Failure> failures;
+    std::string fetch_error;
+    if (!client->FetchManualFailures(failures, &fetch_error)) {
+        Log(L"FENIX: failure metadata refresh skipped because the manual failures endpoint could not be read: " +
+            SafeToW(fetch_error.empty() ? std::string("unknown_error") : fetch_error));
+        return;
+    }
+
+    FailureMetadataRefreshSummary summary;
+    std::string refresh_error;
+    if (!metadata_store_.RefreshFromFailures(failures, summary, &refresh_error)) {
+        Log(L"FENIX: failure metadata refresh failed: " +
+            SafeToW(refresh_error.empty() ? std::string("unknown_error") : refresh_error));
+        return;
+    }
+
+    std::vector<MergedFailureCatalogEntry> merged_catalog;
+    std::string load_error;
+    if (!metadata_store_.LoadMergedCatalog(failures, merged_catalog, &load_error)) {
+        Log(L"FENIX: failure metadata refresh saved successfully, but the merged catalog could not be reloaded: " +
+            SafeToW(load_error.empty() ? std::string("unknown_error") : load_error));
+    }
+
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        merged_catalog_ = std::move(merged_catalog);
+        discovered_failure_count_ = summary.discovered_failures;
+        metadata_entry_count_ = summary.metadata_entries_after;
+        stale_metadata_entry_count_ = summary.stale_entries;
+    }
+
+    std::wstringstream ws;
+    ws << L"FENIX: failure metadata refreshed; discovered=" << summary.discovered_failures
+       << L", metadata_entries=" << summary.metadata_entries_after
+       << L", new=" << summary.new_entries
+       << L", stale=" << summary.stale_entries
+       << L", file=" << summary.metadata_path;
+    Log(ws.str());
 }
 
 void FenixFailureCoordinator::WorkerLoop() {
@@ -460,6 +533,20 @@ int FenixFailureCoordinator::CreditsFromTwitchEvent(const nlohmann::json& event)
         return credits;
     }
 
+    if (type == "channel.channel_points_custom_reward_redemption.add") {
+        std::string reward_title = ToLower(event.value("reward_title", std::string{}));
+        if (reward_title.empty() && raw.is_object()) {
+            const auto reward_it = raw.find("reward");
+            if (reward_it != raw.end() && reward_it->is_object()) {
+                reward_title = ToLower(reward_it->value("title", std::string{}));
+            }
+        }
+
+        if (reward_title == "break my plane") {
+            return 1;
+        }
+    }
+
     return 0;
 }
 
@@ -500,13 +587,14 @@ int FenixFailureCoordinator::TierToCredits(const std::string& tier) const {
 }
 
 bool FenixFailureCoordinator::IsFailureOnRecentCooldown(const std::string& failure_id,
+                                                        std::int64_t cooldown_ms,
                                                         std::int64_t now_ms,
                                                         std::int64_t* remaining_ms) const {
     if (remaining_ms != nullptr) {
         *remaining_ms = 0;
     }
 
-    if (kRecentFailureCooldownMs_ <= 0 || failure_id.empty()) {
+    if (cooldown_ms <= 0 || failure_id.empty()) {
         return false;
     }
 
@@ -517,39 +605,70 @@ bool FenixFailureCoordinator::IsFailureOnRecentCooldown(const std::string& failu
     }
 
     const std::int64_t elapsed = now_ms - it->second;
-    if (elapsed >= kRecentFailureCooldownMs_) {
+    if (elapsed >= cooldown_ms) {
         return false;
     }
 
     if (remaining_ms != nullptr) {
-        *remaining_ms = kRecentFailureCooldownMs_ - elapsed;
+        *remaining_ms = cooldown_ms - elapsed;
     }
     return true;
 }
 
 void FenixFailureCoordinator::RememberTriggeredFailure(const std::string& failure_id,
                                                        std::int64_t now_ms) {
-    if (kRecentFailureCooldownMs_ <= 0 || failure_id.empty()) {
+    if (failure_id.empty()) {
         return;
     }
 
     std::lock_guard<std::mutex> lk(mu_);
     recent_failure_last_used_ms_[failure_id] = now_ms;
+    ++triggered_failure_counts_session_[failure_id];
 }
 
-void FenixFailureCoordinator::PruneRecentFailureCooldowns(std::int64_t now_ms) {
-    if (kRecentFailureCooldownMs_ <= 0) {
-        return;
+int FenixFailureCoordinator::TriggerCountThisSession(const std::string& failure_id) const {
+    if (failure_id.empty()) {
+        return 0;
     }
 
     std::lock_guard<std::mutex> lk(mu_);
-    for (auto it = recent_failure_last_used_ms_.begin(); it != recent_failure_last_used_ms_.end();) {
-        if ((now_ms - it->second) >= kRecentFailureCooldownMs_) {
-            it = recent_failure_last_used_ms_.erase(it);
-        } else {
-            ++it;
+    const auto it = triggered_failure_counts_session_.find(failure_id);
+    return (it == triggered_failure_counts_session_.end()) ? 0 : it->second;
+}
+
+int FenixFailureCoordinator::WeightedRandomIndex(const std::vector<const MergedFailureCatalogEntry*>& candidates) {
+    if (candidates.empty()) {
+        return -1;
+    }
+
+    long long total_weight = 0;
+    for (const auto* candidate : candidates) {
+        if (candidate == nullptr) {
+            continue;
+        }
+        const int weight = candidate->metadata.weight > 0 ? candidate->metadata.weight : 1;
+        total_weight += static_cast<long long>(weight);
+    }
+
+    if (total_weight <= 0) {
+        return RandomIntInclusive(0, static_cast<int>(candidates.size()) - 1);
+    }
+
+    std::lock_guard<std::mutex> lk(mu_);
+    std::uniform_int_distribution<long long> dist(1, total_weight);
+    long long roll = dist(rng_);
+    for (std::size_t i = 0; i < candidates.size(); ++i) {
+        const auto* candidate = candidates[i];
+        const int weight = (candidate != nullptr && candidate->metadata.weight > 0)
+            ? candidate->metadata.weight
+            : 1;
+        roll -= static_cast<long long>(weight);
+        if (roll <= 0) {
+            return static_cast<int>(i);
         }
     }
+
+    return static_cast<int>(candidates.size()) - 1;
 }
 
 bool FenixFailureCoordinator::ShouldArmRandomly() {
@@ -687,28 +806,63 @@ bool FenixFailureCoordinator::TriggerOneFailure(std::string& triggered_id,
         return false;
     }
 
+    std::vector<MergedFailureCatalogEntry> merged_catalog;
+    std::string load_error;
+    if (!metadata_store_.LoadMergedCatalog(failures, merged_catalog, &load_error)) {
+        detail = load_error.empty()
+            ? "Failed to load Fenix failure metadata."
+            : ("Failed to load Fenix failure metadata: " + load_error);
+        return false;
+    }
+
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        merged_catalog_ = merged_catalog;
+    }
+
     const std::int64_t now_ms = NowMs();
-    PruneRecentFailureCooldowns(now_ms);
 
-    std::vector<const Failure*> candidates;
-    candidates.reserve(failures.size());
+    std::vector<const MergedFailureCatalogEntry*> candidates;
+    candidates.reserve(merged_catalog.size());
 
+    int disabled_skipped = 0;
+    int not_stream_safe_skipped = 0;
+    int missing_from_catalog_skipped = 0;
     int active_or_armed_skipped = 0;
     int cooldown_skipped = 0;
+    int session_cap_skipped = 0;
     std::int64_t shortest_remaining_cooldown_ms = -1;
 
-    for (const auto& failure : failures) {
-        if (failure.id.empty()) continue;
+    for (const auto& entry : merged_catalog) {
+        const auto& failure = entry.failure;
+        const auto& metadata = entry.metadata;
 
-        // Option A semantics here are represented by "already armed" failures:
-        // any delayed/armed failure is treated as already in-flight and excluded.
+        if (failure.id.empty()) {
+            continue;
+        }
+
+        if (!metadata.present_in_current_catalog) {
+            ++missing_from_catalog_skipped;
+            continue;
+        }
+
+        if (!metadata.enabled) {
+            ++disabled_skipped;
+            continue;
+        }
+
+        if (!metadata.stream_safe) {
+            ++not_stream_safe_skipped;
+            continue;
+        }
+
         if (failure.IsActive() || failure.IsArmed()) {
             ++active_or_armed_skipped;
             continue;
         }
 
         std::int64_t remaining_ms = 0;
-        if (IsFailureOnRecentCooldown(failure.id, now_ms, &remaining_ms)) {
+        if (IsFailureOnRecentCooldown(failure.id, metadata.cooldown_ms, now_ms, &remaining_ms)) {
             ++cooldown_skipped;
             if (shortest_remaining_cooldown_ms < 0 || remaining_ms < shortest_remaining_cooldown_ms) {
                 shortest_remaining_cooldown_ms = remaining_ms;
@@ -716,33 +870,48 @@ bool FenixFailureCoordinator::TriggerOneFailure(std::string& triggered_id,
             continue;
         }
 
-        candidates.push_back(&failure);
+        const int effective_max_per_session =
+            metadata.repeatable
+                ? (metadata.max_per_session > 0 ? metadata.max_per_session : 1)
+                : 1;
+
+        if (TriggerCountThisSession(failure.id) >= effective_max_per_session) {
+            ++session_cap_skipped;
+            continue;
+        }
+
+        candidates.push_back(&entry);
     }
 
     if (candidates.empty()) {
         std::ostringstream oss;
-        oss << "No eligible Fenix failures are available after excluding active/armed failures";
-        if (kRecentFailureCooldownMs_ > 0) {
-            oss << " and recent-use cooldown candidates";
-        }
-        oss << ". Excluded active/armed=" << active_or_armed_skipped;
-        if (kRecentFailureCooldownMs_ > 0) {
-            oss << ", cooldown=" << cooldown_skipped;
-            if (shortest_remaining_cooldown_ms >= 0) {
-                oss << ", shortest_cooldown_remaining_ms=" << shortest_remaining_cooldown_ms;
-            }
+        oss << "No eligible Fenix failures are available after metadata filtering. "
+            << "Excluded disabled=" << disabled_skipped
+            << ", not_stream_safe=" << not_stream_safe_skipped
+            << ", missing_from_catalog=" << missing_from_catalog_skipped
+            << ", active_or_armed=" << active_or_armed_skipped
+            << ", cooldown=" << cooldown_skipped
+            << ", session_cap=" << session_cap_skipped;
+        if (shortest_remaining_cooldown_ms >= 0) {
+            oss << ", shortest_cooldown_remaining_ms=" << shortest_remaining_cooldown_ms;
         }
         detail = oss.str();
         return false;
     }
 
-    {
-        std::lock_guard<std::mutex> lk(mu_);
-        std::shuffle(candidates.begin(), candidates.end(), rng_);
-    }
+    while (!candidates.empty()) {
+        const int selected_index = WeightedRandomIndex(candidates);
+        if (selected_index < 0 || selected_index >= static_cast<int>(candidates.size())) {
+            detail = "Failed to choose a weighted Fenix failure candidate.";
+            return false;
+        }
 
-    for (const Failure* candidate : candidates) {
-        if (candidate == nullptr) continue;
+        const MergedFailureCatalogEntry* candidate = candidates[static_cast<std::size_t>(selected_index)];
+        candidates.erase(candidates.begin() + selected_index);
+
+        if (candidate == nullptr) {
+            continue;
+        }
 
         const bool arm_this_failure = ShouldArmRandomly();
 
@@ -751,13 +920,14 @@ bool FenixFailureCoordinator::TriggerOneFailure(std::string& triggered_id,
 
             SafeWriteResult result = SafeWriteResult::InvalidResponse;
             std::string write_error;
-            const bool ok = client->ArmFailureIfInactive(candidate->id, armed_condition, result, &write_error);
+            const bool ok = client->ArmFailureIfInactive(candidate->failure.id, armed_condition, result, &write_error);
 
             if (ok && result == SafeWriteResult::Success) {
-                RememberTriggeredFailure(candidate->id, now_ms);
-                triggered_id = candidate->id;
-                triggered_title = candidate->title;
-                action_desc = DescribeArmedCondition(armed_condition);
+                RememberTriggeredFailure(candidate->failure.id, now_ms);
+                triggered_id = candidate->failure.id;
+                triggered_title = candidate->metadata.title.empty() ? candidate->failure.title : candidate->metadata.title;
+                action_desc = "armed failure";
+                action_desc += " (" + DescribeArmedCondition(armed_condition) + ")";
                 return true;
             }
 
@@ -766,7 +936,7 @@ bool FenixFailureCoordinator::TriggerOneFailure(std::string& triggered_id,
             }
 
             std::ostringstream oss;
-            oss << "Failed to arm " << candidate->id << ": " << SafeWriteResultToString(result);
+            oss << "Failed to arm " << candidate->failure.id << ": " << SafeWriteResultToString(result);
             if (!write_error.empty()) {
                 oss << " (" << write_error << ")";
             }
@@ -776,12 +946,12 @@ bool FenixFailureCoordinator::TriggerOneFailure(std::string& triggered_id,
 
         SafeWriteResult result = SafeWriteResult::InvalidResponse;
         std::string write_error;
-        const bool ok = client->TriggerFailureNowIfInactive(candidate->id, result, &write_error);
+        const bool ok = client->TriggerFailureNowIfInactive(candidate->failure.id, result, &write_error);
 
         if (ok && result == SafeWriteResult::Success) {
-            RememberTriggeredFailure(candidate->id, now_ms);
-            triggered_id = candidate->id;
-            triggered_title = candidate->title;
+            RememberTriggeredFailure(candidate->failure.id, now_ms);
+            triggered_id = candidate->failure.id;
+            triggered_title = candidate->metadata.title.empty() ? candidate->failure.title : candidate->metadata.title;
             action_desc = "triggered immediate failure";
             return true;
         }
@@ -791,7 +961,7 @@ bool FenixFailureCoordinator::TriggerOneFailure(std::string& triggered_id,
         }
 
         std::ostringstream oss;
-        oss << "Failed to trigger " << candidate->id << ": " << SafeWriteResultToString(result);
+        oss << "Failed to trigger " << candidate->failure.id << ": " << SafeWriteResultToString(result);
         if (!write_error.empty()) {
             oss << " (" << write_error << ")";
         }
@@ -799,7 +969,7 @@ bool FenixFailureCoordinator::TriggerOneFailure(std::string& triggered_id,
     }
 
     if (detail.empty()) {
-        detail = "Failed to select and write a random eligible Fenix failure.";
+        detail = "Failed to select and write a metadata-eligible Fenix failure.";
     }
     return false;
 }
