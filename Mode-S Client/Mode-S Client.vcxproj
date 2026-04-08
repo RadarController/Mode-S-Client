@@ -211,6 +211,7 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClInclude Include="src\app\AppBootstrap.h" />
     <ClInclude Include="src\app\AppRuntime.h" />
     <ClInclude Include="src\app\AppShutdown.h" />
+    <ClInclude Include="src\bot\BotCommandDispatcher.h" />
     <ClInclude Include="src\bot\BotReplyRouter.h" />
     <ClInclude Include="src\chat\ChatAggregator.h" />
     <ClInclude Include="src\core\AppPaths.h" />
@@ -257,6 +258,7 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClCompile Include="src\app\AppBootstrap.cpp" />
     <ClCompile Include="src\app\AppRuntime.cpp" />
     <ClCompile Include="src\app\AppShutdown.cpp" />
+    <ClCompile Include="src\bot\BotCommandDispatcher.cpp" />
     <ClCompile Include="src\chat\ChatAggregator.cpp" />
     <ClCompile Include="src\core\AppPaths.cpp" />
     <ClCompile Include="src\core\StringUtil.cpp" />
