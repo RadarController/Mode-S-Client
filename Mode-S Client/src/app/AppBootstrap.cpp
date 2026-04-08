@@ -17,6 +17,7 @@
 #include "http/HttpServer.h"
 #include "log/UiLog.h"
 #include "bot/BotCommandDispatcher.h"
+#include "bot/BotStorageBootstrap.h"
 #include "obs/ObsWsClient.h"
 #include "platform/PlatformControl.h"
 #include "tiktok/TikTokFollowersService.h"
@@ -28,6 +29,7 @@
 #include "ui/WebViewHost.h"
 #include "youtube/YouTubeAuth.h"
 #include "youtube/YouTubeLiveChatService.h"
+#include "overlay/OverlayHeaderStorage.h"
 #include "fenixsim/FenixFailureCoordinator.h"
 
 namespace {
@@ -54,47 +56,8 @@ void InitializeUiAndState(
 {
     (void)deps.config.Load();
 
-    try {
-        const std::filesystem::path botPath = std::filesystem::path(GetExeDir()) / "bot_commands.json";
-        deps.state.set_bot_commands_storage_path(ToUtf8(botPath.wstring()));
-        if (deps.state.load_bot_commands_from_disk()) {
-            LogLine(L"BOT: loaded commands from bot_commands.json");
-        }
-        else {
-            LogLine(L"BOT: no bot_commands.json found (or empty/invalid) - starting with in-memory defaults");
-        }
-    }
-    catch (...) {
-        LogLine(L"BOT: failed to set/load bot commands storage path");
-    }
-
-    try {
-        const std::filesystem::path setPath = std::filesystem::path(GetExeDir()) / "bot_settings.json";
-        deps.state.set_bot_settings_storage_path(ToUtf8(setPath.wstring()));
-        if (deps.state.load_bot_settings_from_disk()) {
-            LogLine(L"BOT: loaded settings from bot_settings.json");
-        }
-        else {
-            LogLine(L"BOT: no bot_settings.json found (or empty/invalid) - using defaults");
-        }
-    }
-    catch (...) {
-        LogLine(L"BOT: failed to set/load bot settings storage path");
-    }
-
-    try {
-        const std::filesystem::path hdrPath = std::filesystem::path(GetExeDir()) / "overlay_header.json";
-        deps.state.set_overlay_header_storage_path(ToUtf8(hdrPath.wstring()));
-        if (deps.state.load_overlay_header_from_disk()) {
-            LogLine(L"OVERLAY: loaded header settings from overlay_header.json");
-        }
-        else {
-            LogLine(L"OVERLAY: no overlay_header.json found (or empty/invalid) - using defaults");
-        }
-    }
-    catch (...) {
-        LogLine(L"OVERLAY: failed to set/load overlay header settings path");
-    }
+    bot::InitializeBotStorage(deps.state, GetExeDir());
+    overlay::InitializeOverlayHeaderStorage(deps.state, GetExeDir());
 
     UiLog_SetWebLogState(&deps.state);
     deps.youtubeChat.SetReplyAuth(&deps.youtubeAuth);

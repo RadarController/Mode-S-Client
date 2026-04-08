@@ -213,6 +213,7 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClInclude Include="src\app\AppShutdown.h" />
     <ClInclude Include="src\bot\BotCommandDispatcher.h" />
     <ClInclude Include="src\bot\BotReplyRouter.h" />
+    <ClInclude Include="src\bot\BotStorageBootstrap.h" />
     <ClInclude Include="src\chat\ChatAggregator.h" />
     <ClInclude Include="src\core\AppPaths.h" />
     <ClInclude Include="src\core\StringUtil.h" />
@@ -223,6 +224,7 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClInclude Include="src\Mode-S Client.h" />
     <ClInclude Include="src\http\HttpServer.h" />
     <ClInclude Include="src\oauth\EmbeddedOAuthConfig.h" />
+    <ClInclude Include="src\overlay\OverlayHeaderStorage.h" />
     <ClInclude Include="src\platform\PlatformControl.h" />
     <ClInclude Include="src\supporter\RecentSupporter.h" />
     <ClInclude Include="src\supporter\SupporterFeedService.h" />
@@ -259,6 +261,7 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClCompile Include="src\app\AppRuntime.cpp" />
     <ClCompile Include="src\app\AppShutdown.cpp" />
     <ClCompile Include="src\bot\BotCommandDispatcher.cpp" />
+    <ClCompile Include="src\bot\BotStorageBootstrap.cpp" />
     <ClCompile Include="src\chat\ChatAggregator.cpp" />
     <ClCompile Include="src\core\AppPaths.cpp" />
     <ClCompile Include="src\core\StringUtil.cpp" />
@@ -268,6 +271,7 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClCompile Include="src\log\UiLog.cpp" />
     <ClCompile Include="src\Mode-S Client.cpp" />
     <ClCompile Include="src\http\HttpServer.cpp" />
+    <ClCompile Include="src\overlay\OverlayHeaderStorage.cpp" />
     <ClCompile Include="src\platform\PlatformControl.cpp" />
     <ClCompile Include="src\supporter\RecentSupporter.cpp" />
     <ClCompile Include="src\supporter\SupporterFeedService.cpp" />
