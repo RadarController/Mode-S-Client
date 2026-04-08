@@ -533,6 +533,20 @@ int FenixFailureCoordinator::CreditsFromTwitchEvent(const nlohmann::json& event)
         return credits;
     }
 
+    if (type == "channel.channel_points_custom_reward_redemption.add") {
+        std::string reward_title = ToLower(event.value("reward_title", std::string{}));
+        if (reward_title.empty() && raw.is_object()) {
+            const auto reward_it = raw.find("reward");
+            if (reward_it != raw.end() && reward_it->is_object()) {
+                reward_title = ToLower(reward_it->value("title", std::string{}));
+            }
+        }
+
+        if (reward_title == "break my plane") {
+            return 1;
+        }
+    }
+
     return 0;
 }
 
