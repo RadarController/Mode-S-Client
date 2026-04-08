@@ -245,32 +245,70 @@ supporter::FetchResult TwitchSupporterProvider::FetchRecent(int limit) const {
     }
 
     if (!broadcaster_id.empty() && static_cast<int>(out.items.size()) < limit) {
-        const std::string subs_path = "/helix/subscriptions?broadcaster_id=" + UrlEncode(broadcaster_id) + "&first=" + std::to_string(limit);
-        HttpResult subs_res = WinHttpGet(L"api.twitch.tv", INTERNET_DEFAULT_HTTPS_PORT, ToW(subs_path), headers, true);
-        if (subs_res.status >= 200 && subs_res.status < 300) {
-            try {
-                json j = json::parse(subs_res.body);
-                if (j.contains("data") && j["data"].is_array()) {
-                    for (const auto& row : j["data"]) {
-                        supporter::RecentSupporter item;
-                        item.platform = "twitch";
-                        item.id = row.value("user_id", std::string{});
-                        item.display_name = row.value("user_name", row.value("user_login", std::string{}));
-                        item.supported_at_ms = 0;
-                        item.support_type = "subscriber";
-                        item.tier_name = NiceTier(row.value("tier", std::string{}));
-                        item.is_gift = row.value("is_gift", false);
-                        if (item.display_name.empty()) continue;
-                        if (!item.id.empty() && !seen_ids.insert("helix:" + item.id).second) continue;
-                        out.items.push_back(std::move(item));
-                        if (static_cast<int>(out.items.size()) >= limit) break;
-                    }
-                }
-            } catch (...) {
-                SafeLog(log_, L"[Supporters][Twitch] Failed to parse Helix subscriptions response");
+        std::string after;
+
+        while (static_cast<int>(out.items.size()) < limit) {
+            const int remaining = limit - static_cast<int>(out.items.size());
+            const int page_size = (std::min)(remaining, 100);
+
+            std::string subs_path =
+                "/helix/subscriptions?broadcaster_id=" + UrlEncode(broadcaster_id) +
+                "&first=" + std::to_string(page_size);
+
+            if (!after.empty()) {
+                subs_path += "&after=" + UrlEncode(after);
             }
-        } else if (out.items.empty()) {
-            out.status.error = "twitch subscriptions request failed";
+
+            HttpResult subs_res = WinHttpGet(L"api.twitch.tv", INTERNET_DEFAULT_HTTPS_PORT, ToW(subs_path), headers, true);
+            if (subs_res.status >= 200 && subs_res.status < 300) {
+                try {
+                    json j = json::parse(subs_res.body);
+                    bool added_any = false;
+
+                    if (j.contains("data") && j["data"].is_array()) {
+                        for (const auto& row : j["data"]) {
+                            supporter::RecentSupporter item;
+                            item.platform = "twitch";
+                            item.id = row.value("user_id", std::string{});
+                            item.display_name = row.value("user_name", row.value("user_login", std::string{}));
+                            item.supported_at_ms = 0;
+                            item.support_type = "subscriber";
+                            item.tier_name = NiceTier(row.value("tier", std::string{}));
+                            item.is_gift = row.value("is_gift", false);
+                            if (item.display_name.empty()) continue;
+                            if (!item.id.empty() && !seen_ids.insert("helix:" + item.id).second) continue;
+                            out.items.push_back(std::move(item));
+                            added_any = true;
+                            if (static_cast<int>(out.items.size()) >= limit) break;
+                        }
+                    }
+
+                    std::string next_after;
+                    if (j.contains("pagination") && j["pagination"].is_object()) {
+                        next_after = j["pagination"].value("cursor", std::string{});
+                    }
+
+                    if (static_cast<int>(out.items.size()) >= limit || next_after.empty()) {
+                        break;
+                    }
+
+                    if (!added_any && next_after == after) {
+                        break;
+                    }
+
+                    after = std::move(next_after);
+                }
+                catch (...) {
+                    SafeLog(log_, L"[Supporters][Twitch] Failed to parse Helix subscriptions response");
+                    break;
+                }
+            }
+            else {
+                if (out.items.empty()) {
+                    out.status.error = "twitch subscriptions request failed";
+                }
+                break;
+            }
         }
     }
 

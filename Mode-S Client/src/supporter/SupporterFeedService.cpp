@@ -27,7 +27,6 @@ SupporterFeedService::SupporterFeedService(AppState& state,
 
 FeedResult SupporterFeedService::FetchRecent(int limit) const {
     if (limit <= 0) limit = 16;
-    if (limit > 50) limit = 50;
 
     twitch::TwitchSupporterProvider twitch_provider(state_, twitch_login_, twitch_access_token_, twitch_client_id_, log_);
     youtube::YouTubeSupporterProvider youtube_provider(youtube_access_token_, youtube_channel_id_, log_);
