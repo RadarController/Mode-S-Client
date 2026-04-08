@@ -1,9 +1,6 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
-#include <winhttp.h>
-#pragma comment(lib, "winhttp.lib")
-
 #include "app/AppBootstrap.h"
 
 #include <algorithm>
@@ -23,6 +20,7 @@
 #include "euroscope/EuroScopeIngestService.h"
 #include "floating/FloatingChat.h"
 #include "http/HttpServer.h"
+#include "http/WinHttpClient.h"
 #include "log/UiLog.h"
 #include "obs/ObsWsClient.h"
 #include "platform/PlatformControl.h"
@@ -38,102 +36,6 @@
 #include "fenixsim/FenixFailureCoordinator.h"
 
 namespace {
-
-struct HttpResult {
-    int status = 0;
-    DWORD winerr = 0;
-    std::string body;
-};
-
-struct WinHttpHandle {
-    HINTERNET h = nullptr;
-    WinHttpHandle() = default;
-    explicit WinHttpHandle(HINTERNET v) : h(v) {}
-    ~WinHttpHandle() { if (h) WinHttpCloseHandle(h); }
-    WinHttpHandle(const WinHttpHandle&) = delete;
-    WinHttpHandle& operator=(const WinHttpHandle&) = delete;
-    WinHttpHandle(WinHttpHandle&& o) noexcept : h(o.h) { o.h = nullptr; }
-    WinHttpHandle& operator=(WinHttpHandle&& o) noexcept {
-        if (this != &o) {
-            if (h) WinHttpCloseHandle(h);
-            h = o.h;
-            o.h = nullptr;
-        }
-        return *this;
-    }
-    bool valid() const { return h != nullptr; }
-    operator HINTERNET() const { return h; }
-};
-
-static HttpResult WinHttpRequestUtf8(const std::wstring& method,
-    const std::wstring& host,
-    INTERNET_PORT port,
-    const std::wstring& path,
-    const std::wstring& extraHeaders,
-    const std::string& body,
-    bool secure)
-{
-    HttpResult r;
-
-    WinHttpHandle hSession(WinHttpOpen(L"Mode-S Client/1.0",
-        WINHTTP_ACCESS_TYPE_NO_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
-    if (!hSession.valid()) { r.winerr = GetLastError(); return r; }
-
-    WinHttpSetTimeouts(hSession, 5000, 5000, 10000, 10000);
-
-    WinHttpHandle hConnect(WinHttpConnect(hSession, host.c_str(), port, 0));
-    if (!hConnect.valid()) { r.winerr = GetLastError(); return r; }
-
-    const DWORD flags = secure ? WINHTTP_FLAG_SECURE : 0;
-    WinHttpHandle hRequest(WinHttpOpenRequest(hConnect, method.c_str(), path.c_str(),
-        nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, flags));
-    if (!hRequest.valid()) { r.winerr = GetLastError(); return r; }
-
-    if (!extraHeaders.empty()) {
-        WinHttpAddRequestHeaders(hRequest, extraHeaders.c_str(), (ULONG)-1L, WINHTTP_ADDREQ_FLAG_ADD);
-    }
-
-    BOOL ok = WinHttpSendRequest(
-        hRequest,
-        WINHTTP_NO_ADDITIONAL_HEADERS, 0,
-        body.empty() ? WINHTTP_NO_REQUEST_DATA : (LPVOID)body.data(),
-        (DWORD)body.size(),
-        (DWORD)body.size(),
-        0);
-    if (!ok) { r.winerr = GetLastError(); return r; }
-
-    ok = WinHttpReceiveResponse(hRequest, nullptr);
-    if (!ok) { r.winerr = GetLastError(); return r; }
-
-    DWORD status = 0;
-    DWORD statusSize = sizeof(status);
-    if (WinHttpQueryHeaders(hRequest,
-        WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
-        WINHTTP_HEADER_NAME_BY_INDEX, &status, &statusSize, WINHTTP_NO_HEADER_INDEX))
-    {
-        r.status = (int)status;
-    }
-
-    std::string out;
-    for (;;) {
-        DWORD avail = 0;
-        if (!WinHttpQueryDataAvailable(hRequest, &avail)) { r.winerr = GetLastError(); break; }
-        if (avail == 0) break;
-
-        const size_t cur = out.size();
-        out.resize(cur + (size_t)avail);
-
-        DWORD read = 0;
-        if (!WinHttpReadData(hRequest, out.data() + cur, avail, &read)) {
-            r.winerr = GetLastError();
-            break;
-        }
-        out.resize(cur + (size_t)read);
-    }
-
-    r.body = std::move(out);
-    return r;
-}
 
 static std::string SanitizeSingleLineReply(std::string s)
 {
@@ -167,7 +69,7 @@ static bool TryGetActiveYouTubeLiveChatId(const std::string& accessToken,
         L"Authorization: Bearer " + ToW(accessToken) + L"\r\n" +
         L"Accept: application/json\r\n";
 
-    const HttpResult r = WinHttpRequestUtf8(
+    const http::HttpResult r = http::WinHttpRequestUtf8(
         L"GET",
         L"www.googleapis.com",
         INTERNET_DEFAULT_HTTPS_PORT,
@@ -253,7 +155,7 @@ static bool TryPostYouTubeLiveChatMessage(const std::string& accessToken,
         L"Content-Type: application/json\r\n" +
         L"Accept: application/json\r\n";
 
-    const HttpResult r = WinHttpRequestUtf8(
+    const http::HttpResult r = http::WinHttpRequestUtf8(
         L"POST",
         L"www.googleapis.com",
         INTERNET_DEFAULT_HTTPS_PORT,
@@ -384,7 +286,7 @@ static bool TryFetchMetarFromAviationWeather(const std::string& icaoUpper,
     const std::wstring path =
         L"/api/data/metar?ids=" + ToW(icaoUpper) + L"&format=raw";
 
-    const HttpResult r = WinHttpRequestUtf8(
+    const http::HttpResult r = http::WinHttpRequestUtf8(
         L"GET",
         L"aviationweather.gov",
         INTERNET_DEFAULT_HTTPS_PORT,
