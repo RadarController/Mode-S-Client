@@ -1,10 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
   <ItemGroup>
-    <Filter Include="Source Files">
-      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
-      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
-    </Filter>
     <Filter Include="Header Files">
       <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
       <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
@@ -43,255 +39,393 @@
     <Filter Include="assets\app\splash">
       <UniqueIdentifier>{7161739f-55ff-49a2-b5da-b5588d36022e}</UniqueIdentifier>
     </Filter>
+    <Filter Include="assets\overlay\Common">
+      <UniqueIdentifier>{b870e7cb-22a3-460a-8f00-8391789fef42}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="assets\overlay\Landscape">
+      <UniqueIdentifier>{8883049b-4d9a-481a-a8d1-7f36aecf7d97}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="integrations">
+      <UniqueIdentifier>{f7000412-43f2-406a-8de6-45167a086796}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="integrations\euroscope">
+      <UniqueIdentifier>{b64afcdc-09b5-4c2d-81ba-c4b1040244d6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="integrations\fenixsim">
+      <UniqueIdentifier>{48637da2-089e-4c6d-93a3-0fe0b969132d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="integrations\metar">
+      <UniqueIdentifier>{ed109747-b1af-4b26-afdd-271af9578604}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="integrations\obs">
+      <UniqueIdentifier>{90910d3f-7b71-47e4-907c-6ee8797e7516}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="integrations\simconnect">
+      <UniqueIdentifier>{6347856f-91bf-488f-9055-f32ff1833416}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="integrations\tiktok">
+      <UniqueIdentifier>{5de784a2-159f-44d9-a3f5-25bec4575900}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="integrations\twitch">
+      <UniqueIdentifier>{82fabce8-a4e0-487c-9807-3dba5a59f462}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="integrations\youtube">
+      <UniqueIdentifier>{0a73fa88-535b-459d-9bc0-c057f02cfda5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\app">
+      <UniqueIdentifier>{38bddf95-6b79-48c4-a58e-690efd4696d7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\bot">
+      <UniqueIdentifier>{e3af5ed3-c671-4a6a-86b5-ada53c6a8bba}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\chat">
+      <UniqueIdentifier>{cd73cd4f-e79c-4ffd-b7af-b074a6ec5482}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\core">
+      <UniqueIdentifier>{1421a362-850a-468b-9f81-e537ef21dd92}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\floating">
+      <UniqueIdentifier>{a0177fd4-a02f-48b6-95db-935938acf784}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\http">
+      <UniqueIdentifier>{b2607513-f457-4f4e-af72-34445acd262b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\log">
+      <UniqueIdentifier>{7a97e143-e1a5-4300-8eea-50096a28e35c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\oauth">
+      <UniqueIdentifier>{2431ed3d-2796-4198-a35b-b0fe735e1036}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\overlay">
+      <UniqueIdentifier>{9a43736a-f302-4e54-96f1-a809d575287d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\platform">
+      <UniqueIdentifier>{4be66c8e-704a-43d2-8f53-c01bc96599c8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\runtime">
+      <UniqueIdentifier>{85c5dba3-2e39-49de-a48d-b2f2414eebaa}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\supporter">
+      <UniqueIdentifier>{b328b98e-2a7f-4f51-bcb1-e858f3656d16}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\ui">
+      <UniqueIdentifier>{912de2bf-18fc-475e-85ff-35a0a43357bb}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="tools">
+      <UniqueIdentifier>{6216837d-5620-4d0a-a18c-91ef5f24c464}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ui">
+      <UniqueIdentifier>{619725a4-3c35-48ac-9100-048f19c43348}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="targetver.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="..\external\httplib.h">
       <Filter>external</Filter>
     </ClInclude>
     <ClInclude Include="..\external\json.hpp">
       <Filter>external</Filter>
     </ClInclude>
+    <ClInclude Include="integrations\euroscope\EuroScopeIngestService.h">
+      <Filter>integrations\euroscope</Filter>
+    </ClInclude>
+    <ClInclude Include="integrations\fenixsim\FenixSimFailures.h">
+      <Filter>integrations\fenixsim</Filter>
+    </ClInclude>
+    <ClInclude Include="integrations\fenixsim\FenixFailureCoordinator.h">
+      <Filter>integrations\fenixsim</Filter>
+    </ClInclude>
+    <ClInclude Include="integrations\fenixsim\FenixFailureMetadataStore.h">
+      <Filter>integrations\fenixsim</Filter>
+    </ClInclude>
+    <ClInclude Include="integrations\metar\MetarCommand.h">
+      <Filter>integrations\metar</Filter>
+    </ClInclude>
     <ClInclude Include="integrations\obs\ObsWsClient.h">
-      <Filter>Header Files</Filter>
+      <Filter>integrations\obs</Filter>
     </ClInclude>
     <ClInclude Include="integrations\tiktok\TikTokFollowersService.h">
-      <Filter>Header Files</Filter>
+      <Filter>integrations\tiktok</Filter>
     </ClInclude>
     <ClInclude Include="integrations\tiktok\TikTokSidecar.h">
-      <Filter>Header Files</Filter>
+      <Filter>integrations\tiktok</Filter>
+    </ClInclude>
+    <ClInclude Include="integrations\twitch\TwitchAuth.h">
+      <Filter>integrations\twitch</Filter>
+    </ClInclude>
+    <ClInclude Include="integrations\twitch\TwitchEventSubWsClient.h">
+      <Filter>integrations\twitch</Filter>
+    </ClInclude>
+    <ClInclude Include="integrations\twitch\TwitchHelixController.h">
+      <Filter>integrations\twitch</Filter>
     </ClInclude>
     <ClInclude Include="integrations\twitch\TwitchHelixService.h">
-      <Filter>Header Files</Filter>
+      <Filter>integrations\twitch</Filter>
     </ClInclude>
     <ClInclude Include="integrations\twitch\TwitchIrcWsClient.h">
-      <Filter>Header Files</Filter>
+      <Filter>integrations\twitch</Filter>
+    </ClInclude>
+    <ClInclude Include="integrations\twitch\TwitchSupporterProvider.h">
+      <Filter>integrations\twitch</Filter>
+    </ClInclude>
+    <ClInclude Include="integrations\youtube\YouTubeAuth.h">
+      <Filter>integrations\youtube</Filter>
+    </ClInclude>
+    <ClInclude Include="integrations\youtube\YouTubeLiveChatService.h">
+      <Filter>integrations\youtube</Filter>
+    </ClInclude>
+    <ClInclude Include="integrations\youtube\YouTubeSidecar.h">
+      <Filter>integrations\youtube</Filter>
+    </ClInclude>
+    <ClInclude Include="integrations\youtube\YouTubeSubscriberProvider.h">
+      <Filter>integrations\youtube</Filter>
+    </ClInclude>
+    <ClInclude Include="integrations\youtube\YouTubeSupporterProvider.h">
+      <Filter>integrations\youtube</Filter>
     </ClInclude>
     <ClInclude Include="src\AppConfig.h">
-      <Filter>Header Files</Filter>
+      <Filter>src</Filter>
     </ClInclude>
     <ClInclude Include="src\AppState.h">
-      <Filter>Header Files</Filter>
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="src\app\AppBootstrap.h">
+      <Filter>src\app</Filter>
+    </ClInclude>
+    <ClInclude Include="src\app\AppRuntime.h">
+      <Filter>src\app</Filter>
+    </ClInclude>
+    <ClInclude Include="src\app\AppShutdown.h">
+      <Filter>src\app</Filter>
+    </ClInclude>
+    <ClInclude Include="src\bot\BotCommandDispatcher.h">
+      <Filter>src\bot</Filter>
+    </ClInclude>
+    <ClInclude Include="src\bot\BotReplyRouter.h">
+      <Filter>src\bot</Filter>
+    </ClInclude>
+    <ClInclude Include="src\bot\BotStorageBootstrap.h">
+      <Filter>src\bot</Filter>
+    </ClInclude>
+    <ClInclude Include="src\chat\ChatAggregator.h">
+      <Filter>src\chat</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\AppPaths.h">
+      <Filter>src\core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\StringUtil.h">
+      <Filter>src\core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\floating\FloatingChat.h">
+      <Filter>src\floating</Filter>
+    </ClInclude>
+    <ClInclude Include="src\http\HttpServerOptionsBuilder.h">
+      <Filter>src\http</Filter>
+    </ClInclude>
+    <ClInclude Include="src\http\LocalApiClient.h">
+      <Filter>src\http</Filter>
+    </ClInclude>
+    <ClInclude Include="src\http\WinHttpClient.h">
+      <Filter>src\http</Filter>
+    </ClInclude>
+    <ClInclude Include="src\log\UiLog.h">
+      <Filter>src\log</Filter>
     </ClInclude>
     <ClInclude Include="src\Mode-S Client.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="src\http\HttpServer.h">
+      <Filter>src\http</Filter>
+    </ClInclude>
+    <ClInclude Include="src\oauth\EmbeddedOAuthConfig.h">
+      <Filter>src\oauth</Filter>
+    </ClInclude>
+    <ClInclude Include="src\overlay\OverlayHeaderStorage.h">
+      <Filter>src\overlay</Filter>
+    </ClInclude>
+    <ClInclude Include="src\platform\PlatformControl.h">
+      <Filter>src\platform</Filter>
+    </ClInclude>
+    <ClInclude Include="src\runtime\ObsMetricsPublisher.h">
+      <Filter>src\runtime</Filter>
+    </ClInclude>
+    <ClInclude Include="src\runtime\TikTokRuntimeCoordinator.h">
+      <Filter>src\runtime</Filter>
+    </ClInclude>
+    <ClInclude Include="src\runtime\TwitchRuntimeCoordinator.h">
+      <Filter>src\runtime</Filter>
+    </ClInclude>
+    <ClInclude Include="src\runtime\YouTubeRuntimeCoordinator.h">
+      <Filter>src\runtime</Filter>
+    </ClInclude>
+    <ClInclude Include="src\supporter\RecentSupporter.h">
+      <Filter>src\supporter</Filter>
+    </ClInclude>
+    <ClInclude Include="src\supporter\SupporterFeedService.h">
+      <Filter>src\supporter</Filter>
+    </ClInclude>
+    <ClInclude Include="src\ui\SplashScreen.h">
+      <Filter>src\ui</Filter>
+    </ClInclude>
+    <ClInclude Include="src\ui\WebViewHost.h">
+      <Filter>src\ui</Filter>
+    </ClInclude>
+    <ClInclude Include="src\ui\WindowEffects.h">
+      <Filter>src\ui</Filter>
+    </ClInclude>
+    <ClInclude Include="src\ui\WindowLayout.h">
+      <Filter>src\ui</Filter>
+    </ClInclude>
+    <ClInclude Include="targetver.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="ui\Resource.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="integrations\euroscope\EuroScopeIngestService.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\chat\ChatAggregator.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\http\HttpServer.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\floating\FloatingChat.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="integrations\youtube\YouTubeLiveChatService.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="integrations\youtube\YouTubeSidecar.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\platform\PlatformControl.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="integrations\twitch\TwitchEventSubWsClient.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="integrations\twitch\TwitchAuth.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\bot\BotReplyRouter.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="integrations\youtube\YouTubeAuth.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\core\StringUtil.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\http\LocalApiClient.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\log\UiLog.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\ui\WebViewHost.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\ui\SplashScreen.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\app\AppBootstrap.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\app\AppShutdown.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\app\AppRuntime.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="integrations\twitch\TwitchHelixController.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\core\AppPaths.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\ui\WindowEffects.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\ui\WindowLayout.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\oauth\EmbeddedOAuthConfig.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\supporter\RecentSupporter.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\supporter\SupporterFeedService.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="integrations\twitch\TwitchSupporterProvider.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="integrations\youtube\YouTubeSupporterProvider.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="integrations\youtube\YouTubeSubscriberProvider.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="integrations\fenixsim\FenixSimFailures.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="integrations\fenixsim\FenixFailureCoordinator.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="integrations\fenixsim\FenixFailureMetadataStore.h">
-      <Filter>Header Files</Filter>
+      <Filter>ui</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="integrations\obs\ObsWsClient.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="integrations\tiktok\TikTokFollowersService.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="integrations\tiktok\TikTokSidecar.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="integrations\twitch\TwitchHelixService.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="integrations\twitch\TwitchIrcWsClient.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\AppState.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\Mode-S Client.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="integrations\euroscope\EuroScopeIngestService.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\chat\ChatAggregator.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\http\HttpServer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\floating\FloatingChat.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="integrations\youtube\YouTubeLiveChatService.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="integrations\youtube\YouTubeSidecar.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\platform\PlatformControl.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="integrations\twitch\TwitchEventSubWsClient.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="integrations\twitch\TwitchAuth.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="integrations\youtube\YouTubeAuth.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="integrations\simconnect\SimConnectWorker.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\core\StringUtil.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\http\LocalApiClient.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\log\UiLog.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\ui\WebViewHost.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\ui\SplashScreen.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\app\AppBootstrap.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\app\AppShutdown.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\app\AppRuntime.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="integrations\twitch\TwitchHelixController.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\core\AppPaths.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\ui\WindowEffects.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\ui\WindowLayout.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\supporter\RecentSupporter.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\supporter\SupporterFeedService.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="integrations\twitch\TwitchSupporterProvider.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="integrations\youtube\YouTubeSupporterProvider.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="integrations\youtube\YouTubeSubscriberProvider.cpp">
-      <Filter>Source Files</Filter>
+      <Filter>integrations\euroscope</Filter>
     </ClCompile>
     <ClCompile Include="integrations\fenixsim\FenixSimFailures.cpp">
-      <Filter>Source Files</Filter>
+      <Filter>integrations\fenixsim</Filter>
     </ClCompile>
     <ClCompile Include="integrations\fenixsim\FenixFailureCoordinator.cpp">
-      <Filter>Source Files</Filter>
+      <Filter>integrations\fenixsim</Filter>
     </ClCompile>
     <ClCompile Include="integrations\fenixsim\FenixFailureMetadataStore.cpp">
-      <Filter>Source Files</Filter>
+      <Filter>integrations\fenixsim</Filter>
+    </ClCompile>
+    <ClCompile Include="integrations\metar\MetarCommand.cpp">
+      <Filter>integrations\metar</Filter>
+    </ClCompile>
+    <ClCompile Include="integrations\simconnect\SimConnectWorker.cpp">
+      <Filter>integrations\simconnect</Filter>
+    </ClCompile>
+    <ClCompile Include="integrations\obs\ObsWsClient.cpp">
+      <Filter>integrations\obs</Filter>
+    </ClCompile>
+    <ClCompile Include="integrations\tiktok\TikTokFollowersService.cpp">
+      <Filter>integrations\tiktok</Filter>
+    </ClCompile>
+    <ClCompile Include="integrations\tiktok\TikTokSidecar.cpp">
+      <Filter>integrations\tiktok</Filter>
+    </ClCompile>
+    <ClCompile Include="integrations\twitch\TwitchAuth.cpp">
+      <Filter>integrations\twitch</Filter>
+    </ClCompile>
+    <ClCompile Include="integrations\twitch\TwitchEventSubWsClient.cpp">
+      <Filter>integrations\twitch</Filter>
+    </ClCompile>
+    <ClCompile Include="integrations\twitch\TwitchHelixController.cpp">
+      <Filter>integrations\twitch</Filter>
+    </ClCompile>
+    <ClCompile Include="integrations\twitch\TwitchHelixService.cpp">
+      <Filter>integrations\twitch</Filter>
+    </ClCompile>
+    <ClCompile Include="integrations\twitch\TwitchIrcWsClient.cpp">
+      <Filter>integrations\twitch</Filter>
+    </ClCompile>
+    <ClCompile Include="integrations\twitch\TwitchSupporterProvider.cpp">
+      <Filter>integrations\twitch</Filter>
+    </ClCompile>
+    <ClCompile Include="integrations\youtube\YouTubeAuth.cpp">
+      <Filter>integrations\youtube</Filter>
+    </ClCompile>
+    <ClCompile Include="integrations\youtube\YouTubeLiveChatService.cpp">
+      <Filter>integrations\youtube</Filter>
+    </ClCompile>
+    <ClCompile Include="integrations\youtube\YouTubeSidecar.cpp">
+      <Filter>integrations\youtube</Filter>
+    </ClCompile>
+    <ClCompile Include="integrations\youtube\YouTubeSubscriberProvider.cpp">
+      <Filter>integrations\youtube</Filter>
+    </ClCompile>
+    <ClCompile Include="integrations\youtube\YouTubeSupporterProvider.cpp">
+      <Filter>integrations\youtube</Filter>
+    </ClCompile>
+    <ClCompile Include="src\AppState.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\app\AppBootstrap.cpp">
+      <Filter>src\app</Filter>
+    </ClCompile>
+    <ClCompile Include="src\app\AppRuntime.cpp">
+      <Filter>src\app</Filter>
+    </ClCompile>
+    <ClCompile Include="src\app\AppShutdown.cpp">
+      <Filter>src\app</Filter>
+    </ClCompile>
+    <ClCompile Include="src\bot\BotCommandDispatcher.cpp">
+      <Filter>src\bot</Filter>
+    </ClCompile>
+    <ClCompile Include="src\bot\BotStorageBootstrap.cpp">
+      <Filter>src\bot</Filter>
+    </ClCompile>
+    <ClCompile Include="src\chat\ChatAggregator.cpp">
+      <Filter>src\chat</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\AppPaths.cpp">
+      <Filter>src\core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\StringUtil.cpp">
+      <Filter>src\core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\floating\FloatingChat.cpp">
+      <Filter>src\floating</Filter>
+    </ClCompile>
+    <ClCompile Include="src\http\HttpServerOptionsBuilder.cpp">
+      <Filter>src\http</Filter>
+    </ClCompile>
+    <ClCompile Include="src\http\LocalApiClient.cpp">
+      <Filter>src\http</Filter>
+    </ClCompile>
+    <ClCompile Include="src\http\WinHttpClient.cpp">
+      <Filter>src\http</Filter>
+    </ClCompile>
+    <ClCompile Include="src\log\UiLog.cpp">
+      <Filter>src\log</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Mode-S Client.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\http\HttpServer.cpp">
+      <Filter>src\http</Filter>
+    </ClCompile>
+    <ClCompile Include="src\overlay\OverlayHeaderStorage.cpp">
+      <Filter>src\overlay</Filter>
+    </ClCompile>
+    <ClCompile Include="src\platform\PlatformControl.cpp">
+      <Filter>src\platform</Filter>
+    </ClCompile>
+    <ClCompile Include="src\runtime\ObsMetricsPublisher.cpp">
+      <Filter>src\runtime</Filter>
+    </ClCompile>
+    <ClCompile Include="src\runtime\TikTokRuntimeCoordinator.cpp">
+      <Filter>src\runtime</Filter>
+    </ClCompile>
+    <ClCompile Include="src\runtime\TwitchRuntimeCoordinator.cpp">
+      <Filter>src\runtime</Filter>
+    </ClCompile>
+    <ClCompile Include="src\runtime\YouTubeRuntimeCoordinator.cpp">
+      <Filter>src\runtime</Filter>
+    </ClCompile>
+    <ClCompile Include="src\supporter\RecentSupporter.cpp">
+      <Filter>src\supporter</Filter>
+    </ClCompile>
+    <ClCompile Include="src\supporter\SupporterFeedService.cpp">
+      <Filter>src\supporter</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ui\SplashScreen.cpp">
+      <Filter>src\ui</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ui\WebViewHost.cpp">
+      <Filter>src\ui</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ui\WindowEffects.cpp">
+      <Filter>src\ui</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ui\WindowLayout.cpp">
+      <Filter>src\ui</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -305,17 +439,7 @@
     </Image>
   </ItemGroup>
   <ItemGroup>
-    <None Include="scripts\sidecar\tiktok_sidecar.py">
-      <Filter>sidecar</Filter>
-    </None>
-    <None Include="assets\overlay\Landscape\26_header.html">
-      <Filter>assets\overlay\landscape</Filter>
-    </None>
-    <None Include="assets\overlay\Common\chat.html">
-      <Filter>assets\overlay\common</Filter>
-    </None>
-    <None Include="packages.config" />
-    <None Include="assets\app\chat.html">
+    <None Include="assets\app\accounts.html">
       <Filter>assets\app</Filter>
     </None>
     <None Include="assets\app\app.css">
@@ -324,37 +448,13 @@
     <None Include="assets\app\app.js">
       <Filter>assets\app</Filter>
     </None>
-    <None Include="assets\app\index.html">
+    <None Include="assets\app\bot.html">
       <Filter>assets\app</Filter>
     </None>
-    <None Include="scripts\sidecar\youtube_sidecar.py">
-      <Filter>sidecar</Filter>
+    <None Include="assets\app\chat.html">
+      <Filter>assets\app</Filter>
     </None>
-    <None Include="assets\overlay\landscape\26_webcam_mask.html">
-      <Filter>assets\overlay\landscape</Filter>
-    </None>
-    <None Include="assets\overlay\landscape\26_chat.html">
-      <Filter>assets\overlay\landscape</Filter>
-    </None>
-    <None Include="assets\overlay\landscape\26_footer.html">
-      <Filter>assets\overlay\landscape</Filter>
-    </None>
-    <None Include="assets\overlay\landscape\26_simulator.html">
-      <Filter>assets\overlay\landscape</Filter>
-    </None>
-    <None Include="assets\overlay\landscape\26_webcam.html">
-      <Filter>assets\overlay\landscape</Filter>
-    </None>
-    <None Include="assets\mergedChatFeed.js">
-      <Filter>assets</Filter>
-    </None>
-    <None Include="assets\overlay\portrait\26_header.html">
-      <Filter>assets\overlay\portrait</Filter>
-    </None>
-    <None Include="assets\overlay\portrait\index.html">
-      <Filter>assets\overlay\portrait</Filter>
-    </None>
-    <None Include="assets\app\bot.html">
+    <None Include="assets\app\index.html">
       <Filter>assets\app</Filter>
     </None>
     <None Include="assets\app\overlay_title.html">
@@ -362,25 +462,6 @@
     </None>
     <None Include="assets\app\settings.html">
       <Filter>assets\app</Filter>
-    </None>
-    <None Include="assets\app\twitch_stream.html">
-      <Filter>assets\app</Filter>
-    </None>
-    <None Include="tools\gen_version.ps1" />
-    <None Include="assets\overlay\alerts.css">
-      <Filter>assets\overlay</Filter>
-    </None>
-    <None Include="assets\overlay\alerts.html">
-      <Filter>assets\overlay</Filter>
-    </None>
-    <None Include="assets\overlay\alerts.js">
-      <Filter>assets\overlay</Filter>
-    </None>
-    <None Include="assets\overlay\portrait\msfs_flightbar_portrait.html">
-      <Filter>assets\overlay\portrait</Filter>
-    </None>
-    <None Include="assets\overlay\landscape\msfs_flightbar_landscape.html">
-      <Filter>assets\overlay\landscape</Filter>
     </None>
     <None Include="assets\app\splash\index.html">
       <Filter>assets\app\splash</Filter>
@@ -391,8 +472,63 @@
     <None Include="assets\app\splash\splash.js">
       <Filter>assets\app\splash</Filter>
     </None>
-    <None Include="assets\app\accounts.html">
+    <None Include="assets\app\twitch_stream.html">
       <Filter>assets\app</Filter>
+    </None>
+    <None Include="assets\mergedChatFeed.js">
+      <Filter>assets</Filter>
+    </None>
+    <None Include="assets\overlay\alerts.css">
+      <Filter>assets\overlay</Filter>
+    </None>
+    <None Include="assets\overlay\alerts.html">
+      <Filter>assets\overlay</Filter>
+    </None>
+    <None Include="assets\overlay\alerts.js">
+      <Filter>assets\overlay</Filter>
+    </None>
+    <None Include="assets\overlay\Common\chat.html">
+      <Filter>assets\overlay\Common</Filter>
+    </None>
+    <None Include="assets\overlay\landscape\26_chat.html">
+      <Filter>assets\overlay\landscape</Filter>
+    </None>
+    <None Include="assets\overlay\landscape\26_footer.html">
+      <Filter>assets\overlay\landscape</Filter>
+    </None>
+    <None Include="assets\overlay\Landscape\26_header.html">
+      <Filter>assets\overlay\Landscape</Filter>
+    </None>
+    <None Include="assets\overlay\landscape\26_simulator.html">
+      <Filter>assets\overlay\landscape</Filter>
+    </None>
+    <None Include="assets\overlay\landscape\26_webcam.html">
+      <Filter>assets\overlay\landscape</Filter>
+    </None>
+    <None Include="assets\overlay\landscape\26_webcam_mask.html">
+      <Filter>assets\overlay\landscape</Filter>
+    </None>
+    <None Include="assets\overlay\landscape\msfs_flightbar_landscape.html">
+      <Filter>assets\overlay\landscape</Filter>
+    </None>
+    <None Include="assets\overlay\portrait\26_header.html">
+      <Filter>assets\overlay\portrait</Filter>
+    </None>
+    <None Include="assets\overlay\portrait\index.html">
+      <Filter>assets\overlay\portrait</Filter>
+    </None>
+    <None Include="assets\overlay\portrait\msfs_flightbar_portrait.html">
+      <Filter>assets\overlay\portrait</Filter>
+    </None>
+    <None Include="packages.config" />
+    <None Include="scripts\sidecar\tiktok_sidecar.py">
+      <Filter>sidecar</Filter>
+    </None>
+    <None Include="scripts\sidecar\youtube_sidecar.py">
+      <Filter>sidecar</Filter>
+    </None>
+    <None Include="tools\gen_version.ps1">
+      <Filter>tools</Filter>
     </None>
   </ItemGroup>
 </Project>
