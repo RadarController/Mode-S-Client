@@ -202,6 +202,7 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClInclude Include="integrations\twitch\TwitchIrcWsClient.h" />
     <ClInclude Include="integrations\twitch\TwitchSupporterProvider.h" />
     <ClInclude Include="integrations\youtube\YouTubeAuth.h" />
+    <ClInclude Include="integrations\youtube\YouTubeChannelStatsService.h" />
     <ClInclude Include="integrations\youtube\YouTubeLiveChatService.h" />
     <ClInclude Include="integrations\youtube\YouTubeSidecar.h" />
     <ClInclude Include="integrations\youtube\YouTubeSubscriberProvider.h" />
@@ -257,6 +258,7 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClCompile Include="integrations\twitch\TwitchIrcWsClient.cpp" />
     <ClCompile Include="integrations\twitch\TwitchSupporterProvider.cpp" />
     <ClCompile Include="integrations\youtube\YouTubeAuth.cpp" />
+    <ClCompile Include="integrations\youtube\YouTubeChannelStatsService.cpp" />
     <ClCompile Include="integrations\youtube\YouTubeLiveChatService.cpp" />
     <ClCompile Include="integrations\youtube\YouTubeSidecar.cpp" />
     <ClCompile Include="integrations\youtube\YouTubeSubscriberProvider.cpp" />

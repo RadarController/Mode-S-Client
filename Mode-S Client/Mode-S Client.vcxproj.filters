@@ -170,6 +170,9 @@
     <ClInclude Include="integrations\youtube\YouTubeAuth.h">
       <Filter>integrations\youtube</Filter>
     </ClInclude>
+    <ClInclude Include="integrations\youtube\YouTubeChannelStatsService.h">
+      <Filter>integrations\youtube</Filter>
+    </ClInclude>
     <ClInclude Include="integrations\youtube\YouTubeLiveChatService.h">
       <Filter>integrations\youtube</Filter>
     </ClInclude>
@@ -329,6 +332,9 @@
       <Filter>integrations\twitch</Filter>
     </ClCompile>
     <ClCompile Include="integrations\youtube\YouTubeAuth.cpp">
+      <Filter>integrations\youtube</Filter>
+    </ClCompile>
+    <ClCompile Include="integrations\youtube\YouTubeChannelStatsService.cpp">
       <Filter>integrations\youtube</Filter>
     </ClCompile>
     <ClCompile Include="integrations\youtube\YouTubeLiveChatService.cpp">

@@ -391,7 +391,6 @@ namespace PlatformControl {
                 int viewers = j.value("viewers", 0);
                 state.set_youtube_live(live);
                 state.set_youtube_viewers(viewers);
-                if (j.contains("followers")) state.set_youtube_followers(j.value("followers", 0));
             }
             else if (type == "youtube.viewers") {
                 state.set_youtube_viewers(j.value("viewers", 0));

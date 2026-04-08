@@ -13,6 +13,7 @@
 #include "http/HttpServer.h"
 #include "log/UiLog.h"
 #include "fenixsim/FenixFailureCoordinator.h"
+#include "runtime/YouTubeRuntimeCoordinator.h"
 
 namespace AppShutdown {
 
@@ -82,6 +83,11 @@ void BeginShutdown(Dependencies& deps, HWND hwndToDestroy)
     try { deps.youtubeChat.stop(); }
     catch (...) {}
     LogLine(L"SHUTDOWN: stopped youtubeChat");
+
+    LogLine(L"SHUTDOWN: stopping youtube runtime...");
+    try { runtime::StopYouTubeRuntimeServices(); }
+    catch (...) {}
+    LogLine(L"SHUTDOWN: stopped youtube runtime");
 
     LogLine(L"SHUTDOWN: stopping youtube...");
     try { deps.youtube.stop(); }

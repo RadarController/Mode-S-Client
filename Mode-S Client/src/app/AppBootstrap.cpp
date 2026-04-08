@@ -152,7 +152,7 @@ void StartBackend(
         deps.obs,
         deps.running);
 
-    runtime::StartYouTubeRuntimeServices(deps.youtubeAuth);
+    runtime::StartYouTubeRuntimeServices(deps.youtubeAuth, deps.state);
 
     runtime::StartTwitchRuntimeServices(
         restartTwitchHelixPoller,
