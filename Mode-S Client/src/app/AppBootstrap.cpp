@@ -37,207 +37,9 @@
 
 namespace {
 
-static std::string SanitizeSingleLineReply(std::string s)
-{
-    s.erase(std::remove(s.begin(), s.end(), '\r'), s.end());
-    s.erase(std::remove(s.begin(), s.end(), '\n'), s.end());
-    if (s.size() > 180) s.resize(180);
-    return s;
-}
-
-static bool ContainsNoCase(const std::string& haystack, const std::string& needle)
-{
-    auto lower = [](std::string s) {
-        std::transform(s.begin(), s.end(), s.begin(),
-            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        return s;
-    };
-    return lower(haystack).find(lower(needle)) != std::string::npos;
-}
-
-static bool TryGetActiveYouTubeLiveChatId(const std::string& accessToken,
-    std::string& outLiveChatId,
-    std::string* outError)
-{
-    outLiveChatId.clear();
-    if (accessToken.empty()) {
-        if (outError) *outError = "YouTube access token missing";
-        return false;
-    }
-
-    const std::wstring headers =
-        L"Authorization: Bearer " + ToW(accessToken) + L"\r\n" +
-        L"Accept: application/json\r\n";
-
-    const http::HttpResult r = http::WinHttpRequestUtf8(
-        L"GET",
-        L"www.googleapis.com",
-        INTERNET_DEFAULT_HTTPS_PORT,
-        L"/youtube/v3/liveBroadcasts?part=snippet,status&mine=true&broadcastType=all&maxResults=25",
-        headers,
-        "",
-        true);
-
-    if (r.status != 200 || r.body.empty()) {
-        if (outError) {
-            *outError = "liveBroadcasts.list failed: HTTP " + std::to_string(r.status);
-            if (!r.body.empty()) *outError += " body=" + r.body;
-        }
-        return false;
-    }
-
-    try {
-        const auto j = nlohmann::json::parse(r.body, nullptr, false);
-        if (!j.is_object()) {
-            if (outError) *outError = "liveBroadcasts.list returned invalid JSON";
-            return false;
-        }
-
-        const auto items = j.value("items", nlohmann::json::array());
-
-        // Prefer genuinely live broadcasts first, then fall back to any owned broadcast
-        // that exposes a liveChatId.
-        for (const auto& item : items) {
-            const auto snippet = item.value("snippet", nlohmann::json::object());
-            const auto status = item.value("status", nlohmann::json::object());
-            const std::string lifeCycleStatus = status.value("lifeCycleStatus", std::string{});
-            const std::string liveChatId = snippet.value("liveChatId", std::string{});
-            if (!liveChatId.empty() && (lifeCycleStatus == "live" || lifeCycleStatus == "liveStarting" || lifeCycleStatus == "testing" || lifeCycleStatus == "testStarting")) {
-                outLiveChatId = liveChatId;
-                return true;
-            }
-        }
-
-        for (const auto& item : items) {
-            const auto snippet = item.value("snippet", nlohmann::json::object());
-            const std::string liveChatId = snippet.value("liveChatId", std::string{});
-            if (!liveChatId.empty()) {
-                outLiveChatId = liveChatId;
-                return true;
-            }
-        }
-
-        if (outError) *outError = "No owned YouTube broadcast with a live chat was found";
-        return false;
-    }
-    catch (...) {
-        if (outError) *outError = "Failed to parse liveBroadcasts.list response";
-        return false;
-    }
-}
-
-static bool TryPostYouTubeLiveChatMessage(const std::string& accessToken,
-    const std::string& liveChatId,
-    const std::string& text,
-    std::string* outError)
-{
-    if (accessToken.empty()) {
-        if (outError) *outError = "YouTube access token missing";
-        return false;
-    }
-    if (liveChatId.empty()) {
-        if (outError) *outError = "YouTube liveChatId missing";
-        return false;
-    }
-
-    nlohmann::json body = {
-        {"snippet", {
-            {"liveChatId", liveChatId},
-            {"type", "textMessageEvent"},
-            {"textMessageDetails", {
-                {"messageText", SanitizeSingleLineReply(text)}
-            }}
-        }}
-    };
-
-    const std::wstring headers =
-        L"Authorization: Bearer " + ToW(accessToken) + L"\r\n" +
-        L"Content-Type: application/json\r\n" +
-        L"Accept: application/json\r\n";
-
-    const http::HttpResult r = http::WinHttpRequestUtf8(
-        L"POST",
-        L"www.googleapis.com",
-        INTERNET_DEFAULT_HTTPS_PORT,
-        L"/youtube/v3/liveChat/messages?part=snippet",
-        headers,
-        body.dump(),
-        true);
-
-    if (r.status == 200) {
-        return true;
-    }
-
-    if (outError) {
-        *outError = "liveChatMessages.insert failed: HTTP " + std::to_string(r.status);
-        if (!r.body.empty()) *outError += " body=" + r.body;
-    }
-    return false;
-}
-
-static bool TrySendYouTubeReply(YouTubeAuth& youtubeAuth,
-    const std::string& text,
-    std::string* outError)
-{
-    static std::mutex cacheMu;
-    static std::string cachedLiveChatId;
-    static long long cachedAtMs = 0;
-
-    const auto tokenOpt = youtubeAuth.GetAccessToken();
-    if (!tokenOpt.has_value() || tokenOpt->empty()) {
-        if (outError) *outError = "YouTube OAuth token unavailable";
-        return false;
-    }
-
-    const long long nowMs = static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count());
-
-    std::string liveChatId;
-    {
-        std::lock_guard<std::mutex> lk(cacheMu);
-        if (!cachedLiveChatId.empty() && (nowMs - cachedAtMs) < 60000) {
-            liveChatId = cachedLiveChatId;
-        }
-    }
-
-    if (liveChatId.empty()) {
-        std::string resolveError;
-        if (!TryGetActiveYouTubeLiveChatId(*tokenOpt, liveChatId, &resolveError)) {
-            if (outError) *outError = resolveError;
-            return false;
-        }
-        std::lock_guard<std::mutex> lk(cacheMu);
-        cachedLiveChatId = liveChatId;
-        cachedAtMs = nowMs;
-    }
-
-    std::string sendError;
-    if (TryPostYouTubeLiveChatMessage(*tokenOpt, liveChatId, text, &sendError)) {
-        return true;
-    }
-
-    if (ContainsNoCase(sendError, "liveChatEnded") ||
-        ContainsNoCase(sendError, "liveChatNotFound") ||
-        ContainsNoCase(sendError, "No active YouTube live chat found")) {
-        std::string refreshedLiveChatId;
-        std::string resolveError;
-        if (TryGetActiveYouTubeLiveChatId(*tokenOpt, refreshedLiveChatId, &resolveError) &&
-            TryPostYouTubeLiveChatMessage(*tokenOpt, refreshedLiveChatId, text, &sendError)) {
-            std::lock_guard<std::mutex> lk(cacheMu);
-            cachedLiveChatId = refreshedLiveChatId;
-            cachedAtMs = nowMs;
-            return true;
-        }
-    }
-
-    if (outError) *outError = sendError;
-    return false;
-}
-
-
-
 static std::string TrimAscii(std::string s)
 {
+
     auto is_space = [](unsigned char c) {
         return c == ' ' || c == '\t' || c == '\r' || c == '\n';
     };
@@ -419,7 +221,7 @@ void SubscribeBotCommandHandler(AppBootstrap::Dependencies& deps)
         pState = &deps.state,
         pTwitch = &deps.twitch,
         pTikTok = &deps.tiktok,
-        pYouTubeAuth = &deps.youtubeAuth
+        pYouTubeChat = &deps.youtubeChat
     ](const ChatMessage& m) {
         if (m.user == "StreamingATC.Bot") return;
         if (m.message.size() < 2 || m.message[0] != '!') return;
@@ -510,9 +312,9 @@ void SubscribeBotCommandHandler(AppBootstrap::Dependencies& deps)
                     LogLine(L"BOT: TikTok send failed (sidecar)");
                 }
             }
-            if (platform_lc == "youtube" && pYouTubeAuth) {
+            if (platform_lc == "youtube" && pYouTubeChat) {
                 std::string err;
-                if (!TrySendYouTubeReply(*pYouTubeAuth, reply, &err)) {
+                if (!pYouTubeChat->send_chat(reply, &err)) {
                     LogLine(ToW(std::string("BOT: YouTube send failed: ") + err));
                 }
             }
@@ -597,6 +399,7 @@ void InitializeUiAndState(
     }
 
     UiLog_SetWebLogState(&deps.state);
+    deps.youtubeChat.SetReplyAuth(&deps.youtubeAuth);
     SubscribeBotCommandHandler(deps);
 
     {
