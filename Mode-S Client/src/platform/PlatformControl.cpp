@@ -341,76 +341,29 @@ namespace PlatformControl {
         return ok;
     }
 
-    bool StartOrRestartYouTubeSidecar(
-        TikTokSidecar& youtube,
-        AppState& state,
-        ChatAggregator& chat,
-        const std::wstring& exeDir,
-        const std::string& youtubeHandle,
-        LogFn log)
-    {
-        std::string cleaned = SanitizeYouTubeHandle(youtubeHandle);
-        if (cleaned.empty()) {
-            if (log) log(L"YouTube handle is empty. Enter it first.");
-            return false;
-        }
-
-        youtube.stop();
-
-        std::wstring sidecarPath = exeDir + L"\\sidecar\\youtube_sidecar.py";
-        if (log) log(L"Starting python sidecar: " + sidecarPath);
-
-        bool ok = youtube.start(L"python", sidecarPath, [log, &state, &chat](const json& j) {
-            std::string type = j.value("type", "");
-            std::string msg = j.value("message", "");
-
-            if (type.rfind("youtube.", 0) == 0 && log) {
-                std::string extra;
-                if (!msg.empty()) extra = " | " + msg;
-                log(ToW("YOUTUBE: " + type + extra));
-            }
-
-            if (type == "youtube.connected") {
-                state.set_youtube_live(false);
-            }
-            else if (type == "youtube.disconnected" || type == "youtube.offline" || type == "youtube.error") {
-                state.set_youtube_live(false);
-                state.set_youtube_viewers(0);
-            }
-            else if (type == "youtube.chat") {
-                ChatMessage c;
-                c.platform = "youtube";
-                c.user = j.value("user", "unknown");
-                c.message = j.value("message", "");
-                double ts = j.value("ts", 0.0);
-                c.ts_ms = (std::int64_t)(ts * 1000.0);
-                chat.Add(std::move(c));
-            }
-            else if (type == "youtube.stats") {
-                bool live = j.value("live", false);
-                int viewers = j.value("viewers", 0);
-                state.set_youtube_live(live);
-                state.set_youtube_viewers(viewers);
-                if (j.contains("followers")) state.set_youtube_followers(j.value("followers", 0));
-            }
-            else if (type == "youtube.viewers") {
-                state.set_youtube_viewers(j.value("viewers", 0));
-            }
-            });
-
-        if (ok) {
-            StartYouTubeSubscriberPoller(state, log);
-        }
-        else {
-            StopYouTubeSubscriberPoller();
-        }
-
-        if (log) {
-            log(ok ? L"YouTube sidecar started/restarted." :
-                L"ERROR: Could not start YouTube sidecar. Check Python + deps.");
-        }
-        return ok;
+bool StartOrRestartYouTubeFeatures(
+    AppState& state,
+    const std::string& youtubeHandle,
+    LogFn log)
+{
+    const std::string cleaned = SanitizeYouTubeHandle(youtubeHandle);
+    if (cleaned.empty()) {
+        if (log) log(L"YOUTUBE: handle is empty - refusing to start features");
+        return false;
     }
+
+    StartYouTubeSubscriberPoller(state, log);
+
+    if (log) log(L"YOUTUBE: platform features started.");
+    return true;
+}
+
+void StopYouTubeFeatures(LogFn log)
+{
+    StopYouTubeSubscriberPoller();
+
+    if (log) log(L"YOUTUBE: platform features stopped.");
+}
 
 bool StartOrRestartTwitchIrc(
     TwitchIrcWsClient& twitch,
@@ -453,13 +406,7 @@ void StopTikTok(TikTokSidecar& tiktok, AppState& state, LogFn log) {
     state.set_tiktok_viewers(0);
     if (log) log(L"TIKTOK: stopped.");
 }
-void StopYouTube(TikTokSidecar& youtube, AppState& state, LogFn log) {
-    youtube.stop();
-    StopYouTubeSubscriberPoller();
-    state.set_youtube_live(false);
-    state.set_youtube_viewers(0);
-    if (log) log(L"YOUTUBE: stopped.");
-}
+
 void StopTwitch(TwitchIrcWsClient& twitch, TwitchEventSubWsClient& twitchEventSub, AppState& state, LogFn log) {
     twitch.stop();
     twitchEventSub.Stop();

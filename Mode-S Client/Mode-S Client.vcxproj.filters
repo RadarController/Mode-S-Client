@@ -173,6 +173,9 @@
     <ClInclude Include="integrations\youtube\YouTubeLiveChatService.h">
       <Filter>integrations\youtube</Filter>
     </ClInclude>
+    <ClInclude Include="integrations\youtube\YouTubeLiveStatusService.h">
+      <Filter>integrations\youtube</Filter>
+    </ClInclude>
     <ClInclude Include="integrations\youtube\YouTubeSidecar.h">
       <Filter>integrations\youtube</Filter>
     </ClInclude>
@@ -332,6 +335,9 @@
       <Filter>integrations\youtube</Filter>
     </ClCompile>
     <ClCompile Include="integrations\youtube\YouTubeLiveChatService.cpp">
+      <Filter>integrations\youtube</Filter>
+    </ClCompile>
+    <ClCompile Include="integrations\youtube\YouTubeLiveStatusService.cpp">
       <Filter>integrations\youtube</Filter>
     </ClCompile>
     <ClCompile Include="integrations\youtube\YouTubeSidecar.cpp">

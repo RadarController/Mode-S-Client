@@ -31,7 +31,6 @@ HttpServer::Options BuildHttpServerOptions(
     auto* pState = &deps.state;
     auto* pChat = &deps.chat;
     auto* pTikTok = &deps.tiktok;
-    auto* pYouTube = &deps.youtube;
     auto* pTwitch = &deps.twitch;
     auto* pTwitchEventSub = &deps.twitchEventSub;
     auto* pTwitchAuth = &deps.twitchAuth;
@@ -150,18 +149,15 @@ HttpServer::Options BuildHttpServerOptions(
         return true;
     };
 
-    opt.start_youtube = [pConfig, pYouTube, pState, pChat, pYouTubeChat, exeDir]() -> bool {
+    opt.start_youtube = [pConfig, pState, pChat, pYouTubeChat]() -> bool {
         pConfig->youtube_handle = SanitizeYouTubeHandle(pConfig->youtube_handle);
         if (pConfig->youtube_handle.empty()) {
             LogLine(L"YOUTUBE: handle/channel is empty - refusing to start");
             return false;
         }
 
-        const bool ok = PlatformControl::StartOrRestartYouTubeSidecar(
-            *pYouTube,
+        const bool ok = PlatformControl::StartOrRestartYouTubeFeatures(
             *pState,
-            *pChat,
-            exeDir,
             pConfig->youtube_handle,
             [](const std::wstring& s) { LogLine(s); });
 
@@ -176,8 +172,8 @@ HttpServer::Options BuildHttpServerOptions(
         return true;
     };
 
-    opt.stop_youtube = [pYouTube, pState, pYouTubeChat]() -> bool {
-        PlatformControl::StopYouTube(*pYouTube, *pState, [](const std::wstring& s) { LogLine(s); });
+    opt.stop_youtube = [pYouTubeChat]() -> bool {
+        PlatformControl::StopYouTubeFeatures([](const std::wstring& s) { LogLine(s); });
         pYouTubeChat->stop();
         return true;
     };

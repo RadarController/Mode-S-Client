@@ -26,15 +26,15 @@ bool StartOrRestartTikTokSidecar(
     const std::string& tiktokUniqueId,
     LogFn log);
 
-// Starts/restarts the YouTube python sidecar using the provided handle (no '@').
-// Updates AppState on events and pushes chat into ChatAggregator.
-bool StartOrRestartYouTubeSidecar(
-    TikTokSidecar& youtube,
+// Starts/restarts active YouTube platform features that should only run when the
+// user explicitly starts YouTube (for example subscriber event polling).
+bool StartOrRestartYouTubeFeatures(
     AppState& state,
-    ChatAggregator& chat,
-    const std::wstring& exeDir,
     const std::string& youtubeHandle,
     LogFn log);
+
+// Stops active YouTube platform features started by StartOrRestartYouTubeFeatures().
+void StopYouTubeFeatures(LogFn log);
 
 // Starts/restarts the Twitch IRC client using config.twitch_login (sanitized).
 bool StartOrRestartTwitchIrc(
@@ -47,7 +47,6 @@ bool StartOrRestartTwitchIrc(
 
 // Stops helpers (also clears AppState live flags + viewers to avoid stale UI).
 void StopTikTok(TikTokSidecar& tiktok, AppState& state, LogFn log);
-void StopYouTube(TikTokSidecar& youtube, AppState& state, LogFn log);
 void StopTwitch(TwitchIrcWsClient& twitch, TwitchEventSubWsClient& twitchEventSub, AppState& state, LogFn log);
 
 } // namespace PlatformControl
