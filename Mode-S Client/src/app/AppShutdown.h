@@ -30,7 +30,6 @@ struct Dependencies {
     TwitchAuth& twitchAuth;
     TwitchIrcWsClient& twitch;
     YouTubeLiveChatService& youtubeChat;
-    TikTokSidecar& youtube;
     TikTokSidecar& tiktok;
     fenixsim::FenixFailureCoordinator& fenixFailureCoordinator;
 

@@ -37,7 +37,6 @@ struct Dependencies {
     AppState& state;
     ChatAggregator& chat;
     TikTokSidecar& tiktok;
-    TikTokSidecar& youtube;
     TwitchIrcWsClient& twitch;
     TwitchEventSubWsClient& twitchEventSub;
     TwitchAuth& twitchAuth;

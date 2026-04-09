@@ -406,11 +406,7 @@ void StopTikTok(TikTokSidecar& tiktok, AppState& state, LogFn log) {
     state.set_tiktok_viewers(0);
     if (log) log(L"TIKTOK: stopped.");
 }
-void StopYouTube(TikTokSidecar& youtube, AppState& state, LogFn log) {
-    (void)state;
-    youtube.stop();
-    StopYouTubeFeatures(log);
-}
+
 void StopTwitch(TwitchIrcWsClient& twitch, TwitchEventSubWsClient& twitchEventSub, AppState& state, LogFn log) {
     twitch.stop();
     twitchEventSub.Stop();
