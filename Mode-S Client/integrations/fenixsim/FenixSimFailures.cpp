@@ -219,6 +219,15 @@ bool Failure::IsInactive() const {
     return State() == FailureState::Inactive;
 }
 
+std::string Failure::StateLabel() const {
+    switch (State()) {
+    case FailureState::Active: return "active";
+    case FailureState::Armed: return "armed";
+    case FailureState::Inactive: return "inactive";
+    default: return "inactive";
+    }
+}
+
 FenixSimFailuresClient::FenixSimFailuresClient(std::string host, int port)
     : host_(std::move(host)), port_(port) {
 }
@@ -314,6 +323,35 @@ bool FenixSimFailuresClient::FetchManualFailures(std::vector<Failure>& out_failu
         }
         return false;
     }
+}
+
+bool FenixSimFailuresClient::FetchFailuresByState(FailureState state,
+                                                 std::vector<Failure>& out_failures,
+                                                 std::string* error) const {
+    std::vector<Failure> failures;
+    if (!FetchManualFailures(failures, error)) {
+        out_failures.clear();
+        return false;
+    }
+
+    out_failures.clear();
+    out_failures.reserve(failures.size());
+
+    for (const auto& failure : failures) {
+        if (failure.State() == state) {
+            out_failures.push_back(failure);
+        }
+    }
+
+    return true;
+}
+
+bool FenixSimFailuresClient::FetchActiveFailures(std::vector<Failure>& out_failures, std::string* error) const {
+    return FetchFailuresByState(FailureState::Active, out_failures, error);
+}
+
+bool FenixSimFailuresClient::FetchArmedFailures(std::vector<Failure>& out_failures, std::string* error) const {
+    return FetchFailuresByState(FailureState::Armed, out_failures, error);
 }
 
 bool FenixSimFailuresClient::TriggerFailureNow(const std::string& failure_id, std::string* error) const {
