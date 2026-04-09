@@ -94,12 +94,6 @@ void BeginShutdown(Dependencies& deps, HWND hwndToDestroy)
     try { PlatformControl::StopYouTubeFeatures([](const std::wstring& s) { LogLine(s); }); }
     catch (...) {}
     LogLine(L"SHUTDOWN: stopped YouTube platform features");
-
-    LogLine(L"SHUTDOWN: stopping youtube...");
-    try { deps.youtube.stop(); }
-    catch (...) {}
-    LogLine(L"SHUTDOWN: stopped youtube");
-
     LogLine(L"SHUTDOWN: stopping tiktok...");
     try { deps.tiktok.stop(); }
     catch (...) {}
