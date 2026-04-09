@@ -22,6 +22,7 @@
 #include "../AppConfig.h"
 #include "../oauth/EmbeddedOAuthConfig.h"
 #include "../supporter/SupporterFeedService.h"
+#include "fenixsim/FenixSimFailures.h"
 
 namespace {
 
@@ -1912,6 +1913,146 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
             return false;
             };
 
+
+        // --- API: Fenix failures (local only) ---
+        auto build_fenix_failure_json = [](const fenixsim::Failure& failure) {
+            json item;
+            item["id"] = failure.id;
+            item["title"] = failure.title;
+            item["state"] = failure.StateLabel();
+            item["failed"] = failure.failed;
+            item["ata_id"] = failure.ata_id;
+            item["ata_title"] = failure.ata_title;
+            item["ata_short_title"] = failure.ata_short_title;
+            item["group_name"] = failure.group_name;
+
+            if (failure.failure_condition.has_value()) {
+                json condition;
+                const auto& c = *failure.failure_condition;
+                condition["ias"] = c.ias ? json(*c.ias) : json(nullptr);
+                condition["alt_above_amsl"] = c.alt_above_amsl ? json(*c.alt_above_amsl) : json(nullptr);
+                condition["alt_below_amsl"] = c.alt_below_amsl ? json(*c.alt_below_amsl) : json(nullptr);
+                condition["time"] = c.time ? json(*c.time) : json(nullptr);
+                condition["after_event"] = c.after_event ? json(*c.after_event) : json(nullptr);
+                condition["after_event_seconds"] = c.after_event_seconds ? json(*c.after_event_seconds) : json(nullptr);
+                item["failure_condition"] = std::move(condition);
+            } else {
+                item["failure_condition"] = nullptr;
+            }
+
+            return item;
+        };
+
+        svr.Get("/api/fenix/failures", [&](const httplib::Request& req, httplib::Response& res) {
+            if (!require_local(req, res)) return;
+
+            fenixsim::FenixSimFailuresClient client;
+            std::vector<fenixsim::Failure> failures;
+            std::string error;
+            if (!client.FetchManualFailures(failures, &error)) {
+                json out;
+                out["ok"] = false;
+                out["connected"] = false;
+                out["source"] = "fenix_manual_failures";
+                out["error"] = error.empty() ? "fetch_failed" : error;
+                out["updated_at_ms"] = (long long)std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count();
+                out["summary"] = {
+                    {"total", 0},
+                    {"active", 0},
+                    {"armed", 0},
+                    {"inactive", 0}
+                };
+                out["active_items"] = json::array();
+                out["armed_items"] = json::array();
+                res.status = 502;
+                res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+                res.set_header("Pragma", "no-cache");
+                res.set_content(out.dump(2), "application/json; charset=utf-8");
+                return;
+            }
+
+            json active_items = json::array();
+            json armed_items = json::array();
+            int active = 0;
+            int armed = 0;
+            int inactive = 0;
+
+            for (const auto& failure : failures) {
+                if (failure.IsActive()) {
+                    ++active;
+                    active_items.push_back(build_fenix_failure_json(failure));
+                }
+                else if (failure.IsArmed()) {
+                    ++armed;
+                    armed_items.push_back(build_fenix_failure_json(failure));
+                }
+                else {
+                    ++inactive;
+                }
+            }
+
+            json out;
+            out["ok"] = true;
+            out["connected"] = true;
+            out["source"] = "fenix_manual_failures";
+            out["updated_at_ms"] = (long long)std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+            out["summary"] = {
+                {"total", (int)failures.size()},
+                {"active", active},
+                {"armed", armed},
+                {"inactive", inactive}
+            };
+            out["active_items"] = std::move(active_items);
+            out["armed_items"] = std::move(armed_items);
+            res.status = 200;
+            res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+            res.set_header("Pragma", "no-cache");
+            res.set_content(out.dump(2), "application/json; charset=utf-8");
+        });
+
+        svr.Get("/api/fenix/failures/active", [&](const httplib::Request& req, httplib::Response& res) {
+            if (!require_local(req, res)) return;
+
+            fenixsim::FenixSimFailuresClient client;
+            std::vector<fenixsim::Failure> failures;
+            std::string error;
+            if (!client.FetchActiveFailures(failures, &error)) {
+                json out;
+                out["ok"] = false;
+                out["connected"] = false;
+                out["source"] = "fenix_manual_failures";
+                out["error"] = error.empty() ? "fetch_failed" : error;
+                out["updated_at_ms"] = (long long)std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count();
+                out["count"] = 0;
+                out["items"] = json::array();
+                res.status = 502;
+                res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+                res.set_header("Pragma", "no-cache");
+                res.set_content(out.dump(2), "application/json; charset=utf-8");
+                return;
+            }
+
+            json items = json::array();
+            for (const auto& failure : failures) {
+                items.push_back(build_fenix_failure_json(failure));
+            }
+
+            json out;
+            out["ok"] = true;
+            out["connected"] = true;
+            out["source"] = "fenix_manual_failures";
+            out["updated_at_ms"] = (long long)std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+            out["count"] = (int)failures.size();
+            out["items"] = std::move(items);
+            res.status = 200;
+            res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+            res.set_header("Pragma", "no-cache");
+            res.set_content(out.dump(2), "application/json; charset=utf-8");
+        });
 
         // --- API: simulator automation (light-touch home page panel) ---
         svr.Get("/api/simulator-automation/status", [&](const httplib::Request& req, httplib::Response& res) {

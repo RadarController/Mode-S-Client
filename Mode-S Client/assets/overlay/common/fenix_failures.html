@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fenix INOP SYS Overlay</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=B612+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --ecam-orange: #fe5000;
+      --ecam-white: #b7c9d3;
+      --panel-bg: rgba(0, 0, 0, 0.48);
+      --panel-edge: rgba(255, 255, 255, 0.10);
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: transparent;
+      font-family: "B612 Mono", monospace;
+    }
+
+    body {
+      display: flex;
+      align-items: flex-start;
+      justify-content: flex-start;
+      padding: 28px;
+    }
+
+    .panel {
+      display: none;
+      min-width: 420px;
+      max-width: min(760px, calc(100vw - 56px));
+      max-height: calc(100vh - 56px);
+      border-radius: 32px;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 20px 24px 24px;
+      background: linear-gradient(to bottom, rgba(0,0,0,0.58), rgba(0,0,0,0.42));
+      border: 1px solid var(--panel-edge);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03);
+      backdrop-filter: blur(2px);
+      -webkit-backdrop-filter: blur(2px);
+      text-transform: uppercase;
+    }
+
+    .panel.visible {
+      display: block;
+    }
+
+    .header {
+      display: table;
+      margin: 0 auto 14px;
+      color: var(--ecam-white);
+      font-size: 34px;
+      line-height: 1;
+      letter-spacing: 0.06em;
+      border-bottom: 3px solid var(--ecam-white);
+      padding-bottom: 4px;
+      text-align: center;
+      text-shadow: 0 0 2px rgba(255,255,255,0.15);
+    }
+
+    .list {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      color: var(--ecam-orange);
+      text-shadow: 0 0 4px rgba(254, 80, 0, 0.18);
+    }
+
+    .row {
+      font-size: 42px;
+      line-height: 1.08;
+      letter-spacing: 0.03em;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .panel::-webkit-scrollbar {
+      width: 10px;
+    }
+
+    .panel::-webkit-scrollbar-track {
+      background: rgba(255,255,255,0.05);
+    }
+
+    .panel::-webkit-scrollbar-thumb {
+      background: rgba(254, 80, 0, 0.42);
+      border-radius: 999px;
+    }
+  </style>
+</head>
+<body>
+  <section id="panel" class="panel" aria-live="polite">
+    <div class="header">ACT FAILURES</div>
+    <div id="list" class="list"></div>
+  </section>
+
+  <script>
+    const panel = document.getElementById('panel');
+    const list = document.getElementById('list');
+    const endpoint = '/api/fenix/failures/active';
+    const activeFailureFirstSeen = new Map();
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function normaliseItems(payload) {
+      if (payload && Array.isArray(payload.items)) return payload.items;
+      if (payload && Array.isArray(payload.failures)) return payload.failures;
+      if (Array.isArray(payload)) return payload;
+      return [];
+    }
+
+    function render(payload) {
+      const rawItems = normaliseItems(payload);
+      const now = Date.now();
+      const liveKeys = new Set();
+
+      for (const item of rawItems) {
+        const key = item.id || item.title || JSON.stringify(item);
+        liveKeys.add(key);
+
+        if (!activeFailureFirstSeen.has(key)) {
+          activeFailureFirstSeen.set(key, now);
+        }
+
+        item.__key = key;
+        item.__seenAt = activeFailureFirstSeen.get(key) || now;
+      }
+
+      for (const key of [...activeFailureFirstSeen.keys()]) {
+        if (!liveKeys.has(key)) {
+          activeFailureFirstSeen.delete(key);
+        }
+      }
+
+      const items = rawItems.sort((a, b) => b.__seenAt - a.__seenAt);
+
+      if (!items.length) {
+        list.innerHTML = '';
+        panel.classList.remove('visible');
+        return;
+      }
+
+      list.innerHTML = items.map(item => {
+        const title = escapeHtml(item.title || item.id || 'UNKNOWN FAILURE');
+        return `<div class="row">${title}</div>`;
+      }).join('');
+
+      panel.classList.add('visible');
+    }
+
+    async function refresh() {
+      try {
+        const response = await fetch(endpoint, {
+          cache: 'no-store',
+          headers: { 'Accept': 'application/json' }
+        });
+
+        if (!response.ok) {
+          panel.classList.remove('visible');
+          return;
+        }
+
+        const payload = await response.json();
+        render(payload);
+      } catch {
+        panel.classList.remove('visible');
+      }
+    }
+
+    refresh();
+    setInterval(refresh, 1000);
+  </script>
+</body>
+</html>

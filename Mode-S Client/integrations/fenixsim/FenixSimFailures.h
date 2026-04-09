@@ -53,6 +53,7 @@ struct Failure {
     // armed/scheduled and should not be picked again.
     [[nodiscard]] bool IsInFlight() const;
     [[nodiscard]] bool IsInactive() const;
+    [[nodiscard]] std::string StateLabel() const;
 };
 
 class FenixSimFailuresClient {
@@ -60,6 +61,9 @@ public:
     explicit FenixSimFailuresClient(std::string host = "localhost", int port = 8083);
 
     bool FetchManualFailures(std::vector<Failure>& out_failures, std::string* error = nullptr) const;
+    bool FetchFailuresByState(FailureState state, std::vector<Failure>& out_failures, std::string* error = nullptr) const;
+    bool FetchActiveFailures(std::vector<Failure>& out_failures, std::string* error = nullptr) const;
+    bool FetchArmedFailures(std::vector<Failure>& out_failures, std::string* error = nullptr) const;
 
     bool TriggerFailureNow(const std::string& failure_id, std::string* error = nullptr) const;
     bool ClearFailure(const std::string& failure_id, std::string* error = nullptr) const;
