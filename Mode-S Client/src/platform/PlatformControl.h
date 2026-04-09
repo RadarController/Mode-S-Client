@@ -36,6 +36,16 @@ bool StartOrRestartYouTubeSidecar(
     const std::string& youtubeHandle,
     LogFn log);
 
+// Starts/restarts active YouTube platform features that should only run when the
+// user explicitly starts YouTube (for example subscriber event polling).
+bool StartOrRestartYouTubeFeatures(
+    AppState& state,
+    const std::string& youtubeHandle,
+    LogFn log);
+
+// Stops active YouTube platform features started by StartOrRestartYouTubeFeatures().
+void StopYouTubeFeatures(LogFn log);
+
 // Starts/restarts the Twitch IRC client using config.twitch_login (sanitized).
 bool StartOrRestartTwitchIrc(
     TwitchIrcWsClient& twitch,

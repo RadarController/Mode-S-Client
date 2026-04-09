@@ -12,8 +12,9 @@
 #include "tiktok/TikTokSidecar.h"
 #include "http/HttpServer.h"
 #include "log/UiLog.h"
-#include "fenixsim/FenixFailureCoordinator.h"
+#include "platform/PlatformControl.h"
 #include "runtime/YouTubeRuntimeCoordinator.h"
+#include "fenixsim/FenixFailureCoordinator.h"
 
 namespace AppShutdown {
 
@@ -84,10 +85,15 @@ void BeginShutdown(Dependencies& deps, HWND hwndToDestroy)
     catch (...) {}
     LogLine(L"SHUTDOWN: stopped youtubeChat");
 
-    LogLine(L"SHUTDOWN: stopping youtube runtime...");
+    LogLine(L"SHUTDOWN: stopping YouTube runtime services...");
     try { runtime::StopYouTubeRuntimeServices(); }
     catch (...) {}
-    LogLine(L"SHUTDOWN: stopped youtube runtime");
+    LogLine(L"SHUTDOWN: stopped YouTube runtime services");
+
+    LogLine(L"SHUTDOWN: stopping YouTube platform features...");
+    try { PlatformControl::StopYouTubeFeatures([](const std::wstring& s) { LogLine(s); }); }
+    catch (...) {}
+    LogLine(L"SHUTDOWN: stopped YouTube platform features");
 
     LogLine(L"SHUTDOWN: stopping youtube...");
     try { deps.youtube.stop(); }

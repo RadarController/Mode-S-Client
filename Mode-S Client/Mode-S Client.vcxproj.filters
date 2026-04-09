@@ -170,10 +170,10 @@
     <ClInclude Include="integrations\youtube\YouTubeAuth.h">
       <Filter>integrations\youtube</Filter>
     </ClInclude>
-    <ClInclude Include="integrations\youtube\YouTubeChannelStatsService.h">
+    <ClInclude Include="integrations\youtube\YouTubeLiveChatService.h">
       <Filter>integrations\youtube</Filter>
     </ClInclude>
-    <ClInclude Include="integrations\youtube\YouTubeLiveChatService.h">
+    <ClInclude Include="integrations\youtube\YouTubeLiveStatusService.h">
       <Filter>integrations\youtube</Filter>
     </ClInclude>
     <ClInclude Include="integrations\youtube\YouTubeSidecar.h">
@@ -334,10 +334,10 @@
     <ClCompile Include="integrations\youtube\YouTubeAuth.cpp">
       <Filter>integrations\youtube</Filter>
     </ClCompile>
-    <ClCompile Include="integrations\youtube\YouTubeChannelStatsService.cpp">
+    <ClCompile Include="integrations\youtube\YouTubeLiveChatService.cpp">
       <Filter>integrations\youtube</Filter>
     </ClCompile>
-    <ClCompile Include="integrations\youtube\YouTubeLiveChatService.cpp">
+    <ClCompile Include="integrations\youtube\YouTubeLiveStatusService.cpp">
       <Filter>integrations\youtube</Filter>
     </ClCompile>
     <ClCompile Include="integrations\youtube\YouTubeSidecar.cpp">

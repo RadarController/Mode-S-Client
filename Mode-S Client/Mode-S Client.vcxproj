@@ -204,6 +204,7 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClInclude Include="integrations\youtube\YouTubeAuth.h" />
     <ClInclude Include="integrations\youtube\YouTubeChannelStatsService.h" />
     <ClInclude Include="integrations\youtube\YouTubeLiveChatService.h" />
+    <ClInclude Include="integrations\youtube\YouTubeLiveStatusService.h" />
     <ClInclude Include="integrations\youtube\YouTubeSidecar.h" />
     <ClInclude Include="integrations\youtube\YouTubeSubscriberProvider.h" />
     <ClInclude Include="integrations\youtube\YouTubeSupporterProvider.h" />
@@ -260,6 +261,7 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "$(TargetDir)assets\"</Command>
     <ClCompile Include="integrations\youtube\YouTubeAuth.cpp" />
     <ClCompile Include="integrations\youtube\YouTubeChannelStatsService.cpp" />
     <ClCompile Include="integrations\youtube\YouTubeLiveChatService.cpp" />
+    <ClCompile Include="integrations\youtube\YouTubeLiveStatusService.cpp" />
     <ClCompile Include="integrations\youtube\YouTubeSidecar.cpp" />
     <ClCompile Include="integrations\youtube\YouTubeSubscriberProvider.cpp" />
     <ClCompile Include="integrations\youtube\YouTubeSupporterProvider.cpp" />

@@ -391,6 +391,7 @@ namespace PlatformControl {
                 int viewers = j.value("viewers", 0);
                 state.set_youtube_live(live);
                 state.set_youtube_viewers(viewers);
+                if (j.contains("followers")) state.set_youtube_followers(j.value("followers", 0));
             }
             else if (type == "youtube.viewers") {
                 state.set_youtube_viewers(j.value("viewers", 0));
@@ -410,6 +411,30 @@ namespace PlatformControl {
         }
         return ok;
     }
+
+bool StartOrRestartYouTubeFeatures(
+    AppState& state,
+    const std::string& youtubeHandle,
+    LogFn log)
+{
+    const std::string cleaned = SanitizeYouTubeHandle(youtubeHandle);
+    if (cleaned.empty()) {
+        if (log) log(L"YOUTUBE: handle is empty - refusing to start features");
+        return false;
+    }
+
+    StartYouTubeSubscriberPoller(state, log);
+
+    if (log) log(L"YOUTUBE: platform features started.");
+    return true;
+}
+
+void StopYouTubeFeatures(LogFn log)
+{
+    StopYouTubeSubscriberPoller();
+
+    if (log) log(L"YOUTUBE: platform features stopped.");
+}
 
 bool StartOrRestartTwitchIrc(
     TwitchIrcWsClient& twitch,
@@ -453,11 +478,9 @@ void StopTikTok(TikTokSidecar& tiktok, AppState& state, LogFn log) {
     if (log) log(L"TIKTOK: stopped.");
 }
 void StopYouTube(TikTokSidecar& youtube, AppState& state, LogFn log) {
+    (void)state;
     youtube.stop();
-    StopYouTubeSubscriberPoller();
-    state.set_youtube_live(false);
-    state.set_youtube_viewers(0);
-    if (log) log(L"YOUTUBE: stopped.");
+    StopYouTubeFeatures(log);
 }
 void StopTwitch(TwitchIrcWsClient& twitch, TwitchEventSubWsClient& twitchEventSub, AppState& state, LogFn log) {
     twitch.stop();
