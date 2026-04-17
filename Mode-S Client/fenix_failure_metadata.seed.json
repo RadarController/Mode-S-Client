@@ -4,14 +4,14 @@
   "updated_at_unix_ms": 1775497133476,
   "failures": {
     "F_PNEUMATIC_CPC_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 21,
         "ata_title": "Air Conditioning",
@@ -27,14 +27,14 @@
       }
     },
     "F_PNEUMATIC_CPC_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 21,
         "ata_title": "Air Conditioning",
@@ -50,14 +50,14 @@
       }
     },
     "F_PNEUMATIC_PACK_1_OVERHEAT": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 21,
         "ata_title": "Air Conditioning",
@@ -73,14 +73,14 @@
       }
     },
     "F_PNEUMATIC_PACK_2_OVERHEAT": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 21,
         "ata_title": "Air Conditioning",
@@ -96,14 +96,14 @@
       }
     },
     "F_PNEUMATIC_PACK_1_REG_FAULT": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 21,
         "ata_title": "Air Conditioning",
@@ -119,14 +119,14 @@
       }
     },
     "F_PNEUMATIC_PACK_2_REG_FAULT": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 21,
         "ata_title": "Air Conditioning",
@@ -142,14 +142,14 @@
       }
     },
     "F_PNEUMATIC_ZONECONTROLLER_PRIM": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 21,
         "ata_title": "Air Conditioning",
@@ -165,14 +165,14 @@
       }
     },
     "F_PNEUMATIC_ZONECONTROLLER_SEC": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 21,
         "ata_title": "Air Conditioning",
@@ -188,14 +188,14 @@
       }
     },
     "F_PNEUMATIC_TRIM_AIR": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 21,
         "ata_title": "Air Conditioning",
@@ -211,14 +211,14 @@
       }
     },
     "F_PNEUMATIC_CVC": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 21,
         "ata_title": "Air Conditioning",
@@ -234,14 +234,14 @@
       }
     },
     "F_PNEUMATIC_HOT_AIR_VALVE_AFT_CARGO": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 21,
         "ata_title": "Air Conditioning",
@@ -257,14 +257,14 @@
       }
     },
     "F_PNEUMATIC_CARGO_ISOL_FWD_UP": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 21,
         "ata_title": "Air Conditioning",
@@ -280,14 +280,14 @@
       }
     },
     "F_PNEUMATIC_CARGO_ISOL_FWD_DOWN": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 21,
         "ata_title": "Air Conditioning",
@@ -303,14 +303,14 @@
       }
     },
     "F_PNEUMATIC_CARGO_ISOL_AFT_UP": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 21,
         "ata_title": "Air Conditioning",
@@ -326,14 +326,14 @@
       }
     },
     "F_PNEUMATIC_CARGO_ISOL_AFT_DOWN": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 21,
         "ata_title": "Air Conditioning",
@@ -349,14 +349,14 @@
       }
     },
     "F_PNEUMATIC_RECIRC_FANS": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 21,
         "ata_title": "Air Conditioning",
@@ -372,14 +372,14 @@
       }
     },
     "F_PNEUMATIC_DECOMPRESSION_MINOR": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 25,
       "catalog": {
         "ata_id": 21,
         "ata_title": "Air Conditioning",
@@ -395,14 +395,14 @@
       }
     },
     "F_PNEUMATIC_DECOMPRESSION_MAJOR": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 5,
       "catalog": {
         "ata_id": 21,
         "ata_title": "Air Conditioning",
@@ -418,14 +418,14 @@
       }
     },
     "F_PNEUMATIC_OUTFLOWVALVE_STUCK": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 21,
         "ata_title": "Air Conditioning",
@@ -441,14 +441,14 @@
       }
     },
     "F_PNEUMATIC_AEVC": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 21,
         "ata_title": "Air Conditioning",
@@ -464,14 +464,14 @@
       }
     },
     "F_PNEUMATIC_BLOWER": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 21,
         "ata_title": "Air Conditioning",
@@ -487,14 +487,14 @@
       }
     },
     "F_PNEUMATIC_EXTRACT": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 21,
         "ata_title": "Air Conditioning",
@@ -510,14 +510,14 @@
       }
     },
     "F_PNEUMATIC_VENT_INLET": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 21,
         "ata_title": "Air Conditioning",
@@ -533,14 +533,14 @@
       }
     },
     "F_PNEUMATIC_VENT_EXTRACT": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 21,
         "ata_title": "Air Conditioning",
@@ -556,14 +556,14 @@
       }
     },
     "F_OH_FLT_CTL_FAC_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 22,
         "ata_title": "AutoFlight",
@@ -579,14 +579,14 @@
       }
     },
     "F_OH_FLT_CTL_FAC_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 22,
         "ata_title": "AutoFlight",
@@ -602,14 +602,14 @@
       }
     },
     "F_OH_FLT_CTL_FAC_RECOVERABLE_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
-      "repeatable": false,
-      "cooldown_ms": 900000,
-      "max_per_session": 1,
-      "weight": 1,
+      "repeatable": true,
+      "cooldown_ms": 3600000,
+      "max_per_session": 2,
+      "weight": 40,
       "catalog": {
         "ata_id": 22,
         "ata_title": "AutoFlight",
@@ -625,14 +625,14 @@
       }
     },
     "F_OH_FLT_CTL_FAC_RECOVERABLE_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
-      "repeatable": false,
-      "cooldown_ms": 900000,
-      "max_per_session": 1,
-      "weight": 1,
+      "repeatable": true,
+      "cooldown_ms": 3600000,
+      "max_per_session": 2,
+      "weight": 40,
       "catalog": {
         "ata_id": 22,
         "ata_title": "AutoFlight",
@@ -648,14 +648,14 @@
       }
     },
     "F_FC_YAW_RTL_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 22,
         "ata_title": "AutoFlight",
@@ -671,14 +671,14 @@
       }
     },
     "F_FC_YAW_RTL_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 22,
         "ata_title": "AutoFlight",
@@ -694,14 +694,14 @@
       }
     },
     "F_FC_RUDDERTRIM_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 22,
         "ata_title": "AutoFlight",
@@ -717,14 +717,14 @@
       }
     },
     "F_FC_RUDDERTRIM_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 22,
         "ata_title": "AutoFlight",
@@ -740,14 +740,14 @@
       }
     },
     "F_FC_WINDSHEAR_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 22,
         "ata_title": "AutoFlight",
@@ -763,14 +763,14 @@
       }
     },
     "F_FC_WINDSHEAR_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 22,
         "ata_title": "AutoFlight",
@@ -786,14 +786,14 @@
       }
     },
     "F_FC_ALTERNATE_LAW_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 22,
         "ata_title": "AutoFlight",
@@ -809,14 +809,14 @@
       }
     },
     "F_FC_ALTERNATE_LAW_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 22,
         "ata_title": "AutoFlight",
@@ -832,14 +832,14 @@
       }
     },
     "F_FC_DIRECT_LAW": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 22,
         "ata_title": "AutoFlight",
@@ -855,14 +855,14 @@
       }
     },
     "F_FCU_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 22,
         "ata_title": "AutoFlight",
@@ -878,14 +878,14 @@
       }
     },
     "F_FCU_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 70,
       "catalog": {
         "ata_id": 22,
         "ata_title": "AutoFlight",
@@ -901,14 +901,14 @@
       }
     },
     "F_AUTOFLIGHT_ATHR1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 22,
         "ata_title": "AutoFlight",
@@ -924,14 +924,14 @@
       }
     },
     "F_AUTOFLIGHT_ATHR2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 22,
         "ata_title": "AutoFlight",
@@ -947,14 +947,14 @@
       }
     },
     "F_AUTOFLIGHT_AP1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 22,
         "ata_title": "AutoFlight",
@@ -970,14 +970,14 @@
       }
     },
     "F_AUTOFLIGHT_AP2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 22,
         "ata_title": "AutoFlight",
@@ -993,14 +993,14 @@
       }
     },
     "F_ELEC_BUS_BAT": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 24,
         "ata_title": "Electrical power",
@@ -1016,14 +1016,14 @@
       }
     },
     "F_ELEC_BUS_DC_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 24,
         "ata_title": "Electrical power",
@@ -1039,14 +1039,14 @@
       }
     },
     "F_ELEC_BUS_DC_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 24,
         "ata_title": "Electrical power",
@@ -1062,14 +1062,14 @@
       }
     },
     "F_ELEC_BUS_HOT_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 24,
         "ata_title": "Electrical power",
@@ -1085,14 +1085,14 @@
       }
     },
     "F_ELEC_BUS_HOT_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 24,
         "ata_title": "Electrical power",
@@ -1108,14 +1108,14 @@
       }
     },
     "F_ELEC_BUS_DC_ESSENTIAL": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 24,
         "ata_title": "Electrical power",
@@ -1131,14 +1131,14 @@
       }
     },
     "F_ELEC_BUS_DC_SHED": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 24,
         "ata_title": "Electrical power",
@@ -1154,14 +1154,14 @@
       }
     },
     "F_ELEC_BUS_AC_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 24,
         "ata_title": "Electrical power",
@@ -1177,14 +1177,14 @@
       }
     },
     "F_ELEC_BUS_AC_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 24,
         "ata_title": "Electrical power",
@@ -1200,14 +1200,14 @@
       }
     },
     "F_ELEC_BUS_AC_ESSENTIAL": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 24,
         "ata_title": "Electrical power",
@@ -1223,14 +1223,14 @@
       }
     },
     "F_ELEC_BUS_AC_SHED": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 24,
         "ata_title": "Electrical power",
@@ -1246,14 +1246,14 @@
       }
     },
     "F_ELEC_BUS_AC_STATIC_INVERTER": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 24,
         "ata_title": "Electrical power",
@@ -1269,14 +1269,14 @@
       }
     },
     "F_ELEC_BUS_AC26_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 24,
         "ata_title": "Electrical power",
@@ -1292,14 +1292,14 @@
       }
     },
     "F_ELEC_BUS_AC26_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 24,
         "ata_title": "Electrical power",
@@ -1315,14 +1315,14 @@
       }
     },
     "F_ELEC_BUS_AC26_ESS": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 24,
         "ata_title": "Electrical power",
@@ -1338,14 +1338,14 @@
       }
     },
     "F_ELEC_APU_GEN": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 24,
         "ata_title": "Electrical power",
@@ -1361,14 +1361,14 @@
       }
     },
     "F_ELEC_DRIVE_FAILURE_L": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 24,
         "ata_title": "Electrical power",
@@ -1384,14 +1384,14 @@
       }
     },
     "F_ELEC_DRIVE_FAILURE_R": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 24,
         "ata_title": "Electrical power",
@@ -1407,14 +1407,14 @@
       }
     },
     "F_ELEC_GEN_OVERHEAT_L": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 24,
         "ata_title": "Electrical power",
@@ -1430,14 +1430,14 @@
       }
     },
     "F_ELEC_GEN_OVERHEAT_R": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 24,
         "ata_title": "Electrical power",
@@ -1453,14 +1453,14 @@
       }
     },
     "F_ELEC_DRIVE_OIL_LOW_L": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 24,
         "ata_title": "Electrical power",
@@ -1476,14 +1476,14 @@
       }
     },
     "F_ELEC_DRIVE_OIL_LOW_R": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 24,
         "ata_title": "Electrical power",
@@ -1499,14 +1499,14 @@
       }
     },
     "F_ELEC_STATIC_INVERTER": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 24,
         "ata_title": "Electrical power",
@@ -1522,14 +1522,14 @@
       }
     },
     "F_ELEC_TR1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 24,
         "ata_title": "Electrical power",
@@ -1545,14 +1545,14 @@
       }
     },
     "F_ELEC_TR2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 24,
         "ata_title": "Electrical power",
@@ -1568,14 +1568,14 @@
       }
     },
     "F_ELEC_TR_ESS": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 24,
         "ata_title": "Electrical power",
@@ -1591,14 +1591,14 @@
       }
     },
     "F_ELEC_AC_ESS_ALTN": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 24,
         "ata_title": "Electrical power",
@@ -1614,14 +1614,14 @@
       }
     },
     "F_ELEC_AC_ESS_FEED_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 24,
         "ata_title": "Electrical power",
@@ -1637,14 +1637,14 @@
       }
     },
     "F_ELEC_AC_ESS_FEED_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 24,
         "ata_title": "Electrical power",
@@ -1660,14 +1660,14 @@
       }
     },
     "F_SDCU": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 25,
       "catalog": {
         "ata_id": 26,
         "ata_title": "Fire protection",
@@ -1683,14 +1683,14 @@
       }
     },
     "F_FIRE_CARGO_FWD_SMOKE": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 25,
       "catalog": {
         "ata_id": 26,
         "ata_title": "Fire protection",
@@ -1706,14 +1706,14 @@
       }
     },
     "F_FIRE_CARGO_AFT_SMOKE": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 25,
       "catalog": {
         "ata_id": 26,
         "ata_title": "Fire protection",
@@ -1729,14 +1729,14 @@
       }
     },
     "F_FIRE_LAVATORY_SMOKE": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 25,
       "catalog": {
         "ata_id": 26,
         "ata_title": "Fire protection",
@@ -1752,14 +1752,14 @@
       }
     },
     "F_OH_FIRE_ENG_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 5,
       "catalog": {
         "ata_id": 26,
         "ata_title": "Fire protection",
@@ -1775,14 +1775,14 @@
       }
     },
     "F_OH_FIRE_ENG_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 5,
       "catalog": {
         "ata_id": 26,
         "ata_title": "Fire protection",
@@ -1821,14 +1821,14 @@
       }
     },
     "F_OH_FIRE_ENG_1_1BOTTLE": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 25,
       "catalog": {
         "ata_id": 26,
         "ata_title": "Fire protection",
@@ -1844,14 +1844,14 @@
       }
     },
     "F_OH_FIRE_ENG_2_1BOTTLE": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 25,
       "catalog": {
         "ata_id": 26,
         "ata_title": "Fire protection",
@@ -1890,14 +1890,14 @@
       }
     },
     "F_OH_FIRE_ENG_1_2BOTTLES": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 25,
       "catalog": {
         "ata_id": 26,
         "ata_title": "Fire protection",
@@ -1913,14 +1913,14 @@
       }
     },
     "F_OH_FIRE_ENG_2_2BOTTLES": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 25,
       "catalog": {
         "ata_id": 26,
         "ata_title": "Fire protection",
@@ -1936,14 +1936,14 @@
       }
     },
     "F_OH_FIRE_ENG1_LOOP_A": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 25,
       "catalog": {
         "ata_id": 26,
         "ata_title": "Fire protection",
@@ -1959,14 +1959,14 @@
       }
     },
     "F_OH_FIRE_ENG1_LOOP_B": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 25,
       "catalog": {
         "ata_id": 26,
         "ata_title": "Fire protection",
@@ -1982,14 +1982,14 @@
       }
     },
     "F_OH_FIRE_ENG2_LOOP_A": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 25,
       "catalog": {
         "ata_id": 26,
         "ata_title": "Fire protection",
@@ -2005,14 +2005,14 @@
       }
     },
     "F_OH_FIRE_ENG2_LOOP_B": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 25,
       "catalog": {
         "ata_id": 26,
         "ata_title": "Fire protection",
@@ -2074,14 +2074,14 @@
       }
     },
     "F_FIRE_FDU1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 25,
       "catalog": {
         "ata_id": 26,
         "ata_title": "Fire protection",
@@ -2097,14 +2097,14 @@
       }
     },
     "F_FIRE_FDU2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 25,
       "catalog": {
         "ata_id": 26,
         "ata_title": "Fire protection",
@@ -2120,14 +2120,14 @@
       }
     },
     "F_FIRE_FDU3": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 25,
       "catalog": {
         "ata_id": 26,
         "ata_title": "Fire protection",
@@ -2143,14 +2143,14 @@
       }
     },
     "F_FIRE_AVIONICS_SMOKE": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 25,
       "catalog": {
         "ata_id": 26,
         "ata_title": "Fire protection",
@@ -2166,14 +2166,14 @@
       }
     },
     "F_FUEL_FQI1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 28,
         "ata_title": "Fuel",
@@ -2189,14 +2189,14 @@
       }
     },
     "F_FUEL_FQI2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 28,
         "ata_title": "Fuel",
@@ -2212,14 +2212,14 @@
       }
     },
     "F_FUEL_PUMP_LEFT_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 28,
         "ata_title": "Fuel",
@@ -2235,14 +2235,14 @@
       }
     },
     "F_FUEL_PUMP_LEFT_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 28,
         "ata_title": "Fuel",
@@ -2258,14 +2258,14 @@
       }
     },
     "F_FUEL_PUMP_CENTER_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 28,
         "ata_title": "Fuel",
@@ -2281,14 +2281,14 @@
       }
     },
     "F_FUEL_PUMP_CENTER_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 28,
         "ata_title": "Fuel",
@@ -2304,14 +2304,14 @@
       }
     },
     "F_FUEL_PUMP_RIGHT_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 28,
         "ata_title": "Fuel",
@@ -2327,14 +2327,14 @@
       }
     },
     "F_FUEL_PUMP_RIGHT_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 28,
         "ata_title": "Fuel",
@@ -2350,14 +2350,14 @@
       }
     },
     "F_FUEL_HIGH_TEMP_INNER": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 28,
         "ata_title": "Fuel",
@@ -2373,14 +2373,14 @@
       }
     },
     "F_FUEL_HIGH_TEMP_OUTER": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 28,
         "ata_title": "Fuel",
@@ -2396,14 +2396,14 @@
       }
     },
     "F_FUEL_HIGH_TEMP_INNER_ADV": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 28,
         "ata_title": "Fuel",
@@ -2419,14 +2419,14 @@
       }
     },
     "F_FUEL_HIGH_TEMP_OUTER_ADV": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 28,
         "ata_title": "Fuel",
@@ -2442,14 +2442,14 @@
       }
     },
     "F_FUEL_LOW_TEMP_INNER": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 28,
         "ata_title": "Fuel",
@@ -2465,14 +2465,14 @@
       }
     },
     "F_FUEL_LOW_TEMP_OUTER": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 28,
         "ata_title": "Fuel",
@@ -2488,14 +2488,14 @@
       }
     },
     "F_FUEL_LOW_TEMP_INNER_ADV": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 28,
         "ata_title": "Fuel",
@@ -2511,14 +2511,14 @@
       }
     },
     "F_FUEL_LOW_TEMP_OUTER_ADV": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 28,
         "ata_title": "Fuel",
@@ -2534,14 +2534,14 @@
       }
     },
     "F_FUEL_XFER_VALVE_1_L": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 28,
         "ata_title": "Fuel",
@@ -2557,14 +2557,14 @@
       }
     },
     "F_FUEL_XFER_VALVE_2_L": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 28,
         "ata_title": "Fuel",
@@ -2580,14 +2580,14 @@
       }
     },
     "F_FUEL_XFER_VALVE_1_R": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 28,
         "ata_title": "Fuel",
@@ -2603,14 +2603,14 @@
       }
     },
     "F_FUEL_XFER_VALVE_2_R": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 28,
         "ata_title": "Fuel",
@@ -2626,14 +2626,14 @@
       }
     },
     "F_FUEL_ENGINE_1_VALVE": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 28,
         "ata_title": "Fuel",
@@ -2649,14 +2649,14 @@
       }
     },
     "F_FUEL_ENGINE_2_VALVE": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 28,
         "ata_title": "Fuel",
@@ -2672,14 +2672,14 @@
       }
     },
     "F_FUEL_VALVE_CROSSFEED": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 28,
         "ata_title": "Fuel",
@@ -2695,14 +2695,14 @@
       }
     },
     "F_DEFUEL_TRANSFER_VALVE": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 28,
         "ata_title": "Fuel",
@@ -2718,14 +2718,14 @@
       }
     },
     "F_FUEL_LEAK_LEFT_OUTER": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 25,
       "catalog": {
         "ata_id": 28,
         "ata_title": "Fuel",
@@ -2741,14 +2741,14 @@
       }
     },
     "F_FUEL_LEAK_LEFT_INNER": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 25,
       "catalog": {
         "ata_id": 28,
         "ata_title": "Fuel",
@@ -2764,14 +2764,14 @@
       }
     },
     "F_FUEL_LEAK_CENTER": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 25,
       "catalog": {
         "ata_id": 28,
         "ata_title": "Fuel",
@@ -2787,14 +2787,14 @@
       }
     },
     "F_FUEL_LEAK_RIGHT_INNER": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 25,
       "catalog": {
         "ata_id": 28,
         "ata_title": "Fuel",
@@ -2810,14 +2810,14 @@
       }
     },
     "F_FUEL_LEAK_RIGHT_OUTER": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 25,
       "catalog": {
         "ata_id": 28,
         "ata_title": "Fuel",
@@ -2833,14 +2833,14 @@
       }
     },
     "F_ENG1_HP_VALVE": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 28,
         "ata_title": "Fuel",
@@ -2856,14 +2856,14 @@
       }
     },
     "F_ENG2_HP_VALVE": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 28,
         "ata_title": "Fuel",
@@ -2879,14 +2879,14 @@
       }
     },
     "F_HYD_LEAK_GREEN": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 25,
       "catalog": {
         "ata_id": 29,
         "ata_title": "Hydraulic power",
@@ -2902,14 +2902,14 @@
       }
     },
     "F_HYD_LEAK_BLUE": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 25,
       "catalog": {
         "ata_id": 29,
         "ata_title": "Hydraulic power",
@@ -2925,14 +2925,14 @@
       }
     },
     "F_HYD_LEAK_YELLOW": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 25,
       "catalog": {
         "ata_id": 29,
         "ata_title": "Hydraulic power",
@@ -2948,14 +2948,14 @@
       }
     },
     "F_HYD_RSVR_OVERHEAT_GREEN": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 29,
         "ata_title": "Hydraulic power",
@@ -2971,14 +2971,14 @@
       }
     },
     "F_HYD_RSVR_OVERHEAT_BLUE": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 29,
         "ata_title": "Hydraulic power",
@@ -2994,14 +2994,14 @@
       }
     },
     "F_HYD_RSVR_OVERHEAT_YELLOW": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 29,
         "ata_title": "Hydraulic power",
@@ -3017,14 +3017,14 @@
       }
     },
     "F_HYD_RSVR_AIR_PRESSURE_GREEN": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 29,
         "ata_title": "Hydraulic power",
@@ -3040,14 +3040,14 @@
       }
     },
     "F_HYD_RSVR_AIR_PRESSURE_BLUE": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 29,
         "ata_title": "Hydraulic power",
@@ -3063,14 +3063,14 @@
       }
     },
     "F_HYD_RSVR_AIR_PRESSURE_YELLOW": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 29,
         "ata_title": "Hydraulic power",
@@ -3086,14 +3086,14 @@
       }
     },
     "F_HYD_LOW_GREEN": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 29,
         "ata_title": "Hydraulic power",
@@ -3109,14 +3109,14 @@
       }
     },
     "F_HYD_LOW_BLUE": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 29,
         "ata_title": "Hydraulic power",
@@ -3132,14 +3132,14 @@
       }
     },
     "F_HYD_LOW_YELLOW": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 29,
         "ata_title": "Hydraulic power",
@@ -3155,14 +3155,14 @@
       }
     },
     "F_HYD_PUMP_ENG_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 29,
         "ata_title": "Hydraulic power",
@@ -3178,14 +3178,14 @@
       }
     },
     "F_HYD_PUMP_ENG_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 29,
         "ata_title": "Hydraulic power",
@@ -3201,14 +3201,14 @@
       }
     },
     "F_HYD_FIRE_VALVE_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 25,
       "catalog": {
         "ata_id": 29,
         "ata_title": "Hydraulic power",
@@ -3224,14 +3224,14 @@
       }
     },
     "F_HYD_FIRE_VALVE_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 25,
       "catalog": {
         "ata_id": 29,
         "ata_title": "Hydraulic power",
@@ -3247,14 +3247,14 @@
       }
     },
     "F_HYD_PTU": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 29,
         "ata_title": "Hydraulic power",
@@ -3270,14 +3270,14 @@
       }
     },
     "F_HYD_PUMP_BLUE": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 29,
         "ata_title": "Hydraulic power",
@@ -3293,14 +3293,14 @@
       }
     },
     "F_HYD_PUMP_YELLOW": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 29,
         "ata_title": "Hydraulic power",
@@ -3316,14 +3316,14 @@
       }
     },
     "F_HYD_PUMP_OVERHEAT_BLUE": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 29,
         "ata_title": "Hydraulic power",
@@ -3339,14 +3339,14 @@
       }
     },
     "F_HYD_PUMP_OVERHEAT_YELLOW": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 29,
         "ata_title": "Hydraulic power",
@@ -3362,14 +3362,14 @@
       }
     },
     "F_BSCU_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 32,
         "ata_title": "Landing gear",
@@ -3385,14 +3385,14 @@
       }
     },
     "F_BSCU_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 32,
         "ata_title": "Landing gear",
@@ -3408,14 +3408,14 @@
       }
     },
     "F_BRAKE_ABCU": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 32,
         "ata_title": "Landing gear",
@@ -3431,14 +3431,14 @@
       }
     },
     "F_HYD_BSCU_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 32,
         "ata_title": "Landing gear",
@@ -3454,14 +3454,14 @@
       }
     },
     "F_HYD_BSCU_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 32,
         "ata_title": "Landing gear",
@@ -3477,14 +3477,14 @@
       }
     },
     "F_BRAKE_AUTOBRAKE": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 3600000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 120,
       "catalog": {
         "ata_id": 32,
         "ata_title": "Landing gear",
@@ -3500,14 +3500,14 @@
       }
     },
     "F_BRAKE_WHEEL_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 32,
         "ata_title": "Landing gear",
@@ -3523,14 +3523,14 @@
       }
     },
     "F_BRAKE_WHEEL_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 32,
         "ata_title": "Landing gear",
@@ -3546,14 +3546,14 @@
       }
     },
     "F_BRAKE_WHEEL_3": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 32,
         "ata_title": "Landing gear",
@@ -3569,14 +3569,14 @@
       }
     },
     "F_BRAKE_WHEEL_4": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 32,
         "ata_title": "Landing gear",
@@ -3592,14 +3592,14 @@
       }
     },
     "F_GEAR_TYRE_PSI_MAIN_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 3600000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 120,
       "catalog": {
         "ata_id": 32,
         "ata_title": "Landing gear",
@@ -3615,14 +3615,14 @@
       }
     },
     "F_GEAR_TYRE_PSI_MAIN_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 3600000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 120,
       "catalog": {
         "ata_id": 32,
         "ata_title": "Landing gear",
@@ -3638,14 +3638,14 @@
       }
     },
     "F_GEAR_TYRE_PSI_LEFT_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 3600000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 120,
       "catalog": {
         "ata_id": 32,
         "ata_title": "Landing gear",
@@ -3661,14 +3661,14 @@
       }
     },
     "F_GEAR_TYRE_PSI_LEFT_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 3600000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 120,
       "catalog": {
         "ata_id": 32,
         "ata_title": "Landing gear",
@@ -3684,14 +3684,14 @@
       }
     },
     "F_GEAR_TYRE_PSI_RIGHT_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 3600000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 120,
       "catalog": {
         "ata_id": 32,
         "ata_title": "Landing gear",
@@ -3707,14 +3707,14 @@
       }
     },
     "F_GEAR_TYRE_PSI_RIGHT_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 3600000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 120,
       "catalog": {
         "ata_id": 32,
         "ata_title": "Landing gear",
@@ -3730,14 +3730,14 @@
       }
     },
     "F_BRAKE_NWS": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 25,
       "catalog": {
         "ata_id": 32,
         "ata_title": "Landing gear",
@@ -3753,14 +3753,14 @@
       }
     },
     "F_MISC_LGCIU1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 32,
         "ata_title": "Landing gear",
@@ -3776,14 +3776,14 @@
       }
     },
     "F_MISC_LGCIU2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 32,
         "ata_title": "Landing gear",
@@ -3799,14 +3799,14 @@
       }
     },
     "F_GEAR_SAFETY_VALVE": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 32,
         "ata_title": "Landing gear",
@@ -3822,14 +3822,14 @@
       }
     },
     "F_GEAR_LOCK_LEFT": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 5,
       "catalog": {
         "ata_id": 32,
         "ata_title": "Landing gear",
@@ -3845,14 +3845,14 @@
       }
     },
     "F_GEAR_LOCK_NOSE": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 5,
       "catalog": {
         "ata_id": 32,
         "ata_title": "Landing gear",
@@ -3868,14 +3868,14 @@
       }
     },
     "F_GEAR_LOCK_RIGHT": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 5,
       "catalog": {
         "ata_id": 32,
         "ata_title": "Landing gear",
@@ -3891,14 +3891,14 @@
       }
     },
     "F_GEAR_LOCKED_UP": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 5,
       "catalog": {
         "ata_id": 32,
         "ata_title": "Landing gear",
@@ -3914,14 +3914,14 @@
       }
     },
     "F_GEAR_LOCKED_DOWN": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 25,
       "catalog": {
         "ata_id": 32,
         "ata_title": "Landing gear",
@@ -3937,14 +3937,14 @@
       }
     },
     "F_OH_NAV_IR_TOTAL_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -3960,14 +3960,14 @@
       }
     },
     "F_OH_NAV_IR_TOTAL_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -3983,14 +3983,14 @@
       }
     },
     "F_OH_NAV_IR_TOTAL_3": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4006,14 +4006,14 @@
       }
     },
     "F_OH_NAV_IR_POSITION_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4029,14 +4029,14 @@
       }
     },
     "F_OH_NAV_IR_POSITION_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4052,14 +4052,14 @@
       }
     },
     "F_OH_NAV_IR_POSITION_3": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4075,14 +4075,14 @@
       }
     },
     "F_OH_NAV_ADR_ADR1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4098,14 +4098,14 @@
       }
     },
     "F_OH_NAV_ADR_ADR2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4121,14 +4121,14 @@
       }
     },
     "F_OH_NAV_ADR_ADR3": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4144,14 +4144,14 @@
       }
     },
     "F_OH_NAV_IR_ALIGNMENT_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4167,14 +4167,14 @@
       }
     },
     "F_OH_NAV_IR_ALIGNMENT_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4190,14 +4190,14 @@
       }
     },
     "F_OH_NAV_IR_ALIGNMENT_3": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4213,14 +4213,14 @@
       }
     },
     "F_OH_NAV_PITOT_BLOCKED_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 25,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4236,14 +4236,14 @@
       }
     },
     "F_OH_NAV_PITOT_BLOCKED_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 25,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4259,14 +4259,14 @@
       }
     },
     "F_OH_NAV_PITOT_BLOCKED_3": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 25,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4282,14 +4282,14 @@
       }
     },
     "F_NAV_IR1_PITCH_DISCREPANCY": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4305,14 +4305,14 @@
       }
     },
     "F_NAV_IR2_PITCH_DISCREPANCY": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4328,14 +4328,14 @@
       }
     },
     "F_NAV_IR3_PITCH_DISCREPANCY": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4351,14 +4351,14 @@
       }
     },
     "F_NAV_IR1_BANK_DISCREPANCY": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4374,14 +4374,14 @@
       }
     },
     "F_NAV_IR2_BANK_DISCREPANCY": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4397,14 +4397,14 @@
       }
     },
     "F_NAV_IR3_BANK_DISCREPANCY": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4420,14 +4420,14 @@
       }
     },
     "F_NAV_IR1_HDG_DISCREPANCY": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4443,14 +4443,14 @@
       }
     },
     "F_NAV_IR2_HDG_DISCREPANCY": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4466,14 +4466,14 @@
       }
     },
     "F_NAV_IR3_HDG_DISCREPANCY": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4489,14 +4489,14 @@
       }
     },
     "F_NAV_IR_DISAGREE1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4512,14 +4512,14 @@
       }
     },
     "F_NAV_IR_DISAGREE2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4540,9 +4540,9 @@
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4558,14 +4558,14 @@
       }
     },
     "F_MCDU_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4581,14 +4581,14 @@
       }
     },
     "F_MCDU_1_RECOVERABLE": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
-      "repeatable": false,
-      "cooldown_ms": 900000,
-      "max_per_session": 1,
-      "weight": 1,
+      "repeatable": true,
+      "cooldown_ms": 3600000,
+      "max_per_session": 2,
+      "weight": 40,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4604,14 +4604,14 @@
       }
     },
     "F_MCDU_2_RECOVERABLE": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
-      "repeatable": false,
-      "cooldown_ms": 900000,
-      "max_per_session": 1,
-      "weight": 1,
+      "repeatable": true,
+      "cooldown_ms": 3600000,
+      "max_per_session": 2,
+      "weight": 40,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4627,14 +4627,14 @@
       }
     },
     "F_FMGC_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4650,14 +4650,14 @@
       }
     },
     "F_FMGC_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4673,14 +4673,14 @@
       }
     },
     "F_GPWS": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4696,14 +4696,14 @@
       }
     },
     "F_NAV_VOR1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4719,14 +4719,14 @@
       }
     },
     "F_NAV_VOR2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4742,14 +4742,14 @@
       }
     },
     "F_NAV_ADF1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4765,14 +4765,14 @@
       }
     },
     "F_NAV_ADF2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4788,14 +4788,14 @@
       }
     },
     "F_NAV_ILS1_LOC": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4811,14 +4811,14 @@
       }
     },
     "F_NAV_ILS1_GS": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4834,14 +4834,14 @@
       }
     },
     "F_NAV_ILS2_LOC": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4857,14 +4857,14 @@
       }
     },
     "F_NAV_ILS2_GS": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4880,14 +4880,14 @@
       }
     },
     "F_NAV_LOC": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4903,14 +4903,14 @@
       }
     },
     "F_NAV_GS": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4926,14 +4926,14 @@
       }
     },
     "F_NAV_GPS1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4949,14 +4949,14 @@
       }
     },
     "F_NAV_GPS2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4972,14 +4972,14 @@
       }
     },
     "F_NAV_RALT1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -4995,14 +4995,14 @@
       }
     },
     "F_NAV_RALT2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -5018,14 +5018,14 @@
       }
     },
     "F_NAV_ACCURACY_DOWNGRADE": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -5041,14 +5041,14 @@
       }
     },
     "F_NAV_TCAS": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -5064,14 +5064,14 @@
       }
     },
     "F_NAV_ATC1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -5087,14 +5087,14 @@
       }
     },
     "F_NAV_ATC2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 34,
         "ata_title": "Navigation",
@@ -5110,14 +5110,14 @@
       }
     },
     "F_PNEUMATIC_LAV_GAL_FAN": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 3600000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 120,
       "catalog": {
         "ata_id": 36,
         "ata_title": "Pneumatic",
@@ -5133,14 +5133,14 @@
       }
     },
     "F_PNEUMATIC_HP_VALVE_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 36,
         "ata_title": "Pneumatic",
@@ -5156,14 +5156,14 @@
       }
     },
     "F_PNEUMATIC_HP_VALVE_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 36,
         "ata_title": "Pneumatic",
@@ -5179,14 +5179,14 @@
       }
     },
     "F_PNEUMATIC_RAM_AIR_VALVE": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 36,
         "ata_title": "Pneumatic",
@@ -5202,14 +5202,14 @@
       }
     },
     "F_PNEUMATIC_BLEED_VALVE_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 36,
         "ata_title": "Pneumatic",
@@ -5225,14 +5225,14 @@
       }
     },
     "F_PNEUMATIC_BLEED_VALVE_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 36,
         "ata_title": "Pneumatic",
@@ -5248,14 +5248,14 @@
       }
     },
     "F_PNEUMATIC_HOT_AIR_VALVE": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 36,
         "ata_title": "Pneumatic",
@@ -5271,14 +5271,14 @@
       }
     },
     "F_ENG1_BLEED_LOW_TEMP": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 36,
         "ata_title": "Pneumatic",
@@ -5294,14 +5294,14 @@
       }
     },
     "F_ENG2_BLEED_LOW_TEMP": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 36,
         "ata_title": "Pneumatic",
@@ -5317,14 +5317,14 @@
       }
     },
     "F_PNEUMATIC_BMC_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 36,
         "ata_title": "Pneumatic",
@@ -5340,14 +5340,14 @@
       }
     },
     "F_PNEUMATIC_BMC_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 36,
         "ata_title": "Pneumatic",
@@ -5363,14 +5363,14 @@
       }
     },
     "F_PNEUMATIC_CROSS_BLEED_VALVE": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 36,
         "ata_title": "Pneumatic",
@@ -5386,14 +5386,14 @@
       }
     },
     "F_PNEUMATIC_APU_VALVE": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 36,
         "ata_title": "Pneumatic",
@@ -5409,14 +5409,14 @@
       }
     },
     "F_PNEUMATIC_PACK_VALVE_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 36,
         "ata_title": "Pneumatic",
@@ -5432,14 +5432,14 @@
       }
     },
     "F_PNEUMATIC_PACK_VALVE_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 36,
         "ata_title": "Pneumatic",
@@ -5455,14 +5455,14 @@
       }
     },
     "F_PNEUMATIC_LEAK_WING_ENG1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 36,
         "ata_title": "Pneumatic",
@@ -5478,14 +5478,14 @@
       }
     },
     "F_PNEUMATIC_LEAK_WING_ENG2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 36,
         "ata_title": "Pneumatic",
@@ -5501,14 +5501,14 @@
       }
     },
     "F_PNEUMATIC_LEAK_PYLON_ENG1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 36,
         "ata_title": "Pneumatic",
@@ -5524,14 +5524,14 @@
       }
     },
     "F_PNEUMATIC_LEAK_PYLON_ENG2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 36,
         "ata_title": "Pneumatic",
@@ -5570,14 +5570,14 @@
       }
     },
     "F_ELEC_APU_ECB": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 3600000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 120,
       "catalog": {
         "ata_id": 49,
         "ata_title": "APU",
@@ -5593,14 +5593,14 @@
       }
     },
     "F_APU_LOW_OIL": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 49,
         "ata_title": "APU",
@@ -5616,14 +5616,14 @@
       }
     },
     "F_FUEL_VALVE_APU": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 3600000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 120,
       "catalog": {
         "ata_id": 49,
         "ata_title": "APU",
@@ -5644,9 +5644,9 @@
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 3600000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 0,
       "catalog": {
         "ata_id": 23,
         "ata_title": "Communications",
@@ -5667,9 +5667,9 @@
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 3600000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 0,
       "catalog": {
         "ata_id": 23,
         "ata_title": "Communications",
@@ -5685,14 +5685,14 @@
       }
     },
     "F_PNEUMATIC_WAI_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 30,
         "ata_title": "Ice and rain protection",
@@ -5708,14 +5708,14 @@
       }
     },
     "F_PNEUMATIC_WAI_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 30,
         "ata_title": "Ice and rain protection",
@@ -5731,14 +5731,14 @@
       }
     },
     "F_PNEUMATIC_EAI_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 30,
         "ata_title": "Ice and rain protection",
@@ -5754,14 +5754,14 @@
       }
     },
     "F_PNEUMATIC_EAI_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 30,
         "ata_title": "Ice and rain protection",
@@ -5777,14 +5777,14 @@
       }
     },
     "F_ICE_WHC_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 30,
         "ata_title": "Ice and rain protection",
@@ -5800,14 +5800,14 @@
       }
     },
     "F_ICE_WHC_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 30,
         "ata_title": "Ice and rain protection",
@@ -5823,14 +5823,14 @@
       }
     },
     "F_ICE_AOA_HEAT_CPT": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 30,
         "ata_title": "Ice and rain protection",
@@ -5846,14 +5846,14 @@
       }
     },
     "F_ICE_AOA_FO": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 30,
         "ata_title": "Ice and rain protection",
@@ -5869,14 +5869,14 @@
       }
     },
     "F_ICE_AOA_STBY": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 30,
         "ata_title": "Ice and rain protection",
@@ -5892,14 +5892,14 @@
       }
     },
     "F_ICE_TAT_HEAT_CPT": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 30,
         "ata_title": "Ice and rain protection",
@@ -5915,14 +5915,14 @@
       }
     },
     "F_ICE_TAT_FO": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 30,
         "ata_title": "Ice and rain protection",
@@ -5938,14 +5938,14 @@
       }
     },
     "F_ICE_TAT_STBY": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 30,
         "ata_title": "Ice and rain protection",
@@ -5961,14 +5961,14 @@
       }
     },
     "F_ICE_PITOT_HEAT_CPT": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 30,
         "ata_title": "Ice and rain protection",
@@ -5984,14 +5984,14 @@
       }
     },
     "F_ICE_PITOT_FO": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 30,
         "ata_title": "Ice and rain protection",
@@ -6007,14 +6007,14 @@
       }
     },
     "F_ICE_PITOT_STBY": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 30,
         "ata_title": "Ice and rain protection",
@@ -6030,14 +6030,14 @@
       }
     },
     "F_ICE_STAT_HEAT_CPT_L": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 30,
         "ata_title": "Ice and rain protection",
@@ -6053,14 +6053,14 @@
       }
     },
     "F_ICE_STAT_HEAT_CPT_R": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 30,
         "ata_title": "Ice and rain protection",
@@ -6076,14 +6076,14 @@
       }
     },
     "F_ICE_STAT_FO_L": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 30,
         "ata_title": "Ice and rain protection",
@@ -6099,14 +6099,14 @@
       }
     },
     "F_ICE_STAT_FO_R": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 30,
         "ata_title": "Ice and rain protection",
@@ -6122,14 +6122,14 @@
       }
     },
     "F_ICE_STAT_STBY_L": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 30,
         "ata_title": "Ice and rain protection",
@@ -6145,14 +6145,14 @@
       }
     },
     "F_ICE_STAT_STBY_R": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 30,
         "ata_title": "Ice and rain protection",
@@ -6168,14 +6168,14 @@
       }
     },
     "F_ICE_PHC1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 30,
         "ata_title": "Ice and rain protection",
@@ -6191,14 +6191,14 @@
       }
     },
     "F_ICE_PHC2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 30,
         "ata_title": "Ice and rain protection",
@@ -6214,14 +6214,14 @@
       }
     },
     "F_ICE_PHC3": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 30,
         "ata_title": "Ice and rain protection",
@@ -6237,14 +6237,14 @@
       }
     },
     "F_ICING_ENG1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 30,
         "ata_title": "Ice and rain protection",
@@ -6260,14 +6260,14 @@
       }
     },
     "F_ICING_ENG2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 30,
         "ata_title": "Ice and rain protection",
@@ -6283,14 +6283,14 @@
       }
     },
     "F_FC_IPPU1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 27,
         "ata_title": "Flight controls",
@@ -6306,14 +6306,14 @@
       }
     },
     "F_FC_IPPU2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 27,
         "ata_title": "Flight controls",
@@ -6329,14 +6329,14 @@
       }
     },
     "F_HYD_WTB_FLAP": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 27,
         "ata_title": "Flight controls",
@@ -6352,14 +6352,14 @@
       }
     },
     "F_HYD_WTB_SLAT": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 27,
         "ata_title": "Flight controls",
@@ -6375,14 +6375,14 @@
       }
     },
     "F_HYD_FSCC_ALIGNMENT": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 27,
         "ata_title": "Flight controls",
@@ -6398,14 +6398,14 @@
       }
     },
     "F_OH_FLT_CLT_SFCC_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 27,
         "ata_title": "Flight controls",
@@ -6421,14 +6421,14 @@
       }
     },
     "F_OH_FLT_CLT_SFCC_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 27,
         "ata_title": "Flight controls",
@@ -6444,14 +6444,14 @@
       }
     },
     "F_SFCC_1_FLAP": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 27,
         "ata_title": "Flight controls",
@@ -6467,14 +6467,14 @@
       }
     },
     "F_SFCC_2_FLAP": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 27,
         "ata_title": "Flight controls",
@@ -6490,14 +6490,14 @@
       }
     },
     "F_SFCC_1_SLAT": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 27,
         "ata_title": "Flight controls",
@@ -6513,14 +6513,14 @@
       }
     },
     "F_SFCC_2_SLAT": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 27,
         "ata_title": "Flight controls",
@@ -6536,14 +6536,14 @@
       }
     },
     "F_OH_FLT_CTL_ELAC_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 27,
         "ata_title": "Flight controls",
@@ -6559,14 +6559,14 @@
       }
     },
     "F_OH_FLT_CTL_ELAC_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 27,
         "ata_title": "Flight controls",
@@ -6582,14 +6582,14 @@
       }
     },
     "F_OH_FLT_CTL_SEC_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 27,
         "ata_title": "Flight controls",
@@ -6605,14 +6605,14 @@
       }
     },
     "F_OH_FLT_CTL_SEC_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 27,
         "ata_title": "Flight controls",
@@ -6628,14 +6628,14 @@
       }
     },
     "F_OH_FLT_CTL_SEC_3": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 27,
         "ata_title": "Flight controls",
@@ -6651,14 +6651,14 @@
       }
     },
     "F_OH_FLT_CTL_ELAC_RECOVERABLE_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
-      "repeatable": false,
-      "cooldown_ms": 900000,
-      "max_per_session": 1,
-      "weight": 1,
+      "repeatable": true,
+      "cooldown_ms": 3600000,
+      "max_per_session": 2,
+      "weight": 20,
       "catalog": {
         "ata_id": 27,
         "ata_title": "Flight controls",
@@ -6674,14 +6674,14 @@
       }
     },
     "F_OH_FLT_CTL_ELAC_RECOVERABLE_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
-      "repeatable": false,
-      "cooldown_ms": 900000,
-      "max_per_session": 1,
-      "weight": 1,
+      "repeatable": true,
+      "cooldown_ms": 3600000,
+      "max_per_session": 2,
+      "weight": 20,
       "catalog": {
         "ata_id": 27,
         "ata_title": "Flight controls",
@@ -6697,14 +6697,14 @@
       }
     },
     "F_OH_FLT_CTL_SEC_RECOVERABLE_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
-      "repeatable": false,
-      "cooldown_ms": 900000,
-      "max_per_session": 1,
-      "weight": 1,
+      "repeatable": true,
+      "cooldown_ms": 3600000,
+      "max_per_session": 2,
+      "weight": 20,
       "catalog": {
         "ata_id": 27,
         "ata_title": "Flight controls",
@@ -6720,14 +6720,14 @@
       }
     },
     "F_OH_FLT_CTL_SEC_RECOVERABLE_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
-      "repeatable": false,
-      "cooldown_ms": 900000,
-      "max_per_session": 1,
-      "weight": 1,
+      "repeatable": true,
+      "cooldown_ms": 3600000,
+      "max_per_session": 2,
+      "weight": 20,
       "catalog": {
         "ata_id": 27,
         "ata_title": "Flight controls",
@@ -6743,14 +6743,14 @@
       }
     },
     "F_OH_FLT_CTL_SEC_RECOVERABLE_3": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
-      "repeatable": false,
-      "cooldown_ms": 900000,
-      "max_per_session": 1,
-      "weight": 1,
+      "repeatable": true,
+      "cooldown_ms": 3600000,
+      "max_per_session": 2,
+      "weight": 20,
       "catalog": {
         "ata_id": 27,
         "ata_title": "Flight controls",
@@ -6766,14 +6766,14 @@
       }
     },
     "F_FC_YAW_DAMPER_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 27,
         "ata_title": "Flight controls",
@@ -6789,14 +6789,14 @@
       }
     },
     "F_FC_YAW_DAMPER_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 27,
         "ata_title": "Flight controls",
@@ -6812,14 +6812,14 @@
       }
     },
     "F_FC_SIDESTICK_REV_PITCH_CAPT": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 27,
         "ata_title": "Flight controls",
@@ -6835,14 +6835,14 @@
       }
     },
     "F_FC_SIDESTICK_REV_ROLL_CAPT": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 27,
         "ata_title": "Flight controls",
@@ -6858,14 +6858,14 @@
       }
     },
     "F_FC_SIDESTICK_REV_PITCH_FO": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 27,
         "ata_title": "Flight controls",
@@ -6881,14 +6881,14 @@
       }
     },
     "F_FC_SIDESTICK_REV_ROLL_FO": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 27,
         "ata_title": "Flight controls",
@@ -6904,14 +6904,14 @@
       }
     },
     "F_FC_SIDESTICK_FAULT_CAPT": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 27,
         "ata_title": "Flight controls",
@@ -6927,14 +6927,14 @@
       }
     },
     "F_FC_SIDESTICK_FAULT_FO": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 27,
         "ata_title": "Flight controls",
@@ -6950,14 +6950,14 @@
       }
     },
     "B_INT_SFCDC1F": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 27,
         "ata_title": "Flight controls",
@@ -6973,14 +6973,14 @@
       }
     },
     "B_INT_SFCDC2F": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 27,
         "ata_title": "Flight controls",
@@ -6996,14 +6996,14 @@
       }
     },
     "F_FCTL_STAB_JAM": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 27,
         "ata_title": "Flight controls",
@@ -7019,14 +7019,14 @@
       }
     },
     "F_FCTL_ELEV_LR": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 27,
         "ata_title": "Flight controls",
@@ -7042,14 +7042,14 @@
       }
     },
     "F_FCTL_ELEV_L": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 27,
         "ata_title": "Flight controls",
@@ -7065,14 +7065,14 @@
       }
     },
     "F_FCTL_ELEV_R": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 27,
         "ata_title": "Flight controls",
@@ -7272,14 +7272,14 @@
       }
     },
     "F_CFDIU": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 31,
         "ata_title": "Indicating/Recording system",
@@ -7295,14 +7295,14 @@
       }
     },
     "F_ECP": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 31,
         "ata_title": "Indicating/Recording system",
@@ -7318,14 +7318,14 @@
       }
     },
     "F_SDAC_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 31,
         "ata_title": "Indicating/Recording system",
@@ -7341,14 +7341,14 @@
       }
     },
     "F_SDAC_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 31,
         "ata_title": "Indicating/Recording system",
@@ -7364,14 +7364,14 @@
       }
     },
     "F_FWC1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 31,
         "ata_title": "Indicating/Recording system",
@@ -7387,14 +7387,14 @@
       }
     },
     "F_FWC2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 31,
         "ata_title": "Indicating/Recording system",
@@ -7410,14 +7410,14 @@
       }
     },
     "F_CVR": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 31,
         "ata_title": "Indicating/Recording system",
@@ -7433,14 +7433,14 @@
       }
     },
     "F_DISPLAY_DMC_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 31,
         "ata_title": "Indicating/Recording system",
@@ -7456,14 +7456,14 @@
       }
     },
     "F_DISPLAY_DMC_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 31,
         "ata_title": "Indicating/Recording system",
@@ -7479,14 +7479,14 @@
       }
     },
     "F_DISPLAY_DMC_3": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 31,
         "ata_title": "Indicating/Recording system",
@@ -7502,14 +7502,14 @@
       }
     },
     "F_DISPLAY_DCDU_CAPT": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 31,
         "ata_title": "Indicating/Recording system",
@@ -7525,14 +7525,14 @@
       }
     },
     "F_DISPLAY_DCDU_FO": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 31,
         "ata_title": "Indicating/Recording system",
@@ -7548,14 +7548,14 @@
       }
     },
     "F_DISPLAY_DU_CAPTAIN_OUT": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 31,
         "ata_title": "Indicating/Recording system",
@@ -7571,14 +7571,14 @@
       }
     },
     "F_DISPLAY_DU_CAPTAIN_IN": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 31,
         "ata_title": "Indicating/Recording system",
@@ -7594,14 +7594,14 @@
       }
     },
     "F_DISPLAY_DU_FO_IN": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 31,
         "ata_title": "Indicating/Recording system",
@@ -7617,14 +7617,14 @@
       }
     },
     "F_DISPLAY_DU_FO_OUT": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 31,
         "ata_title": "Indicating/Recording system",
@@ -7640,14 +7640,14 @@
       }
     },
     "F_DISPLAY_DU_ECAM_UPPER": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 31,
         "ata_title": "Indicating/Recording system",
@@ -7663,14 +7663,14 @@
       }
     },
     "F_DISPLAY_DU_ECAM_LOWER": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 31,
         "ata_title": "Indicating/Recording system",
@@ -7686,14 +7686,14 @@
       }
     },
     "F_OXYGEN_CREW_LOW": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 35,
         "ata_title": "Oxygen",
@@ -7709,14 +7709,14 @@
       }
     },
     "F_OXYGEN_CREW_MED": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 35,
         "ata_title": "Oxygen",
@@ -7732,14 +7732,14 @@
       }
     },
     "F_OXYGEN_CREW2_LOW": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 35,
         "ata_title": "Oxygen",
@@ -7755,14 +7755,14 @@
       }
     },
     "F_OXYGEN_CREW2_MED": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 35,
         "ata_title": "Oxygen",
@@ -7778,14 +7778,14 @@
       }
     },
     "F_OXYGEN_CREW_SUPPLY_VALVE": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 35,
         "ata_title": "Oxygen",
@@ -7801,14 +7801,14 @@
       }
     },
     "F_OXYGEN_CREW_SUPPLY_VALVE2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 5400000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 40,
       "catalog": {
         "ata_id": 35,
         "ata_title": "Oxygen",
@@ -7824,14 +7824,14 @@
       }
     },
     "F_INFO_ATSU": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 3600000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 120,
       "catalog": {
         "ata_id": 46,
         "ata_title": "Information systems",
@@ -8192,14 +8192,14 @@
       }
     },
     "F_ENGINE_FADEC_LEFT_A": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 70,
         "ata_title": "Power plant",
@@ -8215,14 +8215,14 @@
       }
     },
     "F_ENGINE_FADEC_LEFT_B": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 70,
         "ata_title": "Power plant",
@@ -8238,14 +8238,14 @@
       }
     },
     "F_ENGINE_FADEC_RIGHT_A": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 70,
         "ata_title": "Power plant",
@@ -8261,14 +8261,14 @@
       }
     },
     "F_ENGINE_FADEC_RIGHT_B": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 70,
         "ata_title": "Power plant",
@@ -8284,14 +8284,14 @@
       }
     },
     "F_ENG1_EIU": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 70,
         "ata_title": "Power plant",
@@ -8307,14 +8307,14 @@
       }
     },
     "F_ENG2_EIU": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 70,
         "ata_title": "Power plant",
@@ -8330,14 +8330,14 @@
       }
     },
     "F_ENGINE_1_SURGE": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 25,
       "catalog": {
         "ata_id": 70,
         "ata_title": "Power plant",
@@ -8353,14 +8353,14 @@
       }
     },
     "F_ENGINE_2_SURGE": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 25,
       "catalog": {
         "ata_id": 70,
         "ata_title": "Power plant",
@@ -8376,14 +8376,14 @@
       }
     },
     "F_ENGINE_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 5,
       "catalog": {
         "ata_id": 70,
         "ata_title": "Power plant",
@@ -8399,14 +8399,14 @@
       }
     },
     "F_ENGINE_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 5,
       "catalog": {
         "ata_id": 70,
         "ata_title": "Power plant",
@@ -8422,14 +8422,14 @@
       }
     },
     "F_ENGINE_1_DAMAGE": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 5,
       "catalog": {
         "ata_id": 70,
         "ata_title": "Power plant",
@@ -8445,14 +8445,14 @@
       }
     },
     "F_ENGINE_2_DAMAGE": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 5,
       "catalog": {
         "ata_id": 70,
         "ata_title": "Power plant",
@@ -8468,14 +8468,14 @@
       }
     },
     "F_ENGINE_1_BIRDSTRIKE": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 70,
         "ata_title": "Power plant",
@@ -8491,14 +8491,14 @@
       }
     },
     "F_ENGINE_2_BIRDSTRIKE": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 70,
         "ata_title": "Power plant",
@@ -8514,14 +8514,14 @@
       }
     },
     "F_REV_PRESS_ENG_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 70,
         "ata_title": "Power plant",
@@ -8537,14 +8537,14 @@
       }
     },
     "F_REV_PRESS_ENG_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 70,
         "ata_title": "Power plant",
@@ -8560,14 +8560,14 @@
       }
     },
     "F_REV_UNLOCK_ENG_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 70,
         "ata_title": "Power plant",
@@ -8583,14 +8583,14 @@
       }
     },
     "F_REV_UNLOCK_ENG_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 70,
         "ata_title": "Power plant",
@@ -8606,14 +8606,14 @@
       }
     },
     "F_REV_INHIBIT_ENG_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 70,
         "ata_title": "Power plant",
@@ -8629,14 +8629,14 @@
       }
     },
     "F_REV_INHIBIT_ENG_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 70,
         "ata_title": "Power plant",
@@ -8652,14 +8652,14 @@
       }
     },
     "F_VIB_N1_ENG_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 70,
         "ata_title": "Power plant",
@@ -8675,14 +8675,14 @@
       }
     },
     "F_VIB_N1_ENG_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 70,
         "ata_title": "Power plant",
@@ -8698,14 +8698,14 @@
       }
     },
     "F_VIB_N2_ENG_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 70,
         "ata_title": "Power plant",
@@ -8721,14 +8721,14 @@
       }
     },
     "F_VIB_N2_ENG_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 70,
         "ata_title": "Power plant",
@@ -8744,14 +8744,14 @@
       }
     },
     "F_ENG1_OIL_LEAK": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 70,
         "ata_title": "Power plant",
@@ -8767,14 +8767,14 @@
       }
     },
     "F_ENG2_OIL_LEAK": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 70,
         "ata_title": "Power plant",
@@ -8790,14 +8790,14 @@
       }
     },
     "F_HYD_REVERSER_SHUTOFF_VALVE_1": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 70,
         "ata_title": "Power plant",
@@ -8813,14 +8813,14 @@
       }
     },
     "F_HYD_REVERSER_SHUTOFF_VALVE_2": {
-      "enabled": false,
+      "enabled": true,
       "stream_safe": false,
       "severity": "major",
       "recoverability": "persistent",
       "repeatable": false,
-      "cooldown_ms": 900000,
+      "cooldown_ms": 7200000,
       "max_per_session": 1,
-      "weight": 1,
+      "weight": 20,
       "catalog": {
         "ata_id": 70,
         "ata_title": "Power plant",
