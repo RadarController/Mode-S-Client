@@ -2611,6 +2611,53 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
         res.set_content(j["euroscope"].dump(2), "application/json; charset=utf-8");
         });
 
+
+    // EuroScope transient controller instruction events (separate from traffic snapshot state).
+    svr.Post("/api/euroscope/tag_event", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!require_local(req, res)) return;
+
+        try {
+            auto body = nlohmann::json::parse(req.body);
+            if (!body.is_object()) {
+                res.status = 400;
+                res.set_content(R"({"ok":false,"error":"invalid_json"})", "application/json; charset=utf-8");
+                return;
+            }
+
+            state_.add_euroscope_tag_event(body);
+            res.set_content(R"({"ok":true})", "application/json; charset=utf-8");
+        }
+        catch (const std::exception& e) {
+            EuroScopeHttpLog(log_, L"Tag event ingest failed: " + ToW(e.what()));
+            res.status = 400;
+            res.set_content(R"({"ok":false,"error":"invalid_json"})", "application/json; charset=utf-8");
+        }
+        catch (...) {
+            EuroScopeHttpLog(log_, L"Tag event ingest failed: invalid JSON");
+            res.status = 400;
+            res.set_content(R"({"ok":false,"error":"invalid_json"})", "application/json; charset=utf-8");
+        }
+        });
+
+    svr.Get("/api/euroscope/tag_events", [&](const httplib::Request& req, httplib::Response& res) {
+        std::uint64_t since = 0;
+        int limit = 200;
+
+        if (req.has_param("since")) {
+            try { since = (std::uint64_t)std::stoull(req.get_param_value("since")); }
+            catch (...) {}
+        }
+        if (req.has_param("limit")) {
+            try { limit = std::max(1, std::min(1000, std::stoi(req.get_param_value("limit")))); }
+            catch (...) {}
+        }
+
+        auto j = state_.euroscope_tag_events_json(since, limit);
+        res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+        res.set_header("Pragma", "no-cache");
+        res.set_content(j.dump(2), "application/json; charset=utf-8");
+        });
+
     svr.Post("/api/euroscope", [&](const httplib::Request& req, httplib::Response& res) {
         std::string err;
         if (!euroscope_.Ingest(req.body, err)) {

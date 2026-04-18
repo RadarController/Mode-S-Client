@@ -919,6 +919,65 @@ nlohmann::json AppState::youtube_events_json(size_t limit) const {
     return out;
 }
 
+void AppState::add_euroscope_tag_event(const nlohmann::json& ev) {
+    if (!ev.is_object()) return;
+
+    std::lock_guard<std::mutex> lk(mtx_);
+
+    nlohmann::json payload = ev;
+    payload["platform"] = "euroscope";
+
+    std::int64_t ts_ms = payload.value("ts_ms", (std::int64_t)0);
+    if (ts_ms <= 0) {
+        ts_ms = now_ms();
+        payload["ts_ms"] = ts_ms;
+    }
+
+    const std::uint64_t seq = ++euroscope_tag_event_seq_;
+    payload["seq"] = seq;
+    if (!payload.contains("id") || !payload["id"].is_string() || payload["id"].get<std::string>().empty()) {
+        payload["id"] = std::string("euroscope-tag-") + std::to_string(seq);
+    }
+
+    EuroScopeTagEventEntry entry;
+    entry.seq = seq;
+    entry.ts_ms = ts_ms;
+    entry.payload = std::move(payload);
+
+    euroscope_tag_events_.push_back(std::move(entry));
+    while (euroscope_tag_events_.size() > kEuroScopeTagEventsMax_) euroscope_tag_events_.pop_front();
+}
+
+nlohmann::json AppState::euroscope_tag_events_json(std::uint64_t since, int limit) const {
+    std::lock_guard<std::mutex> lk(mtx_);
+    limit = std::max(1, std::min(limit, 1000));
+
+    nlohmann::json out;
+    out["ok"] = true;
+    out["count"] = (int)euroscope_tag_events_.size();
+    out["events"] = nlohmann::json::array();
+
+    if (since == 0) {
+        int start = (int)euroscope_tag_events_.size() - limit;
+        if (start < 0) start = 0;
+        for (int i = start; i < (int)euroscope_tag_events_.size(); ++i) {
+            out["events"].push_back(euroscope_tag_events_[i].payload);
+        }
+    }
+    else {
+        int added = 0;
+        for (const auto& e : euroscope_tag_events_) {
+            if (e.seq <= since) continue;
+            out["events"].push_back(e.payload);
+            if (++added >= limit) break;
+        }
+    }
+
+    out["latest_seq"] = euroscope_tag_event_seq_;
+    return out;
+}
+
+
 // --- Bot commands ---
 void AppState::set_bot_commands_storage_path(const std::string& path_utf8) {
     std::lock_guard<std::mutex> lk(mtx_);

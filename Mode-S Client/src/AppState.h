@@ -128,6 +128,10 @@ public:
     void push_youtube_event(const EventItem& e);
     nlohmann::json youtube_events_json(size_t limit = 200) const;
 
+    // --- EuroScope transient controller instruction events ---
+    void add_euroscope_tag_event(const nlohmann::json& ev);
+    nlohmann::json euroscope_tag_events_json(std::uint64_t since = 0, int limit = 200) const;
+
     // --- Unified alerts history (across Twitch/TikTok/YouTube) ---
     // Returns a rolling in-memory history for "missed alerts" tooling.
     // Optional platform filter: "twitch" | "tiktok" | "youtube"
@@ -265,6 +269,12 @@ private:
         std::int64_t ts_ms{};     // cached for sorting/display
     };
 
+    struct EuroScopeTagEventEntry {
+        std::uint64_t seq{};
+        std::int64_t ts_ms{};
+        nlohmann::json payload;
+    };
+
     void record_alert_history_(const nlohmann::json& payload);
 
     static std::string make_alert_history_id_(std::uint64_t seq);
@@ -303,6 +313,9 @@ private:
     std::deque<ChatMessage> chat_; // last 200
     std::deque<EventItem> tiktok_events_; // last 200
     std::deque<EventItem> youtube_events_; // last 200
+    std::deque<EuroScopeTagEventEntry> euroscope_tag_events_; // last 500
+    std::uint64_t euroscope_tag_event_seq_ = 0;
+    static constexpr std::size_t kEuroScopeTagEventsMax_ = 500;
     std::deque<nlohmann::json> twitch_eventsub_events_; // last 200 by default
     std::deque<ErrorEntry> twitch_eventsub_errors_; // last 200 (most recent)
 
