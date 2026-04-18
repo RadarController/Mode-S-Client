@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EuroScope Tag Instructions</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=B612+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --text: #fe5000;
+      --panel: rgba(0, 0, 0, 0.28);
+      --border: rgba(255, 255, 255, 0.08);
+      --shadow: rgba(0, 0, 0, 0.55);
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: transparent;
+      font-family: "B612 Mono", monospace;
+    }
+    body {
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      padding: 0 32px 72px;
+    }
+    .instruction {
+      min-width: min(920px, 100%);
+      max-width: min(1200px, 100%);
+      opacity: 0;
+      transform: translateY(10px);
+      transition: opacity 180ms ease, transform 180ms ease;
+      pointer-events: none;
+    }
+    .instruction.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .panel {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      min-height: 76px;
+      padding: 18px 28px;
+      border-radius: 18px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      backdrop-filter: blur(6px);
+      box-shadow: 0 10px 30px var(--shadow);
+    }
+    .message {
+      color: var(--text);
+      font-size: clamp(28px, 3vw, 42px);
+      line-height: 1.15;
+      text-align: center;
+      text-shadow: 0 2px 12px rgba(0, 0, 0, 0.7);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      width: 100%;
+    }
+  </style>
+</head>
+<body>
+  <div id="instruction" class="instruction" aria-live="polite">
+    <div class="panel">
+      <div id="message" class="message"></div>
+    </div>
+  </div>
+
+  <script>
+    const pollMs = 500;
+    const displayMs = 4200;
+    const queue = [];
+    let lastSeq = 0;
+    let isShowing = false;
+
+    const instructionEl = document.getElementById('instruction');
+    const messageEl = document.getElementById('message');
+
+    function enqueueMany(events) {
+      for (const ev of events) {
+        if (!ev || typeof ev !== 'object') continue;
+        if (!ev.message) continue;
+        queue.push(ev);
+        if (typeof ev.seq === 'number' && ev.seq > lastSeq) {
+          lastSeq = ev.seq;
+        }
+      }
+      if (!isShowing) {
+        showNext();
+      }
+    }
+
+    function showNext() {
+      if (queue.length === 0) {
+        isShowing = false;
+        messageEl.textContent = '';
+        instructionEl.classList.remove('visible');
+        return;
+      }
+
+      isShowing = true;
+      const ev = queue.shift();
+      messageEl.textContent = ev.message || '';
+      instructionEl.classList.add('visible');
+
+      setTimeout(() => {
+        instructionEl.classList.remove('visible');
+        setTimeout(showNext, 220);
+      }, displayMs);
+    }
+
+    async function poll() {
+      try {
+        const url = `/api/euroscope/tag_events?since=${encodeURIComponent(String(lastSeq))}&limit=50`;
+        const res = await fetch(url, { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = await res.json();
+        const events = Array.isArray(data?.events) ? data.events : [];
+        if (events.length) enqueueMany(events);
+        if (typeof data?.latest_seq === 'number' && data.latest_seq > lastSeq && events.length === 0) {
+          lastSeq = data.latest_seq;
+        }
+      } catch (_) {
+        // keep polling silently
+      }
+    }
+
+    poll();
+    setInterval(poll, pollMs);
+  </script>
+</body>
+</html>
