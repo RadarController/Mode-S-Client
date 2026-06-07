@@ -3181,6 +3181,59 @@ svr.Get("/api/twitch/eventsub/status", [&](const httplib::Request&, httplib::Res
         res.set_content(out.dump(2), "application/json; charset=utf-8");
 });
 
+    // --- API: bot reply overlay feed ---
+    // GET /api/bot/replies/recent?since=<seq>&limit=50&platform=tiktok
+    // Returns recent bot replies for OBS/browser overlays.
+    svr.Get("/api/bot/replies/recent", [&](const httplib::Request& req, httplib::Response& res) {
+        std::uint64_t since = 0;
+        int limit = 50;
+        std::string platform;
+
+        if (req.has_param("since")) {
+            try { since = static_cast<std::uint64_t>(std::stoull(req.get_param_value("since"))); }
+            catch (...) {}
+        }
+
+        if (req.has_param("limit")) {
+            try { limit = std::max(1, std::min(200, std::stoi(req.get_param_value("limit")))); }
+            catch (...) {}
+        }
+
+        if (req.has_param("platform")) {
+            platform = req.get_param_value("platform");
+        }
+
+        auto out = state_.bot_reply_events_json(since, limit, platform);
+        res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+        res.set_header("Pragma", "no-cache");
+        res.set_content(out.dump(2), "application/json; charset=utf-8");
+    });
+
+    svr.Get("/api/bot/replies", [&](const httplib::Request& req, httplib::Response& res) {
+        std::uint64_t since = 0;
+        int limit = 50;
+        std::string platform;
+
+        if (req.has_param("since")) {
+            try { since = static_cast<std::uint64_t>(std::stoull(req.get_param_value("since"))); }
+            catch (...) {}
+        }
+
+        if (req.has_param("limit")) {
+            try { limit = std::max(1, std::min(200, std::stoi(req.get_param_value("limit")))); }
+            catch (...) {}
+        }
+
+        if (req.has_param("platform")) {
+            platform = req.get_param_value("platform");
+        }
+
+        auto out = state_.bot_reply_events_json(since, limit, platform);
+        res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+        res.set_header("Pragma", "no-cache");
+        res.set_content(out.dump(2), "application/json; charset=utf-8");
+    });
+
     // --- API: chat test inject (debug) ---
     // Example:
     //   /api/chat/test?platform=twitch&user=Test&message=Hello

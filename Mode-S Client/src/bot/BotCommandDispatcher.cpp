@@ -40,11 +40,15 @@ void SubscribeBotCommandHandler(
     if (botSubscribed) return;
     botSubscribed = true;
 
+    // TikTok native chat replies require a paid Euler Stream Premium Webcast Route.
+    // Keep the TikTok parameter in the public wiring signature, but make TikTok
+    // replies overlay-only in the free/default path.
+    (void)tiktok;
+
     chat.Subscribe([
         pChat = &chat,
         pState = &state,
         pTwitch = &twitch,
-        pTikTok = &tiktok,
         pYouTubeChat = &youtubeChat
     ](const ChatMessage& m) {
         if (m.user == "StreamingATC.Bot") return;
@@ -111,16 +115,20 @@ void SubscribeBotCommandHandler(
             bot.ts_ms = static_cast<uint64_t>(now_ms_ll + 1);
             pChat->Add(std::move(bot));
 
+            pState->push_bot_reply_event(
+                platform_lc,
+                m.user,
+                cmd_lc,
+                reply,
+                static_cast<std::int64_t>(now_ms_ll + 1));
+
             if (platform_lc == "twitch" && pTwitch) {
                 if (!pTwitch->SendPrivMsg(reply)) {
                     LogLine(L"BOT: Twitch send failed");
                 }
             }
-            if (platform_lc == "tiktok" && pTikTok) {
-                if (!pTikTok->send_chat(reply)) {
-                    LogLine(L"BOT: TikTok send failed (sidecar)");
-                }
-            }
+            // TikTok replies are intentionally shown via the bot reply overlay only.
+            // Native TikTok chat sending is not attempted in the free/default path.
             if (platform_lc == "youtube" && pYouTubeChat) {
                 std::string err;
                 if (!pYouTubeChat->send_chat(reply, &err)) {

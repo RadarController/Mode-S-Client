@@ -1109,6 +1109,75 @@ AppState::BotSettings AppState::bot_settings_snapshot() const {
     return bot_settings_;
 }
 
+void AppState::push_bot_reply_event(
+    const std::string& platform,
+    const std::string& user,
+    const std::string& command,
+    const std::string& reply,
+    std::int64_t ts_ms)
+{
+    if (reply.empty()) return;
+
+    BotReplyEventEntry e;
+    e.platform = ToLower(platform);
+    e.user = user;
+    e.command = command;
+    e.reply = reply;
+    e.ts_ms = ts_ms > 0 ? ts_ms : now_ms();
+
+    std::lock_guard<std::mutex> lk(mtx_);
+    e.seq = ++bot_reply_event_seq_;
+    bot_reply_events_.push_back(std::move(e));
+    while (bot_reply_events_.size() > kBotReplyEventsMax_) {
+        bot_reply_events_.pop_front();
+    }
+}
+
+nlohmann::json AppState::bot_reply_events_json(
+    std::uint64_t since,
+    int limit,
+    const std::string& platform_filter) const
+{
+    std::lock_guard<std::mutex> lk(mtx_);
+
+    limit = std::max(1, std::min(limit, 200));
+    const std::string pf = ToLower(platform_filter);
+
+    std::vector<const BotReplyEventEntry*> matches;
+    matches.reserve(bot_reply_events_.size());
+
+    for (const auto& e : bot_reply_events_) {
+        if (since != 0 && e.seq <= since) continue;
+        if (!pf.empty() && e.platform != pf) continue;
+        matches.push_back(&e);
+    }
+
+    const std::size_t start = matches.size() > static_cast<std::size_t>(limit)
+        ? matches.size() - static_cast<std::size_t>(limit)
+        : 0;
+
+    nlohmann::json events = nlohmann::json::array();
+    for (std::size_t i = start; i < matches.size(); ++i) {
+        const auto& e = *matches[i];
+        events.push_back({
+            {"id", std::string("bot-reply-") + std::to_string(e.seq)},
+            {"seq", e.seq},
+            {"platform", e.platform},
+            {"user", e.user},
+            {"command", e.command},
+            {"reply", e.reply},
+            {"ts_ms", e.ts_ms}
+        });
+    }
+
+    nlohmann::json out;
+    out["ok"] = true;
+    out["latest_seq"] = bot_reply_event_seq_;
+    out["count"] = static_cast<int>(events.size());
+    out["events"] = std::move(events);
+    return out;
+}
+
 
 // --- Overlay header ---
 void AppState::set_overlay_header_storage_path(const std::string& path_utf8) {

@@ -379,16 +379,60 @@ async def main_async() -> int:
 
     sessionid = (cfg.get("tiktok_sessionid") or "").strip()
     sessionid_ss = (cfg.get("tiktok_sessionid_ss") or "").strip()
+    tt_target_idc = (cfg.get("tiktok_tt_target_idc") or "").strip()
 
     try:
-        if sessionid and hasattr(client, "web") and hasattr(client.web, "set_session_id"):
-            client.web.set_session_id(sessionid)
-            emit({"type": "tiktok.info", "ts": now_ts(), "message": "sessionid set"})
-        if sessionid_ss and hasattr(client, "web") and hasattr(client.web, "set_session_id_ss"):
-            client.web.set_session_id_ss(sessionid_ss)
-            emit({"type": "tiktok.info", "ts": now_ts(), "message": "sessionid_ss set"})
+        session = sessionid or sessionid_ss
+
+        if session and hasattr(client, "web"):
+            web = client.web
+
+            if hasattr(web, "set_session"):
+                web.set_session(session, tt_target_idc)
+                emit({
+                    "type": "tiktok.info",
+                    "ts": now_ts(),
+                    "message": "session set via client.web.set_session",
+                    "has_tt_target_idc": bool(tt_target_idc),
+                })
+
+            elif hasattr(web, "set_session_id"):
+                web.set_session_id(session)
+                emit({
+                    "type": "tiktok.info",
+                    "ts": now_ts(),
+                    "message": "sessionid set via legacy client.web.set_session_id",
+                    "has_tt_target_idc": bool(tt_target_idc),
+                })
+
+                if hasattr(web, "set_session_id_ss"):
+                    web.set_session_id_ss(session)
+                    emit({
+                        "type": "tiktok.info",
+                        "ts": now_ts(),
+                        "message": "sessionid_ss set via legacy client.web.set_session_id_ss",
+                    })
+
+            else:
+                emit({
+                    "type": "tiktok.warn",
+                    "ts": now_ts(),
+                    "message": "TikTok web client has no supported session setter",
+                })
+
+        elif not session:
+            emit({
+                "type": "tiktok.warn",
+                "ts": now_ts(),
+                "message": "No TikTok sessionid configured; outbound chat replies will fail",
+            })
+
     except Exception as e:
-        emit({"type": "tiktok.warn", "ts": now_ts(), "message": f"failed to set session cookies: {e}"})
+        emit({
+            "type": "tiktok.warn",
+            "ts": now_ts(),
+            "message": f"failed to set session cookies: {e}",
+        })
 
     asyncio.create_task(gift_aggregator_loop())
 
@@ -478,28 +522,79 @@ async def main_async() -> int:
 
     asyncio.create_task(poll_room_info())
 
-    async def _call_maybe_await(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> bool:
+    async def _call_maybe_await(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Tuple[bool, Any]:
         try:
             r = fn(*args, **kwargs)
             if inspect.isawaitable(r):
-                await r
-            return True
+                r = await r
+            return True, r
         except Exception as e:
-            emit({"type": "tiktok.warn", "ts": now_ts(), "message": f"send_chat error: {e}"})
-            return False
+            emit({
+                "type": "tiktok.warn",
+                "ts": now_ts(),
+                "message": f"send_chat error: {e}",
+            })
+            return False, {"error": str(e)}
 
-    async def _try_send_chat(text: str) -> bool:
-        if hasattr(client, "send_message"):
-            return await _call_maybe_await(getattr(client, "send_message"), text)
+    async def _try_send_chat(text: str) -> Tuple[bool, str, Any]:
+        def response_looks_ok(response: Any) -> bool:
+            # TikTok responses vary by build/endpoint. Treat obvious failure fields as failure.
+            if response is None:
+                return True
 
-        if hasattr(client, "web"):
-            web = getattr(client, "web")
+            if isinstance(response, dict):
+                status_code = response.get("status_code")
+                if status_code not in (None, 0, "0"):
+                    return False
+
+                status_msg = str(response.get("status_msg") or "").strip().lower()
+                if status_msg and status_msg not in ("ok", "success", "succeeded"):
+                    return False
+
+                # Some responses wrap status under "data" or similar.
+                data = response.get("data")
+                if isinstance(data, dict):
+                    inner_status_code = data.get("status_code")
+                    if inner_status_code not in (None, 0, "0"):
+                        return False
+
+                return True
+
+            return True
+
+        # TikTokLive 6.6.5+ exposes this on the client in some builds.
+        fn = getattr(client, "send_room_chat", None)
+        if callable(fn):
+            call_ok, response = await _call_maybe_await(fn, content=text)
+            return call_ok and response_looks_ok(response), "client.send_room_chat", response
+
+        # Older/alternate builds may expose direct message helpers.
+        for name in ("send_message", "send_chat", "sendMessage", "sendChat"):
+            fn = getattr(client, name, None)
+            if callable(fn):
+                call_ok, response = await _call_maybe_await(fn, text)
+                return call_ok and response_looks_ok(response), f"client.{name}", response
+
+        # Last resort: try the web client. send_room_chat usually needs room_id.
+        web = getattr(client, "web", None)
+        if web is not None:
+            fn = getattr(web, "send_room_chat", None)
+            if callable(fn):
+                call_ok, response = await _call_maybe_await(fn, content=text, room_id=last_room_id)
+                return call_ok and response_looks_ok(response), "client.web.send_room_chat", response
+
             for name in ("send_message", "send_chat", "sendMessage", "sendChat"):
-                if hasattr(web, name):
-                    return await _call_maybe_await(getattr(web, name), text)
+                fn = getattr(web, name, None)
+                if callable(fn):
+                    call_ok, response = await _call_maybe_await(fn, text)
+                    return call_ok and response_looks_ok(response), f"client.web.{name}", response
 
-        emit({"type": "tiktok.warn", "ts": now_ts(), "message": "sending chat not supported by this TikTokLive build"})
-        return False
+        emit({
+            "type": "tiktok.warn",
+            "ts": now_ts(),
+            "message": "sending chat not supported by this TikTokLive build",
+        })
+        return False, "unsupported", {"error": "unsupported"}
 
     async def stdin_loop():
         while True:
@@ -520,8 +615,15 @@ async def main_async() -> int:
                 text = str(cmd.get("text") or "").strip()
                 if not text:
                     continue
-                ok = await _try_send_chat(text)
-                emit({"type": "tiktok.send_result", "ts": now_ts(), "ok": bool(ok), "text": text})
+                ok, method, response = await _try_send_chat(text)
+                emit({
+                    "type": "tiktok.send_result",
+                    "ts": now_ts(),
+                    "ok": bool(ok),
+                    "method": method,
+                    "text": text,
+                    "response": response,
+                })
 
     asyncio.create_task(stdin_loop())
 
@@ -559,18 +661,27 @@ async def main_async() -> int:
     @client.on(CommentEvent)
     async def on_comment(event: CommentEvent):
         try:
-            user_info = getattr(event, "user_info", None)
+            user_obj = getattr(event, "user", None) or getattr(event, "user_info", None)
             user = (
-                getattr(user_info, "nick_name", None)
-                or getattr(user_info, "username", None)
+                getattr(user_obj, "nickname", None)
+                or getattr(user_obj, "nick_name", None)
+                or getattr(user_obj, "unique_id", None)
+                or getattr(user_obj, "username", None)
                 or "unknown"
             )
+
             message = (
-                getattr(event, "content", None)
-                or getattr(event, "comment", None)
+                getattr(event, "comment", None)
+                or getattr(event, "content", None)
                 or getattr(event, "text", None)
                 or ""
             )
+            if str(message).lstrip().startswith("!"):
+                emit({
+                    "type": "tiktok.debug",
+                    "ts": now_ts(),
+                    "message": f"command_seen: {str(message).strip()} from {str(user)}",
+                })
             emit({
                 "type": "tiktok.chat",
                 "ts": now_ts(),

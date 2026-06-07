@@ -203,6 +203,20 @@ public:
     nlohmann::json bot_settings_json() const;
     BotSettings bot_settings_snapshot() const;
 
+    // --- Bot reply overlay events ---
+    // Used by OBS/browser overlays to show command replies on-stream, especially for
+    // platforms where native chat replies are unavailable or undesirable.
+    void push_bot_reply_event(
+        const std::string& platform,
+        const std::string& user,
+        const std::string& command,
+        const std::string& reply,
+        std::int64_t ts_ms = 0);
+    nlohmann::json bot_reply_events_json(
+        std::uint64_t since = 0,
+        int limit = 50,
+        const std::string& platform = "") const;
+
 
     // --- Overlay header (stream title/subtitle shown in overlays) ---
     struct OverlayHeader {
@@ -275,6 +289,15 @@ private:
         nlohmann::json payload;
     };
 
+    struct BotReplyEventEntry {
+        std::uint64_t seq{};
+        std::int64_t ts_ms{};
+        std::string platform;
+        std::string user;
+        std::string command;
+        std::string reply;
+    };
+
     void record_alert_history_(const nlohmann::json& payload);
 
     static std::string make_alert_history_id_(std::uint64_t seq);
@@ -316,6 +339,10 @@ private:
     std::deque<EuroScopeTagEventEntry> euroscope_tag_events_; // last 500
     std::uint64_t euroscope_tag_event_seq_ = 0;
     static constexpr std::size_t kEuroScopeTagEventsMax_ = 500;
+
+    std::deque<BotReplyEventEntry> bot_reply_events_; // last 200 bot replies for overlay use
+    std::uint64_t bot_reply_event_seq_ = 0;
+    static constexpr std::size_t kBotReplyEventsMax_ = 200;
     std::deque<nlohmann::json> twitch_eventsub_events_; // last 200 by default
     std::deque<ErrorEntry> twitch_eventsub_errors_; // last 200 (most recent)
 
